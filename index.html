@@ -366,6 +366,7 @@ const state = {
   view: 'book',
   auth: null,          // { token, client }
   mine: null,          // ответ myBookings
+  tgUnlinked: false,   // открыли из Telegram, но учётка не привязана
   pendingAfterLogin: false,
 };
 
@@ -486,6 +487,10 @@ const ERRORS = {
   'token-revoked': 'Нужно войти заново.',
   'unauthorized': 'Нужно войти заново.',
   'booking-not-found': 'Бронь не найдена.',
+  'not-linked': 'Telegram не привязан к учётке. Откройте бота клуба и поделитесь номером.',
+  'bad-init-data': 'Telegram не подтвердил вход. Откройте страницу заново.',
+  'telegram-not-configured': 'Привязка Telegram пока недоступна. Позвоните в клуб.',
+  'server-unavailable': 'Сервер не отвечает. Попробуйте через минуту.',
   'too-soon': 'До начала осталось слишком мало времени.',
   'beyond-horizon': 'Так далеко записываться пока нельзя.',
   'duration-too-short': 'Минимальная бронь — 1 час.',
@@ -555,13 +560,60 @@ async function api(action, body) {
 
 // ---------- Загрузка ----------
 
+// Подписанные данные Mini App.
+//
+// Официальный способ — скрипт telegram-web-app.js с серверов Telegram, но
+// страница обязана оставаться самодостаточной одним файлом, а у части
+// провайдеров в РФ домен Telegram и вовсе недоступен. К счастью, те же
+// данные Telegram кладёт в адрес страницы при открытии, и подпись у них
+// та же самая — проверяет её всё равно сервер.
+function telegramInitData() {
+  const wa = window.Telegram && window.Telegram.WebApp;
+  if (wa && wa.initData) return wa.initData;
+  const m = /[#&]tgWebAppData=([^&]*)/.exec(window.location.hash || '');
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+// Вход из Telegram: пароль не спрашиваем вовсе. Обычный вход по телефону
+// при этом никуда не девается — им пользуются те, у кого Telegram нет.
+async function tryTelegramLogin() {
+  const initData = telegramInitData();
+  if (!initData) return false;
+  try {
+    const r = await api('tgAuth', { initData });
+    state.auth = { token: r.token, client: r.client };
+    store.set(TOKEN_KEY, r.token);
+    return true;
+  } catch (e) {
+    // Telegram подтверждает личность, но телефон в Mini App не отдаёт.
+    // Поэтому незнакомого человека отправляем в бота — там он поделится
+    // контактом одним нажатием, и телефон придёт подтверждённым.
+    if (e.code === 'not-linked') state.tgUnlinked = true;
+    return false;
+  }
+}
+
+async function refreshMe() {
+  if (!state.auth) return;
+  try {
+    const me = await api('me');
+    state.auth.client = me.client;
+    renderNav();
+    if (state.view === 'profile') renderProfile();
+  } catch (e) { /* молча: это фоновое обновление, а не действие человека */ }
+}
+
 async function load() {
   const [cfg, av] = await Promise.all([api('getConfig'), api('getAvailability', { days: 14 })]);
   state.config = cfg.config;
   state.data = av;
   state.date = state.data.today;
 
-  const saved = store.get(TOKEN_KEY);
+  // В Telegram личность подтверждена подписью — она главнее сохранённого
+  // токена, который мог остаться от другого человека на общем телефоне.
+  await tryTelegramLogin();
+
+  const saved = !state.auth && store.get(TOKEN_KEY);
   if (saved) {
     state.auth = { token: saved, client: null };
     try {
@@ -657,6 +709,20 @@ function renderHero() {
 function renderStatusNotice() {
   const n = document.getElementById('statusNotice');
   const client = state.auth && state.auth.client;
+
+  // Открыли из Telegram, но учётка не привязана. Молча показывать форму
+  // пароля здесь неправильно: человек пришёл из мессенджера и пароля,
+  // скорее всего, не заводил. Один шаг в боте решает всё.
+  if (!client && state.tgUnlinked) {
+    const bot = state.config.club.botUsername;
+    n.hidden = false;
+    n.className = 'notice';
+    n.innerHTML = '<b>Ещё пара секунд.</b> Откройте бота клуба и нажмите «Поделиться номером» — '
+      + 'после этого вход сюда будет без пароля.'
+      + (bot ? ` <a href="https://t.me/${bot}" target="_blank" rel="noopener">Открыть бота</a>` : '');
+    return;
+  }
+
   if (!client || client.status === 'verified') { n.hidden = true; return; }
   n.hidden = false;
   n.className = 'notice';
@@ -1213,7 +1279,8 @@ function openAuth(mode) {
 
     const tgNote = el('div', 'empty');
     tgNote.style.marginTop = '12px';
-    tgNote.textContent = 'Вход через Telegram появится позже — тогда же придут напоминания о брони.';
+    tgNote.textContent = 'Есть Telegram? Войдите здесь один раз и привяжите его в профиле — '
+      + 'дальше вход будет без пароля, и придут напоминания о брони.';
     body.appendChild(tgNote);
 
     showModal(body);
@@ -1731,10 +1798,38 @@ function renderProfile() {
 
   const c3 = el('div', 'card');
   c3.innerHTML = '<h2>Telegram</h2>';
-  c3.appendChild(txt('div', 'empty',
-    'Единственный канал уведомлений. После привязки придут напоминания о брони за сутки и за два часа '
-    + 'и сообщения об освободившемся времени из очереди. Нужен работающий Telegram на телефоне. '
-    + 'Привязка появится вместе с ботом клуба.'));
+
+  if (hasTelegram()) {
+    c3.appendChild(txt('div', 'notice info', 'Telegram привязан. Напоминания о брони придут сюда.'));
+    c3.appendChild(btn('Отвязать', 'btn sec', async () => {
+      try {
+        await api('unlinkTelegram');
+        const me = await api('me');
+        state.auth.client = me.client;
+        renderProfile(); renderNav();
+        toast('Telegram отвязан');
+      } catch (e) { toast(errorText(e.code)); }
+    }));
+  } else {
+    c3.appendChild(txt('div', 'empty',
+      'Единственный канал уведомлений. После привязки придут напоминания о брони за 12 часов '
+      + 'и за два часа, решения администратора по заявкам и сообщения об освободившемся времени. '
+      + 'Нужен работающий Telegram на телефоне.'));
+
+    c3.appendChild(btn('Привязать Telegram', 'btn', async () => {
+      try {
+        const r = await api('linkTelegramStart');
+        // Открываем в новой вкладке, а не подменяем текущую: иначе на
+        // телефоне человек уходит в Telegram и теряет страницу вместе с
+        // тем, что он на ней делал.
+        window.open(r.url, '_blank');
+        toast('Откройте бота и нажмите «Запустить»');
+        // Возвращаемся на страницу — обновляем состояние: привязка
+        // произойдёт на стороне бота, страница о ней сама не узнает.
+        setTimeout(refreshMe, 4000);
+      } catch (e) { toast(errorText(e.code)); }
+    }));
+  }
   view.appendChild(c3);
 
   const c4 = el('div', 'card');
