@@ -277,7 +277,6 @@ footer a { color: var(--court-dk); }
 <nav class="nav" id="nav" hidden><div class="nav-inner" id="navInner"></div></nav>
 
 <main>
-  <div id="demoNotice" class="notice" hidden></div>
   <div id="statusNotice" class="notice info" hidden></div>
 
   <!-- Бронирование -->
@@ -349,9 +348,9 @@ footer a { color: var(--court-dk); }
 // администратор один раз подтверждает человека, и дальше он бронирует
 // сам.
 //
-// Пока API_URL пуст, страница работает на демо-данных и поддельном
-// «сервере» в памяти: весь путь от регистрации до отмены проходится
-// без развёрнутого бэкенда.
+// Адрес функции подставляется при развёртывании. Локальный стенд
+// (tools/dev-server.js) подменяет его на свой при отдаче страницы —
+// сам файл при этом не меняется.
 // ============================================================
 
 const API_URL = 'https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt';
@@ -367,7 +366,6 @@ const state = {
   view: 'book',
   auth: null,          // { token, client }
   mine: null,          // ответ myBookings
-  demo: false,
   pendingAfterLogin: false,
 };
 
@@ -539,8 +537,6 @@ async function api(action, body) {
   const payload = Object.assign({ action }, body || {});
   if (state.auth && state.auth.token) payload.token = state.auth.token;
 
-  if (!API_URL) return demoApi(action, payload);
-
   const res = await request(payload, SAFE_TO_REPEAT.indexOf(action) > -1 ? 2 : 0);
   // Шлюз при ошибке отвечает не JSON, а страницей с текстом. Без этой
   // подстраховки разбор падал бы невнятной ошибкой разметки вместо
@@ -560,15 +556,9 @@ async function api(action, body) {
 // ---------- Загрузка ----------
 
 async function load() {
-  if (!API_URL) {
-    state.demo = true;
-    state.config = demoConfig();
-    state.data = demoAvailability(state.config);
-  } else {
-    const [cfg, av] = await Promise.all([api('getConfig'), api('getAvailability', { days: 14 })]);
-    state.config = cfg.config;
-    state.data = av;
-  }
+  const [cfg, av] = await Promise.all([api('getConfig'), api('getAvailability', { days: 14 })]);
+  state.config = cfg.config;
+  state.data = av;
   state.date = state.data.today;
 
   const saved = store.get(TOKEN_KEY);
@@ -661,12 +651,6 @@ function renderHero() {
     ? state.auth.client.name.split(' ')[0]
     : 'Войти';
 
-  if (state.demo) {
-    const n = document.getElementById('demoNotice');
-    n.hidden = false;
-    n.textContent = 'Демонстрационный режим: занятость условная, вход работает с любым паролем. '
-      + 'Всё, что вы забронируете, живёт до перезагрузки страницы.';
-  }
   renderStatusNotice();
 }
 
@@ -680,18 +664,6 @@ function renderStatusNotice() {
     ? '<b>Заявка на рассмотрении.</b> Администратор подтвердит вас, обычно в течение дня. '
       + 'После этого бронировать можно будет самостоятельно. Занятость кортов видна и сейчас.'
     : '<b>Доступ закрыт.</b> Обратитесь к администратору клуба.';
-
-  // В демо подтверждать некому, а показать надо и этот экран, и то, что
-  // за ним. Кнопка честно помечена как демонстрационная.
-  if (state.demo && client.status === 'pending') {
-    const b = btn('Показать, как будто администратор подтвердил', 'btn sm', () => {
-      client.status = 'verified';
-      renderStatusNotice(); renderNav();
-      toast('Теперь можно бронировать');
-    });
-    b.style.marginTop = '10px';
-    n.appendChild(b);
-  }
 }
 
 document.getElementById('whoBtn').addEventListener('click', () => {
@@ -1792,260 +1764,6 @@ function toast(text, ms) {
   toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2400);
 }
 
-// ============================================================
-// Демо-режим: данные и поддельный сервер в памяти.
-//
-// Нужен, чтобы весь путь — регистрация, бронь, отмена — проходился без
-// развёрнутого бэкенда. Проверки здесь повторяют серверные по смыслу,
-// но настоящие правила живут на сервере.
-// ============================================================
-
-const demo = { clients: {}, mine: [], waitlist: [], seq: 0 };
-
-function demoConfig() {
-  return {
-    club: {
-      name: 'Теннисный центр «Альфа»', city: 'Краснодар', address: 'Сечевая ул., 51',
-      mapUrl: 'https://yandex.ru/maps/-/CTWDbG~r', phone: '+7 (961) 511-55-33',
-      rating: '4,9', ratingCount: 64,
-      features: 'Быстрое покрытие, кондиционеры, тепловые пушки, хорошее освещение',
-      extraService: 'Перетяжка струн на профессиональном станке — 700 ₽',
-    },
-    booking: {
-      timezoneOffset: '+03:00', openTime: '05:00', closeTime: '24:00',
-      slotStep: 30, minBookingMinutes: 60, horizonDays: 14,
-      minLeadMinutes: 60, approvalOverMinutes: 180, pendingTtlHours: 6, cancelDeadlineHours: 3,
-      maxActiveBookingsPerClient: 2, allowCourtSwitch: true, maxSwitches: 1, packCourts: true,
-    },
-    pricing: { pricePerHour: 1800 },
-    courts: [
-      { id: 1, name: 'Корт 1', surface: 'хард', indoor: true },
-      { id: 2, name: 'Корт 2', surface: 'хард', indoor: true },
-    ],
-  };
-}
-
-function hash(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-
-function demoAvailability(cfg) {
-  const today = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
-  const dates = [];
-  for (let i = 0; i < cfg.booking.horizonDays; i++) dates.push(addDays(today, i));
-
-  const slots = [];
-  for (let m = 300; m + 30 <= 1440; m += 30) slots.push(minutesToTime(m));
-
-  const regular = [
-    { weekday: 2, courtId: 1, start: '19:00', end: '20:30' },
-    { weekday: 4, courtId: 1, start: '19:00', end: '20:30' },
-    { weekday: 1, courtId: 2, start: '20:00', end: '21:30' },
-    { weekday: 3, courtId: 2, start: '20:00', end: '21:30' },
-  ];
-
-  const days = {};
-  dates.forEach(date => {
-    const wd = new Date(date + 'T00:00:00Z').getUTCDay();
-    const perCourt = { 1: [], 2: [] };
-
-    regular.forEach(r => {
-      if (r.weekday === wd) perCourt[r.courtId].push({ start: r.start, end: r.end, kind: 'regular' });
-    });
-
-    cfg.courts.forEach(court => {
-      const seed = hash(date + '#' + court.id);
-      const candidates = [
-        { start: '07:00', end: '08:30', p: 45 }, { start: '09:00', end: '10:30', p: 25 },
-        { start: '12:00', end: '13:00', p: 30 }, { start: '15:00', end: '16:30', p: 35 },
-        { start: '17:00', end: '18:30', p: 70 }, { start: '18:30', end: '20:00', p: 65 },
-        { start: '20:30', end: '22:00', p: 75 }, { start: '22:00', end: '23:00', p: 40 },
-      ];
-      candidates.forEach((c, i) => {
-        if ((hash(seed + ':' + i) % 100) >= c.p) return;
-        const busy = perCourt[court.id];
-        const conflict = busy.some(b =>
-          timeToMinutes(c.start) < timeToMinutes(b.end) && timeToMinutes(b.start) < timeToMinutes(c.end));
-        if (!conflict) busy.push({ start: c.start, end: c.end, kind: 'busy' });
-      });
-    });
-
-    if (date === addDays(today, 5)) perCourt[2].push({ start: '05:00', end: '09:00', kind: 'closed' });
-
-    Object.keys(perCourt).forEach(id =>
-      perCourt[id].sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start)));
-    days[date] = perCourt;
-  });
-
-  return { today, dates, slots, courts: cfg.courts.map(c => ({ id: c.id, name: c.name })), days };
-}
-
-function demoDelay(value) {
-  // Небольшая задержка, чтобы поведение кнопок было честным: в жизни
-  // ответ сервера тоже не мгновенный.
-  return new Promise(resolve => setTimeout(() => resolve(value), 220));
-}
-function demoFail(code) {
-  const e = new Error(code); e.code = code;
-  return demoDelay().then(() => { throw e; });
-}
-function demoPhone(raw) {
-  const d = String(raw || '').replace(/\D/g, '');
-  return d.length >= 10 ? d.slice(-10) : null;
-}
-
-async function demoApi(action, payload) {
-  const cfg = state.config || demoConfig();
-
-  switch (action) {
-    case 'register': {
-      const name = String(payload.name || '').trim();
-      const phone = demoPhone(payload.phone);
-      if (name.length < 2) return demoFail('invalid-name');
-      if (!phone) return demoFail('invalid-phone');
-      if (String(payload.password || '').length < 6) return demoFail('password-too-short');
-      if (demo.clients[phone]) return demoDelay({ ok: true, existing: true });
-
-      const client = {
-        id: 'c' + (++demo.seq), name, phone: '+7' + phone,
-        status: 'pending', hasTelegram: false, noShowCount: 0,
-      };
-      demo.clients[phone] = client;
-      return demoDelay({ ok: true, token: 'demo.' + phone, client });
-    }
-
-    case 'login': {
-      const phone = demoPhone(payload.phone);
-      if (!phone) return demoFail('bad-credentials');
-      if (!String(payload.password || '')) return demoFail('bad-credentials');
-      // В демо пароль не проверяется: заказчик должен пройти путь, а не
-      // вспоминать, что он вводил при регистрации.
-      if (!demo.clients[phone]) {
-        demo.clients[phone] = {
-          id: 'c' + (++demo.seq), name: 'Гость Демидов', phone: '+7' + phone,
-          status: 'verified', hasTelegram: false, noShowCount: 0,
-        };
-      }
-      return demoDelay({ ok: true, token: 'demo.' + phone, client: demo.clients[phone] });
-    }
-
-    case 'me': {
-      const phone = String(payload.token || '').split('.')[1];
-      if (!phone || !demo.clients[phone]) return demoFail('unauthorized');
-      return demoDelay({ client: demo.clients[phone] });
-    }
-
-    case 'updateProfile': {
-      const client = state.auth.client;
-      if (payload.name != null) {
-        const name = String(payload.name).trim();
-        if (name.length < 2) return demoFail('invalid-name');
-        client.name = name;
-      }
-      if (payload.password != null && String(payload.password).length < 6) return demoFail('password-too-short');
-      return demoDelay({ ok: true, token: state.auth.token, client });
-    }
-
-    case 'createBooking': {
-      const client = state.auth.client;
-      if (client.status !== 'verified') return demoFail('not-verified');
-
-      const active = demo.mine.filter(g => slotTimestamp(g.date, g.end) > Date.now());
-      if (active.length >= cfg.booking.maxActiveBookingsPerClient) return demoFail('too-many-active');
-
-      const grid = buildFreeGrid(payload.date);
-      const startIdx = state.data.slots.indexOf(payload.start);
-      const need = payload.durationMinutes / cfg.booking.slotStep;
-      const plan = planBooking(payload.date, grid, startIdx, startIdx + need - 1, {
-        onlyCourtId: payload.exactCourt ? payload.courtId : null,
-      });
-      if (!plan) return demoFail('slot-taken');
-
-      const step = cfg.booking.slotStep;
-      const endOf = (i) => minutesToTime(timeToMinutes(state.data.slots[i]) + step);
-      const needsApproval = payload.durationMinutes > cfg.booking.approvalOverMinutes;
-
-      const group = {
-        key: 'g' + (++demo.seq), id: 'b' + demo.seq,
-        date: payload.date,
-        start: state.data.slots[plan.fromIdx],
-        end: endOf(plan.toIdx),
-        status: needsApproval ? 'pending' : 'confirmed',
-        price: Math.round(payload.durationMinutes / 60 * cfg.pricing.pricePerHour),
-        switches: plan.switches,
-        segments: plan.segments.map(s => ({
-          courtId: s.courtId, start: state.data.slots[s.fromIdx], end: endOf(s.toIdx),
-        })),
-      };
-
-      demo.mine.push(group);
-      // Отражаем бронь в общей занятости ровно так же, как это сделал бы
-      // сервер — без пометки владельца. Своей её делает сопоставление
-      // с кабинетом в myBookingAt.
-      group.segments.forEach(s => {
-        state.data.days[payload.date][String(s.courtId)].push({
-          start: s.start, end: s.end, kind: 'busy', groupKey: group.key,
-        });
-        state.data.days[payload.date][String(s.courtId)].sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
-      });
-
-      return demoDelay({ ok: true, booking: group, needsApproval });
-    }
-
-    case 'myBookings': {
-      const now = Date.now();
-      const sorted = demo.mine.slice().sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
-      return demoDelay({
-        today: state.data.today,
-        upcoming: sorted.filter(g => slotTimestamp(g.date, g.end) > now),
-        past: sorted.filter(g => slotTimestamp(g.date, g.end) <= now).reverse(),
-        waitlist: demo.waitlist.slice(),
-        cancelDeadlineHours: cfg.booking.cancelDeadlineHours,
-      });
-    }
-
-    case 'cancelBooking': {
-      const g = demo.mine.find(x => x.id === payload.bookingId);
-      if (!g) return demoFail('booking-not-found');
-      const deadline = slotTimestamp(g.date, g.start) - cfg.booking.cancelDeadlineHours * 3600 * 1000;
-      if (Date.now() > deadline) return demoFail('too-late');
-
-      demo.mine = demo.mine.filter(x => x.id !== g.id);
-      Object.keys(state.data.days[g.date]).forEach(courtId => {
-        state.data.days[g.date][courtId] = state.data.days[g.date][courtId]
-          .filter(b => b.groupKey !== g.key);
-      });
-      return demoDelay({ ok: true });
-    }
-
-    case 'joinWaitlist': {
-      const duration = Number(payload.durationMinutes);
-      const span = timeToMinutes(payload.end) - timeToMinutes(payload.start);
-      if (!Number.isFinite(duration) || duration < cfg.booking.minBookingMinutes) return demoFail('duration-too-short');
-      if (duration > span) return demoFail('window-too-short');
-
-      const dup = demo.waitlist.some(w => w.date === payload.date && w.start === payload.start
-        && w.end === payload.end && w.durationMinutes === duration);
-      if (dup) return demoDelay({ ok: true, duplicate: true });
-
-      demo.waitlist.push({
-        id: 'w' + (++demo.seq), date: payload.date, start: payload.start,
-        end: payload.end, durationMinutes: duration, courtId: payload.courtId,
-      });
-      return demoDelay({ ok: true, duplicate: false });
-    }
-
-    case 'leaveWaitlist': {
-      demo.waitlist = demo.waitlist.filter(w => w.id !== payload.id);
-      return demoDelay({ ok: true });
-    }
-
-    default:
-      return demoFail('unknown-action');
-  }
-}
 
 // ---------- Старт ----------
 
