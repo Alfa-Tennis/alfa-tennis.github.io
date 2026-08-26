@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Альфа — панель администратора</title>
+<meta name="robots" content="noindex">
+<style>
+/* Палитра снята с фотографий и логотипа клуба: синее покрытие корта,
+   зелёная зона за линиями, графитовый фасад, золото звёзд логотипа.
+   Золото нигде не используется как текст на белом — контраст не проходит,
+   поэтому для надписей взят тёмный оттенок --warn. */
+:root {
+  --ink: #22272C;
+  --ink-soft: #5F6B72;
+  --line: #DDE3E5;
+  --bg: #F2F4F5;
+  --surface: #FFFFFF;
+  --accent: #3E6B7C;
+  --accent-dark: #315568;
+  --accent-tint: #E7EFF2;
+  --busy: #E5E9EA;
+  --gold: #F3CF5B;
+  --warn: #74590F;
+  --warn-tint: #FBF2D8;
+  --grass: #5C752F;
+  --grass-tint: #EEF2E7;
+  --danger: #B23B3B;
+  --danger-tint: #FBEDED;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(34,39,44,.06), 0 8px 24px rgba(34,39,44,.07);
+}
+* { box-sizing: border-box; }
+/* Любое правило вроде `.login { display: flex }` сильнее браузерного
+   `[hidden] { display: none }`, и элемент с атрибутом hidden остаётся
+   на экране. Закрываем это раз и навсегда для всей страницы. */
+[hidden] { display: none !important; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------- Вход ---------- */
+.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: linear-gradient(160deg, #23272E 0%, #2E3238 100%); }
+.login-logo { width: 72px; height: 72px; margin: 0 auto 14px; display: block; }
+.login-card { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow);
+  padding: 28px 24px; max-width: 380px; width: 100%; text-align: center; }
+.login-card h1 { margin: 0 0 4px; font-size: 21px; }
+.login-card .who { margin: 0 0 18px; color: var(--ink-soft); font-size: 14px; }
+.login-note { background: var(--warn-tint); border: 1px solid #f0dcc0; color: #7a5320;
+  border-radius: 10px; padding: 10px 12px; font-size: 13px; text-align: left; margin-bottom: 16px; }
+
+/* ---------- Каркас ---------- */
+.topbar { background: linear-gradient(160deg, #23272E 0%, #2E3238 100%); color: #fff; padding: 12px 16px; }
+.topbar-inner { max-width: 1080px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.topbar .logo { width: 34px; height: 34px; border-radius: 8px; background: #fff; padding: 3px; flex: 0 0 auto; }
+.topbar .logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.topbar .title { font-weight: 600; }
+.topbar .spacer { flex: 1; }
+.badge-demo { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+.link-out { background: none; border: 0; color: rgba(255,255,255,.8); cursor: pointer; text-decoration: underline; padding: 0; }
+
+.tabs { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.tabs-inner { max-width: 1080px; margin: 0 auto; display: flex; gap: 2px; overflow-x: auto; padding: 0 8px; }
+.tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 12px 14px; cursor: pointer; white-space: nowrap; color: var(--ink-soft); }
+.tab:hover { color: var(--ink); }
+.tab.on { color: var(--accent-dark); border-bottom-color: var(--accent); font-weight: 600; }
+.tab .cnt { background: var(--warn); color: #fff; border-radius: 999px; font-size: 11px;
+  padding: 1px 6px; margin-left: 5px; vertical-align: 1px; }
+
+main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
+.card h2 { margin: 0 0 10px; font-size: 16px; }
+.card h2 .sub { font-weight: 400; color: var(--ink-soft); font-size: 13px; margin-left: 6px; }
+.muted { color: var(--ink-soft); }
+.empty { color: var(--ink-soft); font-size: 14px; padding: 6px 2px; }
+
+.btn { appearance: none; border: 0; border-radius: 9px; background: var(--accent); color: #fff;
+  font-weight: 600; padding: 9px 16px; cursor: pointer; }
+.btn:hover { background: var(--accent-dark); }
+.btn.sm { padding: 6px 12px; font-size: 14px; }
+.btn.sec { background: #eef1ef; color: var(--ink); }
+.btn.sec:hover { background: #e3e8e5; }
+.btn.danger { background: var(--danger); }
+.btn.danger:hover { background: #97302f; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.field { display: block; margin-bottom: 10px; }
+.field span { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+.field input, .field select, .field textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; background: #fff;
+}
+.field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--accent-tint); border-color: var(--accent); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* ---------- Навигация по дням ---------- */
+.daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.daynav .date { font-weight: 600; font-size: 17px; min-width: 190px; }
+.nav-btn { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 9px;
+  width: 36px; height: 36px; cursor: pointer; }
+.nav-btn:hover { border-color: var(--accent); }
+
+.daystat { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; color: var(--ink-soft); margin-bottom: 10px; }
+.daystat b { color: var(--ink); }
+
+/* ---------- Сетка дня ---------- */
+.grid { display: grid; position: relative; }
+.g-head { position: sticky; top: 45px; z-index: 5; background: var(--surface);
+  border-bottom: 1px solid var(--line); padding: 8px 4px; font-size: 14px; font-weight: 600; text-align: center; }
+.g-time { border-right: 1px solid var(--line); font-size: 12px; color: var(--ink-soft);
+  padding-right: 8px; display: flex; align-items: center; justify-content: flex-end; }
+.g-time.hour { color: var(--ink); font-weight: 600; }
+.g-free { border-bottom: 1px solid #eef1ef; border-right: 1px solid #eef1ef; cursor: pointer; background: #fff; }
+.g-free:hover { background: var(--accent-tint); }
+.g-free.past { background: #f7f8f7; cursor: default; }
+.g-free.past:hover { background: #f7f8f7; }
+
+.blk { border-radius: 8px; margin: 1px 3px; padding: 4px 7px; overflow: hidden; cursor: pointer;
+  font-size: 12px; line-height: 1.25; border-left: 3px solid var(--accent); background: var(--accent-tint); }
+.blk:hover { filter: brightness(.97); }
+.blk .b-t { font-weight: 600; }
+.blk .b-n { color: var(--ink-soft); }
+.blk.pending { border-left-color: var(--warn); background: var(--warn-tint); }
+.blk.series { border-left-color: var(--grass); background: var(--grass-tint); }
+.blk.done { border-left-color: #9aa7a0; background: #f0f2f1; color: var(--ink-soft); }
+.blk.noshow { border-left-color: var(--danger); background: var(--danger-tint); }
+.blk.closed { border-left-color: #7b857f; background: repeating-linear-gradient(45deg, #e4e8e6 0 6px, #dae0dd 6px 12px); }
+
+/* ---------- Списки ---------- */
+.item { border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; margin-bottom: 8px; }
+.item.hl { border-color: #ecd6b4; background: var(--warn-tint); }
+.item .t1 { font-weight: 600; }
+.item .t2 { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+.item .acts { margin-top: 9px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+.pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 12px; border: 1px solid var(--line); }
+.pill.ok { background: var(--accent-tint); border-color: #bfdccd; color: var(--accent-dark); }
+.pill.wait { background: var(--warn-tint); border-color: #ecd6b4; color: #7a5320; }
+.pill.bad { background: var(--danger-tint); border-color: #eec9c9; color: var(--danger); }
+.pill.grey { background: #f0f2f1; color: var(--ink-soft); }
+
+/* ---------- Telegram-превью ---------- */
+.tg { background: #eaf1f6; border-radius: var(--radius); padding: 14px; }
+.tg-msg { background: #fff; border-radius: 12px 12px 12px 4px; padding: 11px 13px; max-width: 380px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08); font-size: 14px; white-space: pre-line; margin-bottom: 8px; }
+.tg-btns { display: flex; gap: 6px; max-width: 380px; }
+.tg-btn { flex: 1; background: #fff; border: 0; border-radius: 8px; padding: 9px; font-size: 13px;
+  color: #2b7cb8; cursor: default; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+/* ---------- Статистика ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; }
+.kpi .v { font-size: 22px; font-weight: 600; }
+.kpi .l { font-size: 13px; color: var(--ink-soft); }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 150px; margin-top: 6px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+.bar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
+.bar.low { background: #c3d5cb; }
+.bar-lb { font-size: 10px; color: var(--ink-soft); margin-top: 4px; }
+
+table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.tbl th { text-align: left; font-weight: 600; color: var(--ink-soft); font-size: 13px;
+  padding: 6px 8px; border-bottom: 1px solid var(--line); }
+table.tbl td { padding: 8px; border-bottom: 1px solid #eef1ef; }
+
+/* ---------- Модальное окно ---------- */
+.backdrop { position: fixed; inset: 0; background: rgba(22,33,28,.45); display: none;
+  align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.backdrop.show { display: flex; }
+.modal { background: var(--surface); border-radius: 14px; max-width: 440px; width: 100%;
+  max-height: 90vh; overflow: auto; padding: 18px; }
+.modal h3 { margin: 0 0 3px; font-size: 18px; }
+.modal .m-sub { color: var(--ink-soft); font-size: 14px; margin-bottom: 14px; }
+.modal .m-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(12px);
+  background: var(--ink); color: #fff; font-size: 14px; padding: 10px 16px; border-radius: 10px;
+  opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 60; }
+.toast.show { opacity: 1; transform: translateX(-50%); }
+
+@media (max-width: 560px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .daynav .date { min-width: 0; font-size: 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ---------- Вход ---------- -->
+<div class="login" id="login">
+  <div class="login-card">
+    <img class="login-logo" src="data:image/jpeg;base64,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" alt="Логотип теннисного центра «Альфа»">
+    <h1>Панель администратора</h1>
+    <p class="who">Теннисный центр «Альфа»</p>
+    <div class="login-note" id="loginNote">
+      Вход для администратора и владельца клуба.
+    </div>
+    <input class="inp" id="loginPhone" type="tel" inputmode="tel" autocomplete="username"
+           placeholder="+7 (___) ___-__-__" style="width:100%;margin-bottom:8px">
+    <input class="inp" id="loginPass" type="password" autocomplete="current-password"
+           placeholder="Пароль" style="width:100%;margin-bottom:12px">
+    <button class="btn" id="loginBtn" style="width:100%">Войти</button>
+  </div>
+</div>
+
+<!-- ---------- Приложение ---------- -->
+<div id="app" hidden>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <span class="logo"><img src="data:image/jpeg;base64,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" alt=""></span>
+      <span class="title">Альфа · панель администратора</span>
+      <span class="badge-demo" id="whoBadge"></span>
+      <span class="spacer"></span>
+      <button class="link-out" id="reloadBtn">Обновить</button>
+      <button class="link-out" id="logoutBtn">Выйти</button>
+    </div>
+  </div>
+
+  <nav class="tabs"><div class="tabs-inner" id="tabs"></div></nav>
+
+  <main id="view"></main>
+</div>
+
+<div class="backdrop" id="backdrop"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// Панель администратора.
+//
+// Данные приходят из Cloud Function. Права проверяет сервер по роли в
+// карточке клиента — страница только прячет то, чего всё равно не
+// разрешат: подделанный интерфейс ничего не даёт.
+//
+// db здесь — не база, а слепок того, что показано на экране. Каждое
+// действие уходит на сервер, после чего слепок перечитывается: держать
+// локальную копию в согласии с чужими изменениями дороже, чем перечитать
+// день целиком.
+// ============================================================
+
+// Пустая строка — вызовы пойдут на тот же адрес, откуда открыта
+// страница. Боевой адрес функции подставляется при развёртывании.
+const API_URL = 'https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt';
+
+const TOKEN_KEY = 'alfa_admin_token';
+
+let token = null;
+try { token = localStorage.getItem(TOKEN_KEY); } catch (e) { token = null; }
+
+function setToken(value) {
+  token = value;
+  try {
+    if (value) localStorage.setItem(TOKEN_KEY, value);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch (e) { /* приватный режим — переживём одну сессию */ }
+}
+
+// Ошибку сервера превращаем в исключение с кодом: вызывающий код решает,
+// показать её человеку или обработать молча.
+async function api(action, payload) {
+  const res = await fetch(API_URL || '/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ action, token }, payload || {})),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body.error || 'request-failed');
+    err.code = body.error || 'request-failed';
+    err.data = body;
+    throw err;
+  }
+  return body;
+}
+
+const ERRORS = {
+  'forbidden': 'Не хватает прав. Войдите под учётной записью администратора.',
+  'unauthorized': 'Нужно войти заново.',
+  'token-revoked': 'Нужно войти заново.',
+  'bad-credentials': 'Неверный телефон или пароль.',
+  'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
+  'slot-taken': 'Это время уже занято.',
+  'not-pending': 'Заявка уже обработана.',
+  'pending-expired': 'Заявка просрочена — корт вернулся в общий доступ.',
+  'not-started': 'Игра ещё не началась — неявки пока нет.',
+  'too-old': 'Слишком давно: отметить неявку уже нельзя.',
+  'already-cancelled': 'Бронь уже отменена.',
+  'booking-not-found': 'Бронь не найдена — возможно, её только что изменили.',
+  'client-not-found': 'Клиент не найден.',
+  'outside-hours': 'Время выходит за часы работы клуба.',
+  'invalid-name': 'Укажите имя и фамилию.',
+  'invalid-phone': 'Проверьте номер телефона.',
+  'invalid-duration': 'Длительность не по шагу сетки.',
+  'invalid-time': 'Время не по шагу сетки.',
+  'not-movable': 'Такую бронь перенести нельзя.',
+  'staff-reset-owner-only': 'Пароль администратору или владельцу может сбросить только владелец.',
+};
+
+function errorText(code) {
+  return ERRORS[code] || 'Что-то пошло не так. Попробуйте ещё раз.';
+}
+
+// Действие с обработкой ошибок и обновлением экрана — чтобы не повторять
+// try/catch в каждой кнопке.
+async function act(fn, okText) {
+  try {
+    const result = await fn();
+    await reload();
+    if (okText) toast(okText);
+    return result;
+  } catch (e) {
+    if (e.code === 'unauthorized' || e.code === 'token-revoked') return logout();
+    toast(errorText(e.code), 4000);
+    return null;
+  }
+}
+
+// ---------- Время ----------
+
+const TZ = '+03:00';
+
+function timeToMinutes(t) {
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(String(t));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+}
+function minutesToTime(m) {
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+}
+function todayIso() {
+  return new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function addDays(dateIso, n) {
+  const d = new Date(dateIso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function weekday(dateIso) { return new Date(dateIso + 'T00:00:00Z').getUTCDay(); }
+function stamp(dateIso, time) { return new Date(dateIso + 'T' + time + ':00' + TZ).getTime(); }
+function isPast(dateIso, time) { return stamp(dateIso, time) < Date.now(); }
+
+const MONTHS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const MON_SHORT = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const WD_FULL = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+const WD_SHORT = ['вс','пн','вт','ср','чт','пт','сб'];
+
+function longDate(dateIso) {
+  const d = new Date(dateIso + 'T00:00:00Z');
+  let s = d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ', ' + WD_FULL[d.getUTCDay()];
+  if (dateIso === todayIso()) s += ' · сегодня';
+  else if (dateIso === addDays(todayIso(), 1)) s += ' · завтра';
+  return s;
+}
+function shortDate(dateIso) {
+  const d = new Date(dateIso + 'T00:00:00Z');
+  return d.getUTCDate() + ' ' + MON_SHORT[d.getUTCMonth()];
+}
+function money(v) { return Math.round(v).toLocaleString('ru-RU') + ' ₽'; }
+function hoursText(min) { return (Math.round(min / 60 * 10) / 10).toString().replace('.', ',') + ' ч'; }
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmtPhone(p) {
+  const d = String(p).replace(/\D/g, '').slice(-10);
+  return d.length === 10 ? '+7 ' + d.slice(0,3) + ' ' + d.slice(3,6) + '-' + d.slice(6,8) + '-' + d.slice(8) : p;
+}
+
+// Маска ввода. Администратор записывает людей на бегу и с чужих слов —
+// номер должен складываться сам, как бы его ни начали набирать.
+function formatPhoneInput(raw) {
+  let digits = String(raw).replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits[0] === '8') digits = '7' + digits.slice(1);
+  if (digits[0] !== '7') digits = '7' + digits;
+  digits = digits.slice(0, 11);
+
+  const rest = digits.slice(1);
+  let out = '+7';
+  if (rest.length) out += ' ' + rest.slice(0, 3);
+  if (rest.length > 3) out += ' ' + rest.slice(3, 6);
+  if (rest.length > 6) out += '-' + rest.slice(6, 8);
+  if (rest.length > 8) out += '-' + rest.slice(8, 10);
+  return out;
+}
+
+function attachPhoneMask(input) {
+  input.type = 'tel';
+  input.inputMode = 'tel';
+  input.maxLength = 16;
+  input.placeholder = '+7 918 000-00-00';
+  input.addEventListener('focus', () => { if (!input.value) input.value = '+7 '; });
+  input.addEventListener('input', () => { input.value = formatPhoneInput(input.value); });
+  input.addEventListener('blur', () => { if (input.value === '+7' || input.value === '+7 ') input.value = ''; });
+}
+
+// ============================================================
+// Данные с сервера
+// ============================================================
+//
+// db — слепок того, что сейчас показано. Собирается из трёх запросов:
+// день, клиенты и список ожидающих решения. Перечитывается целиком
+// после любого действия: держать локальную копию в согласии с чужими
+// правками дороже, чем сходить на сервер ещё раз.
+
+let db = null;
+let me = null;
+
+// Форма клиента, к которой привыкли экраны панели. Сервер отдаёт больше:
+// рейтинг, счётчики, признак предоплаты — их кладём рядом, ничего не теряя.
+function mapClient(c) {
+  return {
+    id: c.id,
+    name: c.name,
+    phone: c.phone,
+    tg: !!c.hasTelegram,
+    status: c.status,
+    role: c.role || 'client',
+    rating: c.rating,
+    noShowCount: c.noShowCount || 0,
+    lateCancelCount: c.lateCancelCount || 0,
+    completedCount: c.completedCount || 0,
+    needsPrepay: !!c.needsPrepay,
+    notes: c.notes || '',
+    createdAt: (c.createdAt || '').slice(0, 10),
+    lastLoginAt: c.lastLoginAt || null,
+  };
+}
+
+// Настройки сервера под имена, которыми пользуются экраны. Перевод
+// нужен ровно здесь: дальше по коду живёт одно название.
+function mapConfig(booking) {
+  return {
+    openTime: booking.openTime,
+    closeTime: booking.closeTime,
+    slotStep: booking.slotStep,
+    minBookingMinutes: booking.minBookingMinutes,
+    approvalFromMinutes: booking.approvalFromMinutes,
+    cancelDeadlineHours: booking.cancelDeadlineHours,
+    maxActiveBookingsPerClient: booking.maxActiveBookingsPerClient,
+    allowCourtSwitch: booking.allowCourtSwitch,
+    maxSwitches: booking.maxSwitches,
+    packCourts: booking.packCourts,
+    horizonDays: booking.horizonDays,
+    pricePerHour: 0, // подставляется из getConfig ниже
+  };
+}
+
+async function loadAll() {
+  const [pub, day, clients, review] = await Promise.all([
+    api('getConfig'),
+    api('adminDay', { date: state.date }),
+    api('listClients', { query: state.clientQuery }),
+    api('adminReview'),
+  ]);
+
+  const config = mapConfig(day.config);
+  config.pricePerHour = pub.config.pricing.pricePerHour;
+
+  const bookings = {};
+  bookings[day.date] = day.items.map(b => Object.assign({}, b, { date: day.date }));
+
+  // Заявки и незакрытые дни лежат в других днях — их брони тоже кладём
+  // в слепок, иначе вкладка «Заявки» не покажет ни времени, ни корта.
+  [].concat(review.pending, review.played).forEach(b => {
+    if (!bookings[b.date]) bookings[b.date] = [];
+    if (!bookings[b.date].some(x => x.id === b.id)) bookings[b.date].push(b);
+  });
+
+  db = {
+    config,
+    club: pub.config.club,
+    courts: day.courts,
+    clients: clients.clients.map(mapClient),
+    series: day.series || [],
+    exceptions: day.exceptions || [],
+    bookings,
+    review,
+  };
+}
+
+async function reload() {
+  await loadAll();
+  render();
+}
+
+// ---------- Вход и выход ----------
+
+function showLogin(message) {
+  document.getElementById('app').hidden = true;
+  document.getElementById('login').hidden = false;
+  if (message) {
+    const note = document.getElementById('loginNote');
+    note.textContent = message;
+    note.style.color = 'var(--bad, #c0392b)';
+  }
+}
+
+function logout() {
+  setToken(null);
+  me = null;
+  db = null;
+  showLogin('Нужно войти заново.');
+}
+
+async function enter(client) {
+  // Роль проверяет и сервер — он просто не ответит на админские запросы.
+  // Здесь отказ нужен, чтобы человек увидел причину, а не пустой экран.
+  if (client.role !== 'admin' && client.role !== 'owner') {
+    setToken(null);
+    showLogin('Эта учётная запись не имеет доступа к панели.');
+    return;
+  }
+  me = client;
+  document.getElementById('login').hidden = true;
+  document.getElementById('app').hidden = false;
+  document.getElementById('whoBadge').textContent =
+    client.name + (client.role === 'owner' ? ' · владелец' : ' · администратор');
+  await reload();
+}
+
+async function doLogin() {
+  const phone = document.getElementById('loginPhone').value;
+  const password = document.getElementById('loginPass').value;
+  if (!phone || !password) { toast('Введите телефон и пароль'); return; }
+
+  const button = document.getElementById('loginBtn');
+  button.disabled = true;
+  try {
+    const res = await api('login', { phone, password });
+    setToken(res.token);
+    document.getElementById('loginPass').value = '';
+    await enter(res.client);
+  } catch (e) {
+    showLogin(errorText(e.code));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+
+// ---------- Выборки ----------
+
+function clientById(id) { return db.clients.find(c => c.id === id) || null; }
+
+function seriesOn(dateIso) {
+  const wd = weekday(dateIso);
+  return db.series.filter(s => s.active && s.weekday === wd
+    && (!s.from || dateIso >= s.from) && (!s.to || dateIso <= s.to)
+    && s.skipDates.indexOf(dateIso) === -1);
+}
+
+// Всё, что занимает корты в этот день: брони, занятия постоянных
+// клиентов и закрытия. Постоянные разворачиваются на лету — в базе
+// лежит правило, а не тысяча записей.
+function dayBlocks(dateIso) {
+  const items = (db.bookings[dateIso] || []).filter(b => b.status !== 'cancelled');
+  const out = items.map(b => Object.assign({ kind: b.status === 'pending' ? 'pending' : (b.seriesId ? 'series' : b.status), booking: b }, b));
+
+  const materialized = items.filter(b => b.seriesId).map(b => b.seriesId);
+  seriesOn(dateIso).forEach(s => {
+    if (materialized.indexOf(s.id) !== -1) return;
+    const cl = clientById(s.clientId);
+    out.push({
+      kind: 'series', seriesId: s.id, courtId: s.courtId, start: s.start, end: s.end,
+      clientName: s.title, clientPhone: cl ? cl.phone : '', clientId: s.clientId,
+      price: Math.round((timeToMinutes(s.end) - timeToMinutes(s.start)) / 60 * db.config.pricePerHour),
+      status: 'confirmed', series: s, date: dateIso,
+    });
+  });
+
+  db.exceptions.filter(x => x.date === dateIso).forEach(x => {
+    (x.courtId == null ? db.courts.map(c => c.id) : [x.courtId]).forEach(courtId => {
+      out.push({ kind: 'closed', courtId, start: x.start, end: x.end, clientName: x.reason, exception: x, date: dateIso });
+    });
+  });
+
+  return out.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+}
+
+function pendingBookings() {
+  const out = [];
+  Object.keys(db.bookings).forEach(date => {
+    db.bookings[date].forEach(b => { if (b.status === 'pending') out.push(b); });
+  });
+  return out.sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+}
+function pendingClients() { return db.clients.filter(c => c.status === 'pending'); }
+function requestCount() { return pendingBookings().length + pendingClients().length; }
+
+// ============================================================
+// Каркас
+// ============================================================
+
+const state = { tab: 'day', date: todayIso(), clientQuery: '' };
+
+// Статистики пока нет: она считается по месячным итогам, которых сервер
+// ещё не собирает. Показывать цифры, посчитанные по одному загруженному
+// дню, — хуже, чем не показывать их вовсе.
+const TABS = [
+  { id: 'day', label: 'День' },
+  { id: 'requests', label: 'Заявки' },
+  { id: 'clients', label: 'Клиенты' },
+  { id: 'series', label: 'Постоянные' },
+  { id: 'settings', label: 'Настройки' },
+];
+
+function renderTabs() {
+  const wrap = document.getElementById('tabs');
+  wrap.innerHTML = '';
+  TABS.forEach(t => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (state.tab === t.id ? ' on' : '');
+    b.textContent = t.label;
+    if (t.id === 'requests' && requestCount() > 0) {
+      const c = document.createElement('span');
+      c.className = 'cnt';
+      c.textContent = requestCount();
+      b.appendChild(c);
+    }
+    b.addEventListener('click', () => { state.tab = t.id; render(); });
+    wrap.appendChild(b);
+  });
+}
+
+// Наверх прокручиваем только при смене раздела. Внутри раздела render()
+// вызывается после каждого действия — подтвердил бронь, отметил неявку, —
+// и уезжающая страница делает работу администратора невыносимой:
+// он каждый раз заново ищет то место, где был.
+let lastTab = null;
+
+function render() {
+  const tabChanged = lastTab !== state.tab;
+  const y = window.scrollY;
+
+  renderTabs();
+  const view = document.getElementById('view');
+  view.innerHTML = '';
+  ({ day: renderDay, requests: renderRequests, clients: renderClients,
+     series: renderSeries, settings: renderSettings }[state.tab])(view);
+
+  lastTab = state.tab;
+  window.scrollTo({ top: tabChanged ? 0 : y });
+}
+
+// ============================================================
+// Вкладка: День
+// ============================================================
+
+function renderDay(view) {
+  const date = state.date;
+
+  const nav = el('div', 'daynav');
+  nav.appendChild(btn('‹', 'nav-btn', () => { state.date = addDays(date, -1); render(); }));
+  nav.appendChild(btn('›', 'nav-btn', () => { state.date = addDays(date, 1); render(); }));
+  const d = el('div', 'date'); d.textContent = longDate(date); nav.appendChild(d);
+  if (date !== todayIso()) nav.appendChild(btn('Сегодня', 'btn sec sm', () => { state.date = todayIso(); render(); }));
+  view.appendChild(nav);
+
+  const blocks = dayBlocks(date);
+  const sold = blocks.filter(b => b.kind !== 'closed')
+    .reduce((s, b) => s + (timeToMinutes(b.end) - timeToMinutes(b.start)), 0);
+  // Выручка дня — вместе с прокатом: это те же деньги в той же кассе.
+  const revenue = blocks.filter(b => b.kind !== 'closed' && b.status !== 'noshow')
+    .reduce((s, b) => s + (b.price || 0) + (b.extrasTotal || 0), 0);
+  const capacity = db.courts.length * (timeToMinutes(db.config.closeTime) - timeToMinutes(db.config.openTime));
+
+  const stat = el('div', 'daystat');
+  stat.innerHTML = 'Занято <b>' + hoursText(sold) + '</b> из ' + hoursText(capacity)
+    + ' &nbsp;·&nbsp; Загрузка <b>' + Math.round(sold / capacity * 100) + '%</b>'
+    + ' &nbsp;·&nbsp; На сумму <b>' + money(revenue) + '</b>';
+  view.appendChild(stat);
+
+  const card = el('div', 'card');
+  card.style.padding = '0';
+  card.style.overflow = 'hidden';
+  card.appendChild(buildDayGrid(date, blocks));
+  view.appendChild(card);
+
+  const hint = el('div', 'empty');
+  hint.textContent = 'Нажмите на свободную клетку, чтобы записать клиента, или на бронь — чтобы изменить её.';
+  view.appendChild(hint);
+}
+
+function buildDayGrid(date, blocks) {
+  const cfg = db.config;
+  const step = cfg.slotStep;
+  const open = timeToMinutes(cfg.openTime);
+  const close = timeToMinutes(cfg.closeTime);
+  const rows = (close - open) / step;
+
+  const grid = el('div', 'grid');
+  grid.style.gridTemplateColumns = '58px repeat(' + db.courts.length + ', minmax(0, 1fr))';
+  grid.style.gridTemplateRows = 'auto repeat(' + rows + ', 32px)';
+
+  const corner = el('div', 'g-head'); corner.style.gridArea = '1 / 1'; grid.appendChild(corner);
+  db.courts.forEach((c, i) => {
+    const h = el('div', 'g-head');
+    h.style.gridArea = '1 / ' + (i + 2);
+    h.textContent = c.name;
+    grid.appendChild(h);
+  });
+
+  for (let r = 0; r < rows; r++) {
+    const min = open + r * step;
+    const t = el('div', 'g-time' + (min % 60 === 0 ? ' hour' : ''));
+    t.style.gridArea = (r + 2) + ' / 1';
+    t.textContent = min % 60 === 0 ? minutesToTime(min) : '';
+    grid.appendChild(t);
+  }
+
+  // Занятые клетки помечаем, чтобы не рисовать под блоками кликабельный фон
+  const taken = {};
+  db.courts.forEach(c => { taken[c.id] = new Array(rows).fill(false); });
+
+  blocks.forEach(b => {
+    const from = Math.max(0, (timeToMinutes(b.start) - open) / step);
+    const to = Math.min(rows, (timeToMinutes(b.end) - open) / step);
+    const colIdx = db.courts.findIndex(c => c.id === b.courtId);
+    if (colIdx === -1 || to <= from) return;
+    for (let r = from; r < to; r++) taken[b.courtId][r] = true;
+
+    const div = el('div', 'blk ' + b.kind);
+    div.style.gridArea = (from + 2) + ' / ' + (colIdx + 2) + ' / span ' + (to - from);
+    const label = b.kind === 'closed' ? '🔒 ' : (b.kind === 'series' ? '↻ ' : (b.kind === 'pending' ? '⏳ ' : ''));
+    div.innerHTML = '<div class="b-t">' + escapeHtml(b.start + '–' + b.end) + '</div>'
+      + '<div class="b-n">' + label + escapeHtml(b.clientName) + (b.groupId ? ' ⇄' : '') + '</div>';
+    div.addEventListener('click', () => openBlock(b));
+    grid.appendChild(div);
+  });
+
+  db.courts.forEach((c, colIdx) => {
+    for (let r = 0; r < rows; r++) {
+      if (taken[c.id][r]) continue;
+      const min = open + r * step;
+      const past = isPast(date, minutesToTime(min));
+      const cell = el('div', 'g-free' + (past ? ' past' : ''));
+      cell.style.gridArea = (r + 2) + ' / ' + (colIdx + 2);
+      if (!past) cell.addEventListener('click', () => openNewBooking(date, c.id, minutesToTime(min)));
+      grid.appendChild(cell);
+    }
+  });
+
+  return grid;
+}
+
+// ============================================================
+// Карточки: бронь и новая запись
+// ============================================================
+
+function openBlock(b) {
+  if (b.kind === 'closed') return openException(b.exception);
+  if (b.kind === 'series' && !b.booking) return openSeriesOccurrence(b);
+  openBooking(b.booking || b);
+}
+
+function openBooking(b) {
+  const finished = isPast(b.date, b.end);
+  const body = el('div');
+  body.innerHTML = '<h3>' + escapeHtml(b.start + '–' + b.end) + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(courtName(b.courtId) + ' · ' + longDate(b.date)) + '</div>';
+
+  // Итог с прокатом, а не только цена корта: администратор называет
+  // сумму на стойке, и складывать её в уме он не должен.
+  const extras = Array.isArray(b.extras) ? b.extras : [];
+  const total = (b.price || 0) + (b.extrasTotal || 0);
+
+  const info = el('div', 'item');
+  info.innerHTML = '<div class="t1">' + escapeHtml(b.clientName) + '</div>'
+    + '<div class="t2">' + escapeHtml(fmtPhone(b.clientPhone)) + ' · <b>' + money(total) + '</b>'
+    + (extras.length ? ' <span class="pill grey">корт ' + money(b.price) + '</span>' : '')
+    + ' · ' + statusPill(b.status)
+    + (b.groupId ? ' <span class="pill grey">с переходом</span>' : '')
+    + (b.prepayRequired ? ' <span class="pill bad">предоплата</span>' : '') + '</div>'
+    + (extras.length ? '<div class="t2">🎾 ' + escapeHtml(extras.map(x => x.name + ' ×' + x.qty).join(', '))
+      + ' · ' + money(b.extrasTotal) + '</div>' : '');
+  body.appendChild(info);
+
+  if (b.groupId) {
+    const mates = groupMates(b);
+    const n = el('div', 'empty');
+    n.textContent = 'Бронь собрана из двух кортов: ' + mates.map(m => courtName(m.courtId) + ' ' + m.start + '–' + m.end).join(', ')
+      + '. Отмена снимает обе части.';
+    body.appendChild(n);
+  }
+
+  // Поле служит причиной отказа или отмены — она уходит на сервер вместе
+  // с действием и остаётся в записи для разбора спорных ситуаций.
+  const note = el('label', 'field');
+  note.innerHTML = '<span>Причина отмены или отказа</span>';
+  const ta = document.createElement('textarea');
+  ta.rows = 2; ta.value = '';
+  ta.placeholder = b.comment ? ('комментарий к брони: ' + b.comment) : 'необязательно';
+  note.appendChild(ta);
+  body.appendChild(note);
+
+  // Рейтинг клиента — то, ради чего админ и открывает бронь перед
+  // звонком: видно не только «2,5», но и из чего оно сложилось.
+  if (b.client) {
+    const r = el('div', 'empty');
+    const parts = [];
+    if (b.client.noShowCount) parts.push('неявок ' + b.client.noShowCount);
+    if (b.client.lateCancelCount) parts.push('поздних отмен ' + b.client.lateCancelCount);
+    if (b.client.completedCount) parts.push('сыграно ' + b.client.completedCount);
+    r.textContent = 'Рейтинг ' + String(b.client.rating).replace('.', ',')
+      + (parts.length ? ' · ' + parts.join(', ') : '')
+      + (b.client.needsPrepay ? ' · нужна предоплата' : '');
+    body.appendChild(r);
+  }
+  if (b.clientNote) {
+    const n = el('div', 'empty');
+    n.textContent = 'Заметка: ' + b.clientNote;
+    body.appendChild(n);
+  }
+  if (b.expired) {
+    const n = el('div', 'empty');
+    n.textContent = 'Заявка просрочена — корт уже вернулся в общий доступ. Подтвердить нельзя.';
+    body.appendChild(n);
+  }
+
+  const acts = el('div', 'm-acts');
+
+  if (b.status === 'pending') {
+    if (!b.expired) {
+      acts.appendChild(btn('Подтвердить', 'btn', () => {
+        closeModal();
+        act(() => api('adminApproveBooking', { date: b.date, bookingId: b.id }), 'Бронь подтверждена');
+      }));
+    }
+    acts.appendChild(btn('Отклонить', 'btn danger', () => {
+      closeModal();
+      act(() => api('adminRejectBooking', { date: b.date, bookingId: b.id, reason: ta.value }), 'Заявка отклонена');
+    }));
+  } else if (finished) {
+    // Отметку можно переставить, а не только поставить: администратор
+    // жмёт эти кнопки на бегу, промахнуться легко. Возврат рейтинга при
+    // перестановке считает сервер — здесь только две кнопки.
+    const marked = b.status === 'noshow';
+    acts.appendChild(btn(marked ? 'Всё-таки пришли' : 'Пришли',
+      'btn' + (marked ? ' sec' : ''), () => {
+        closeModal();
+        if (!marked) { toast('Бронь и так считается состоявшейся'); return; }
+        act(() => api('adminUndoNoShow', { date: b.date, bookingId: b.id }), 'Отметка снята, рейтинг возвращён');
+      }));
+    acts.appendChild(btn(marked ? '✓ Не пришли' : 'Не пришли',
+      'btn' + (marked ? ' danger' : ' sec'), () => {
+        closeModal();
+        if (marked) return;
+        act(() => api('adminMarkNoShow', { date: b.date, bookingId: b.id }), 'Отмечена неявка, рейтинг снижен');
+      }));
+  } else {
+    acts.appendChild(btn('Перенести', 'btn sec', () => openMove(b)));
+    acts.appendChild(btn('Отменить бронь', 'btn danger', () => {
+      closeModal();
+      act(() => api('adminCancelBooking', { date: b.date, bookingId: b.id, reason: ta.value }), 'Бронь отменена');
+    }));
+  }
+
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
+function groupMates(b) {
+  return (db.bookings[b.date] || []).filter(x => x.groupId && x.groupId === b.groupId);
+}
+
+function openMove(b) {
+  const body = el('div');
+  body.innerHTML = '<h3>Перенести бронь</h3><div class="m-sub">' + escapeHtml(b.clientName) + '</div>';
+
+  const wrap = el('div', 'grid2');
+  const fCourt = el('label', 'field'); fCourt.innerHTML = '<span>Корт</span>';
+  const selCourt = document.createElement('select');
+  db.courts.forEach(c => selCourt.appendChild(opt(c.id, c.name)));
+  selCourt.value = b.courtId; fCourt.appendChild(selCourt);
+
+  const fTime = el('label', 'field'); fTime.innerHTML = '<span>Начало</span>';
+  const selTime = document.createElement('select');
+  startTimes().forEach(t => selTime.appendChild(opt(t, t)));
+  selTime.value = b.start; fTime.appendChild(selTime);
+
+  wrap.appendChild(fCourt); wrap.appendChild(fTime);
+  body.appendChild(wrap);
+
+  // Переноса на другую дату нет: это запись в два файла сразу, а
+  // атомарной такая пара быть не может. Для другой даты — отменить
+  // и записать заново.
+  const hint = el('div', 'empty');
+  hint.textContent = 'Перенос внутри дня. Длительность сохраняется, цена пересчитывается. '
+    + 'На другую дату — отмените и запишите заново.';
+  body.appendChild(hint);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Перенести', 'btn', () => {
+    const newStart = selTime.value;
+    closeModal();
+    act(() => api('adminMoveBooking', {
+      date: b.date, bookingId: b.id, start: newStart,
+      courtId: Number(selCourt.value), exactCourt: true,
+    }), 'Перенесено');
+  }));
+  acts.appendChild(btn('Назад', 'btn sec', () => openBooking(b)));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
+function openNewBooking(date, courtId, start) {
+  const body = el('div');
+  body.innerHTML = '<h3>Записать на корт</h3><div class="m-sub">'
+    + escapeHtml(courtName(courtId) + ' · ' + longDate(date) + ' · с ' + start) + '</div>';
+
+  const fDur = el('label', 'field'); fDur.innerHTML = '<span>Длительность</span>';
+  const selDur = document.createElement('select');
+  [60, 90, 120, 150, 180, 240].forEach(m => selDur.appendChild(opt(m, hoursText(m))));
+  fDur.appendChild(selDur); body.appendChild(fDur);
+
+  const fWho = el('label', 'field'); fWho.innerHTML = '<span>Клиент</span>';
+  const selWho = document.createElement('select');
+  selWho.appendChild(opt('', '— записать с улицы —'));
+  db.clients.filter(c => c.status !== 'blocked')
+    .slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    .forEach(c => selWho.appendChild(opt(c.id, c.name + ' · ' + fmtPhone(c.phone))));
+  fWho.appendChild(selWho); body.appendChild(fWho);
+
+  const guest = el('div');
+  const fName = el('label', 'field'); fName.innerHTML = '<span>Имя</span>';
+  const inpName = document.createElement('input'); inpName.placeholder = 'Как записать';
+  fName.appendChild(inpName);
+  const fPhone = el('label', 'field'); fPhone.innerHTML = '<span>Телефон</span>';
+  const inpPhone = document.createElement('input');
+  attachPhoneMask(inpPhone);
+  fPhone.appendChild(inpPhone);
+  guest.appendChild(fName); guest.appendChild(fPhone);
+  body.appendChild(guest);
+
+  selWho.addEventListener('change', () => { guest.hidden = !!selWho.value; });
+
+  const price = el('div', 'empty');
+  const updPrice = () => { price.textContent = 'К оплате: ' + money(Number(selDur.value) / 60 * db.config.pricePerHour); };
+  selDur.addEventListener('change', updPrice); updPrice();
+  body.appendChild(price);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Записать', 'btn', () => {
+    const dur = Number(selDur.value);
+    const end = minutesToTime(timeToMinutes(start) + dur);
+    if (timeToMinutes(end) > timeToMinutes(db.config.closeTime)) return toast('Не помещается до закрытия');
+    if (!selWho.value && !inpName.value.trim()) return toast('Укажите имя или выберите клиента');
+
+    // Занятость корта проверяет сервер ещё раз, уже на свежих данных:
+    // между открытием окна и нажатием кнопки время могли занять.
+    closeModal();
+    act(() => api('adminCreateBooking', {
+      date, start, durationMinutes: dur, courtId, exactCourt: true,
+      clientId: selWho.value || undefined,
+      clientName: selWho.value ? undefined : inpName.value.trim(),
+      clientPhone: selWho.value ? undefined : inpPhone.value.trim(),
+    }), 'Записано');
+  }));
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
+function conflicts(date, courtId, start, end, exceptId) {
+  return dayBlocks(date).some(b => {
+    if (b.courtId !== courtId) return false;
+    if (exceptId && b.booking && b.booking.id === exceptId) return false;
+    return timeToMinutes(start) < timeToMinutes(b.end) && timeToMinutes(b.start) < timeToMinutes(end);
+  });
+}
+
+function startTimes() {
+  const out = [];
+  for (let m = timeToMinutes(db.config.openTime); m < timeToMinutes(db.config.closeTime); m += db.config.slotStep) {
+    out.push(minutesToTime(m));
+  }
+  return out;
+}
+
+function openSeriesOccurrence(b) {
+  const s = b.series;
+  const body = el('div');
+  body.innerHTML = '<h3>' + escapeHtml(b.start + '–' + b.end) + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(courtName(b.courtId) + ' · ' + longDate(b.date)) + '</div>';
+
+  const info = el('div', 'item');
+  info.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title) + '</div>'
+    + '<div class="t2">Постоянная бронь, каждый ' + WD_FULL[s.weekday] + '. ' + escapeHtml(fmtPhone((clientById(s.clientId) || {}).phone || '')) + '</div>';
+  body.appendChild(info);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Снять это занятие', 'btn danger', () => {
+    s.skipDates.push(b.date);
+    closeModal();
+    // Освободившийся постоянный слот — главный повод для автопоста:
+    // это время обычно недоступно, и в чате его ждут.
+    toast('Занятие снято, в чат клуба ушло сообщение о свободном времени');
+    render();
+  }));
+  acts.appendChild(btn('Записать вместо них', 'btn sec', () => {
+    s.skipDates.push(b.date);
+    closeModal();
+    openNewBooking(b.date, b.courtId, b.start);
+  }));
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+function openException(x) {
+  const body = el('div');
+  body.innerHTML = '<h3>Корт закрыт</h3><div class="m-sub">'
+    + escapeHtml(x.start + '–' + x.end + ' · ' + longDate(x.date)) + '</div>'
+    + '<div class="item"><div class="t1">' + escapeHtml(x.reason) + '</div></div>';
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Снять закрытие', 'btn danger', () => {
+    db.exceptions = db.exceptions.filter(e => e.id !== x.id);
+    closeModal(); toast('Корт снова доступен'); render();
+  }));
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// ============================================================
+// Вкладка: Заявки
+// ============================================================
+
+function renderRequests(view) {
+  const bookings = pendingBookings();
+  const clients = pendingClients();
+
+  const c1 = el('div', 'card');
+  c1.innerHTML = '<h2>Брони на подтверждение <span class="sub">от '
+    + hoursText(db.config.approvalFromMinutes) + ' и длиннее</span></h2>';
+  if (!bookings.length) c1.appendChild(txt('div', 'empty', 'Ничего не ждёт решения.'));
+  bookings.forEach(b => {
+    const it = el('div', 'item hl');
+    it.innerHTML = '<div class="t1">' + escapeHtml(b.clientName) + ' · ' + escapeHtml(b.start + '–' + b.end) + '</div>'
+      + '<div class="t2">' + escapeHtml(courtName(b.courtId) + ' · ' + longDate(b.date)) + ' · '
+      + hoursText(timeToMinutes(b.end) - timeToMinutes(b.start)) + ' · ' + money(b.price)
+      + ' · ' + escapeHtml(fmtPhone(b.clientPhone)) + '</div>';
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Подтвердить', 'btn sm', () => {
+      b.status = 'confirmed'; toast('Подтверждено, клиенту ушло уведомление'); render();
+    }));
+    acts.appendChild(btn('Отклонить', 'btn sm danger', () => {
+      cancelBooking(b, 'админ отклонил'); toast('Отклонено'); render();
+    }));
+    acts.appendChild(btn('Открыть день', 'btn sm sec', () => {
+      state.date = b.date; state.tab = 'day'; render();
+    }));
+    it.appendChild(acts);
+    c1.appendChild(it);
+  });
+  view.appendChild(c1);
+
+  const c2 = el('div', 'card');
+  c2.innerHTML = '<h2>Новые клиенты <span class="sub">подтвердите, если знаете человека</span></h2>';
+  if (!clients.length) c2.appendChild(txt('div', 'empty', 'Новых заявок нет.'));
+  clients.forEach(cl => {
+    const it = el('div', 'item hl');
+    it.innerHTML = '<div class="t1">' + escapeHtml(cl.name) + '</div>'
+      + '<div class="t2">' + escapeHtml(fmtPhone(cl.phone)) + ' · '
+      + (cl.tg ? 'телефон подтверждён Telegram' : '<b>без Telegram</b> — напоминания не дойдут') + '</div>';
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Подтвердить', 'btn sm', () => {
+      cl.status = 'verified'; toast('Клиент может бронировать'); render();
+    }));
+    acts.appendChild(btn('Отклонить', 'btn sm danger', () => {
+      cl.status = 'blocked'; toast('Заявка отклонена'); render();
+    }));
+    it.appendChild(acts);
+    c2.appendChild(it);
+  });
+  view.appendChild(c2);
+
+  const c3 = el('div', 'card');
+  c3.innerHTML = '<h2>Как это приходит в Telegram <span class="sub">то же самое, не открывая панель</span></h2>';
+  const tg = el('div', 'tg');
+  tg.appendChild(tgMsg('🎾 Новая бронь — нужно подтверждение\n\nКорт 1 · 15 августа, суббота\n14:00–18:00 (4 ч) · 7 200 ₽\n\n👤 Сергей Демидов\n📞 +7 918 445-21-09\n\nДольше 3 часов — решаете вы.'));
+  tg.appendChild(tgBtns(['✅ Подтвердить', '❌ Отклонить']));
+  tg.appendChild(tgMsg('👤 Новый клиент\n\nИрина Соколова\n📞 +7 918 332-14-77\nТелефон подтверждён Telegram'));
+  tg.appendChild(tgBtns(['✅ Подтвердить', '❌ Отклонить']));
+  c3.appendChild(tg);
+  c3.appendChild(txt('div', 'empty',
+    'Кнопки под уведомлением делают ровно то же, что кнопки выше. Администратор может вести клуб, не заходя на сайт.'));
+  view.appendChild(c3);
+}
+
+function tgMsg(text) { const d = el('div', 'tg-msg'); d.textContent = text; return d; }
+function tgBtns(labels) {
+  const d = el('div', 'tg-btns');
+  labels.forEach(l => { const b = el('button', 'tg-btn'); b.type = 'button'; b.textContent = l; d.appendChild(b); });
+  const wrap = el('div'); wrap.appendChild(d); wrap.style.marginBottom = '14px';
+  return wrap;
+}
+
+// ============================================================
+// Вкладка: Клиенты
+// ============================================================
+
+function renderClients(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Клиенты <span class="sub">' + db.clients.length
+    + (state.clientQuery ? ' по запросу' : ' человек') + '</span></h2>';
+
+  const search = document.createElement('input');
+  search.placeholder = 'Поиск по имени или телефону';
+  search.value = state.clientQuery;
+  search.style.cssText = 'width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:10px';
+  // Ищет сервер: список клиентов целиком в браузер не тянем, а ждать
+  // ответа на каждую букву незачем — отправляем, когда человек замолчал.
+  let searchTimer = null;
+  search.addEventListener('input', () => {
+    state.clientQuery = search.value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { reload().then(() => {
+      const again = document.querySelector('#view input');
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+    }); }, 350);
+  });
+  card.appendChild(search);
+
+  const list = el('div');
+  card.appendChild(list);
+  view.appendChild(card);
+
+  if (!db.clients.length) {
+    list.appendChild(txt('div', 'empty', 'Никого не нашлось.'));
+    return;
+  }
+
+  db.clients.forEach(c => {
+    const it = el('div', 'item');
+    const flags = [];
+    flags.push(c.status === 'verified' ? '<span class="pill ok">проверенный</span>'
+      : c.status === 'pending' ? '<span class="pill wait">ждёт проверки</span>'
+      : '<span class="pill bad">заблокирован</span>');
+    if (c.role === 'admin' || c.role === 'owner') {
+      flags.push('<span class="pill grey">' + (c.role === 'owner' ? 'владелец' : 'администратор') + '</span>');
+    }
+    if (!c.tg) flags.push('<span class="pill grey">без Telegram</span>');
+    if (c.needsPrepay) flags.push('<span class="pill bad">только предоплата</span>');
+
+    const counters = [];
+    if (c.noShowCount) counters.push('неявок ' + c.noShowCount);
+    if (c.lateCancelCount) counters.push('поздних отмен ' + c.lateCancelCount);
+    counters.push('сыграно ' + c.completedCount);
+
+    it.innerHTML = '<div class="t1">' + escapeHtml(c.name) + ' ' + flags.join(' ') + '</div>'
+      + '<div class="t2">' + escapeHtml(fmtPhone(c.phone))
+      + ' · рейтинг <b>' + String(c.rating).replace('.', ',') + '</b>'
+      + ' · ' + counters.join(' · ') + '</div>';
+
+    const note = document.createElement('textarea');
+    note.rows = 2; note.value = c.notes; note.placeholder = 'Заметка для себя';
+    note.style.cssText = 'width:100%;margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:8px';
+    note.addEventListener('change', () => {
+      act(() => api('setClientNote', { clientId: c.id, note: note.value }), 'Заметка сохранена');
+    });
+    it.appendChild(note);
+
+    const acts = el('div', 'acts');
+    if (c.status === 'pending') {
+      acts.appendChild(btn('Подтвердить', 'btn sm', () =>
+        act(() => api('verifyClient', { clientId: c.id }), 'Клиент подтверждён')));
+    }
+    if (c.status === 'blocked') {
+      acts.appendChild(btn('Разблокировать', 'btn sm sec', () =>
+        act(() => api('unblockClient', { clientId: c.id }), 'Разблокирован')));
+    } else {
+      acts.appendChild(btn('Заблокировать', 'btn sm danger', () =>
+        act(() => api('blockClient', { clientId: c.id }), 'Заблокирован')));
+    }
+    // Пароль клиенту сбрасывает любой администратор — это ежедневная
+    // работа. Сотруднику пароль меняет только владелец, поэтому у таких
+    // карточек кнопки нет: сервер всё равно откажет.
+    if (c.role === 'client' || (me && me.role === 'owner')) {
+      acts.appendChild(btn('Сбросить пароль', 'btn sm sec', () => resetPassword(c)));
+    }
+    it.appendChild(acts);
+
+    list.appendChild(it);
+  });
+}
+
+// Временный пароль показываем один раз и крупно: админ диктует его или
+// отправляет клиенту, второй раз этот пароль не узнать.
+async function resetPassword(c) {
+  try {
+    const res = await api('resetPassword', { clientId: c.id });
+    const body = el('div');
+    body.innerHTML = '<h3>Временный пароль</h3>'
+      + '<div class="m-sub">' + escapeHtml(c.name + ' · ' + fmtPhone(res.phone)) + '</div>'
+      + '<div class="item" style="text-align:center;font-size:22px;letter-spacing:1px">'
+      + '<b>' + escapeHtml(res.temporaryPassword) + '</b></div>'
+      + '<div class="empty">Действует ' + res.validHours + ' ч. При первом входе клиент задаст свой пароль. '
+      + 'Все прежние входы отключены.</div>';
+    const acts = el('div', 'm-acts');
+    acts.appendChild(btn('Скопировать', 'btn sec', () => {
+      navigator.clipboard.writeText(res.temporaryPassword)
+        .then(() => toast('Скопировано')).catch(() => toast('Не удалось скопировать'));
+    }));
+    acts.appendChild(btn('Готово', 'btn', closeModal));
+    body.appendChild(acts);
+    showModal(body);
+  } catch (e) {
+    toast(errorText(e.code), 4000);
+  }
+}
+
+// ============================================================
+// Вкладка: Постоянные брони
+// ============================================================
+
+function renderSeries(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Постоянные брони <span class="sub">повторяются каждую неделю</span></h2>';
+
+  if (!db.series.length) card.appendChild(txt('div', 'empty', 'Постоянных броней нет.'));
+
+  db.series.forEach(s => {
+    const cl = clientById(s.clientId);
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(s.title)
+      + (s.active ? '' : ' <span class="pill grey">завершена</span>') + '</div>'
+      + '<div class="t2">Каждый ' + WD_FULL[s.weekday] + ', ' + escapeHtml(s.start + '–' + s.end)
+      + ' · ' + escapeHtml(courtName(s.courtId))
+      + ' · с ' + shortDate(s.from) + (s.to ? ' по ' + shortDate(s.to) : ', бессрочно')
+      + (cl ? ' · ' + escapeHtml(fmtPhone(cl.phone)) : '') + '</div>';
+
+    const upcoming = nextOccurrences(s, 3);
+    if (upcoming.length) {
+      it.appendChild(txt('div', 't2', 'Ближайшие: ' + upcoming.map(shortDate).join(', ')));
+    }
+    if ((s.skipDates || []).length) {
+      it.appendChild(txt('div', 't2', 'Снятые занятия: ' + s.skipDates.slice(-4).map(shortDate).join(', ')));
+    }
+
+    card.appendChild(it);
+  });
+
+  view.appendChild(card);
+
+  // Правки серий пока нет на сервере. Кнопки, которые меняли бы только
+  // картинку в браузере, здесь опаснее их отсутствия: администратор
+  // «снял занятие», а корт остался занятым для клиентов.
+  const note = el('div', 'card');
+  note.innerHTML = '<h2>Редактирование ещё не подключено</h2>'
+    + '<div class="empty">Пока постоянные брони заводятся на сервере. Экран показывает их так, '
+    + 'как их видит система при расчёте занятости — чтобы было с чем сверяться.<br><br>'
+    + 'Когда подключим: снятие одного занятия одной кнопкой, и время сразу уходит в лист ожидания, '
+    + 'а затем в чат клуба. Постоянные слоты обычно недоступны, поэтому именно такие сообщения '
+    + 'читают внимательнее всего.</div>';
+  view.appendChild(note);
+}
+
+function nextOccurrences(s, n) {
+  const out = [];
+  for (let i = 0; i < 60 && out.length < n; i++) {
+    const date = addDays(todayIso(), i);
+    if (!s.active) break;
+    if (s.from && date < s.from) continue;
+    if (s.to && date > s.to) break;
+    if (weekday(date) !== s.weekday) continue;
+    if (s.skipDates.indexOf(date) !== -1) continue;
+    out.push(date);
+  }
+  return out;
+}
+
+
+
+// ============================================================
+// Вкладка: Настройки
+// ============================================================
+
+// Настройки пока только показываются. Ручки для правки config.json на
+// сервере ещё нет, а форма, которая делает вид, что сохраняет, хуже
+// отсутствия формы: человек меняет цену, уходит довольным, и узнаёт
+// правду через неделю по выручке.
+function renderSettings(view) {
+  const cfg = db.config;
+
+  const c0 = el('div', 'card');
+  c0.innerHTML = '<h2>Правка настроек ещё не подключена</h2>'
+    + '<div class="empty">Пока значения меняются в файле настроек на сервере. '
+    + 'Форма появится здесь же — вместе со статистикой и скидочными часами.</div>';
+  view.appendChild(c0);
+
+  const rows = [
+    ['Цена за час', money(cfg.pricePerHour)],
+    ['Часы работы', cfg.openTime + '–' + cfg.closeTime],
+    ['Шаг сетки', cfg.slotStep + ' мин'],
+    ['Минимальная бронь', hoursText(cfg.minBookingMinutes)],
+    ['Подтверждать брони от', hoursText(cfg.approvalFromMinutes)],
+    ['Бесплатная отмена не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
+    ['Активных броней на клиента', String(cfg.maxActiveBookingsPerClient)],
+    ['Запись открыта на', cfg.horizonDays + ' дн.'],
+    ['Брони с переходом между кортами', cfg.allowCourtSwitch ? 'разрешены' : 'запрещены'],
+    ['Уплотнять занятость кортов', cfg.packCourts ? 'да' : 'нет'],
+  ];
+
+  const c1 = el('div', 'card');
+  c1.innerHTML = '<h2>Как настроен клуб</h2>';
+  rows.forEach(([label, value]) => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(label) + '</div>'
+      + '<div class="t2">' + escapeHtml(value) + '</div>';
+    c1.appendChild(it);
+  });
+  view.appendChild(c1);
+
+  const c2 = el('div', 'card');
+  c2.innerHTML = '<h2>Закрытия кортов <span class="sub">ремонт, турниры, выходные</span></h2>';
+  if (!db.exceptions.length) c2.appendChild(txt('div', 'empty', 'Закрытий нет.'));
+  db.exceptions.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(x => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(x.reason || 'Закрыто') + '</div>'
+      + '<div class="t2">' + escapeHtml(longDate(x.date) + ' · ' + (x.start || cfg.openTime) + '–' + (x.end || cfg.closeTime)
+      + ' · ' + (x.courtId == null ? 'оба корта' : courtName(x.courtId))) + '</div>';
+    c2.appendChild(it);
+  });
+  c2.appendChild(txt('div', 'empty', 'Добавление и снятие закрытий подключим следом.'));
+  view.appendChild(c2);
+
+  const c3 = el('div', 'card');
+  c3.innerHTML = '<h2>Вы вошли как</h2>'
+    + '<div class="item"><div class="t1">' + escapeHtml(me ? me.name : '')
+    + '</div><div class="t2">' + escapeHtml(me ? fmtPhone(me.phone) : '')
+    + ' · ' + (me && me.role === 'owner' ? 'владелец' : 'администратор') + '</div></div>';
+  view.appendChild(c3);
+}
+
+function check(label, value, onChange, hint) {
+  const wrap = el('div', 'item');
+  const l = document.createElement('label');
+  l.style.cssText = 'display:flex;gap:9px;align-items:flex-start;cursor:pointer';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.checked = value; cb.style.marginTop = '3px';
+  cb.addEventListener('change', () => onChange(cb.checked));
+  const span = document.createElement('span');
+  span.innerHTML = '<b>' + escapeHtml(label) + '</b>' + (hint ? '<div class="t2">' + escapeHtml(hint) + '</div>' : '');
+  l.appendChild(cb); l.appendChild(span);
+  wrap.appendChild(l);
+  return wrap;
+}
+
+function numField(parent, label, value) {
+  const i = document.createElement('input'); i.type = 'number'; i.value = value;
+  wrapField(parent, label, i); return i;
+}
+function textField(parent, label, value) {
+  const i = document.createElement('input'); i.value = value;
+  wrapField(parent, label, i); return i;
+}
+function wrapField(parent, label, input) {
+  const f = el('label', 'field');
+  f.innerHTML = '<span>' + escapeHtml(label) + '</span>';
+  f.appendChild(input); parent.appendChild(f);
+}
+
+// ============================================================
+// Мелочи
+// ============================================================
+
+function el(tag, cls) { const d = document.createElement(tag); if (cls) d.className = cls; return d; }
+function txt(tag, cls, text) { const d = el(tag, cls); d.textContent = text; return d; }
+function btn(label, cls, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = cls; b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+function opt(value, label) {
+  const o = document.createElement('option'); o.value = value; o.textContent = label; return o;
+}
+function courtName(id) { const c = db.courts.find(x => x.id === id); return c ? c.name : 'Корт'; }
+function statusPill(s) {
+  const map = {
+    confirmed: '<span class="pill ok">подтверждена</span>',
+    pending: '<span class="pill wait">ждёт подтверждения</span>',
+    done: '<span class="pill grey">состоялась</span>',
+    noshow: '<span class="pill bad">не пришли</span>',
+    cancelled: '<span class="pill grey">отменена</span>',
+  };
+  return map[s] || '';
+}
+
+function showModal(node) {
+  const m = document.getElementById('modal');
+  m.innerHTML = ''; m.appendChild(node);
+  document.getElementById('backdrop').classList.add('show');
+}
+function closeModal() { document.getElementById('backdrop').classList.remove('show'); }
+document.getElementById('backdrop').addEventListener('click', (e) => {
+  if (e.target.id === 'backdrop') closeModal();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+let toastTimer = null;
+function toast(text, ms) {
+  const t = document.getElementById('toast');
+  t.textContent = text; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600);
+}
+
+// ---------- Запуск ----------
+
+document.getElementById('loginBtn').addEventListener('click', doLogin);
+document.getElementById('loginPass').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doLogin();
+});
+attachPhoneMask(document.getElementById('loginPhone'));
+
+document.getElementById('reloadBtn').addEventListener('click', () => {
+  reload().then(() => toast('Обновлено')).catch(() => toast('Не удалось обновить'));
+});
+document.getElementById('logoutBtn').addEventListener('click', logout);
+
+// Сохранённый токен избавляет от входа на каждое открытие панели. Если
+// он протух, сервер ответит 401 — тогда просто показываем вход.
+(async () => {
+  if (!token) { showLogin(); return; }
+  try {
+    const res = await api('me');
+    await enter(res.client);
+  } catch (e) {
+    setToken(null);
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2029 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Теннисный центр «Альфа» — бронирование кортов в Краснодаре</title>
+<meta name="description" content="Онлайн-бронирование кортов теннисного центра «Альфа», Краснодар. Два крытых корта, с 5:00 до 24:00 без выходных.">
+<style>
+/* Палитра снята с фотографий и логотипа клуба: синее покрытие корта,
+   зелёная зона за линиями, графитовый фасад, золото звёзд логотипа. */
+:root {
+  --ink: #22272C;
+  --ink-soft: #5F6B72;
+  --line: #DDE3E5;
+  --bg: #F2F4F5;
+  --surface: #FFFFFF;
+
+  --court: #3E6B7C;
+  --court-dk: #315568;
+  --court-tint: #E7EFF2;
+
+  --gold: #F3CF5B;
+  --gold-dk: #74590F;
+  --gold-tint: #FBF2D8;
+
+  --grass: #5C752F;
+  --danger: #B23B3B;
+  --danger-tint: #FBEDED;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(34,39,44,.06), 0 8px 24px rgba(34,39,44,.07);
+}
+
+* { box-sizing: border-box; }
+/* Любое правило вроде `display: flex` на элементе сильнее браузерного
+   `[hidden] { display: none }`, и скрытый блок остаётся на экране.
+   Закрываем это раз и навсегда для всей страницы. */
+[hidden] { display: none !important; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 104px;
+}
+a { color: var(--court-dk); }
+button { font: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------- Шапка ---------- */
+.hero { background: linear-gradient(160deg, #23272E 0%, #2E3238 100%); color: #fff; padding: 20px 16px 24px; }
+.hero-inner { max-width: 920px; margin: 0 auto; }
+.hero-top { display: flex; align-items: center; gap: 14px; }
+.logo { width: 56px; height: 56px; border-radius: 12px; background: #fff; padding: 4px; flex: 0 0 auto; }
+.logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.hero h1 { margin: 0; font-size: 21px; line-height: 1.2; letter-spacing: -.01em; }
+.hero .where { margin: 2px 0 0; font-size: 14px; color: rgba(255,255,255,.72); }
+.hero-top .grow { flex: 1; }
+
+/* Отдельной строкой на всю ширину: рядом с названием на телефоне фраза
+   рвалась посередине — «4,9 · 64 / оценки на / Яндекс.Картах». */
+.rating { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 14px; color: rgba(255,255,255,.85); margin-top: 12px; }
+.rating .star { color: var(--gold); }
+
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.fact {
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px; padding: 6px 12px; font-size: 14px;
+}
+.fact b { font-weight: 600; }
+.fact.gold { background: var(--gold); border-color: var(--gold); color: #3A2E06; }
+.hero a { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Чем клуб хорош — читают до выбора времени, а не после, поэтому это
+   в шапке, а не в подвале. */
+.about { margin: 14px 0 0; font-size: 14px; color: rgba(255,255,255,.72); line-height: 1.45; }
+.about .svc { display: block; margin-top: 4px; }
+
+.who {
+  appearance: none; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08);
+  color: #fff; border-radius: 999px; padding: 8px 15px; cursor: pointer; white-space: nowrap;
+}
+.who:hover { background: rgba(255,255,255,.16); }
+
+/* ---------- Навигация ---------- */
+.nav { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.nav-inner { max-width: 920px; margin: 0 auto; display: flex; gap: 2px; padding: 0 8px; overflow-x: auto; }
+.nav button {
+  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 13px 14px; cursor: pointer; color: var(--ink-soft); white-space: nowrap;
+}
+.nav button:hover { color: var(--ink); }
+.nav button.on { color: var(--court-dk); border-bottom-color: var(--court); font-weight: 600; }
+.nav .dot { background: var(--gold); color: #3A2E06; border-radius: 999px; font-size: 11px; padding: 1px 6px; margin-left: 5px; font-weight: 600; }
+
+main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 22px 4px 10px; text-transform: uppercase; letter-spacing: .05em; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
+.card h2 { margin: 0 0 10px; font-size: 16px; }
+
+.notice { margin: 14px 0 0; background: var(--gold-tint); border: 1px solid #EFE0B4; color: var(--gold-dk); border-radius: var(--radius); padding: 10px 14px; font-size: 14px; }
+.notice.info { background: var(--court-tint); border-color: #CBDDE4; color: var(--court-dk); }
+.empty { color: var(--ink-soft); font-size: 14px; padding: 4px 2px; }
+
+/* ---------- Кнопки ---------- */
+.btn { appearance: none; border: 0; border-radius: 10px; background: var(--court); color: #fff; font-weight: 600; padding: 11px 20px; cursor: pointer; }
+.btn:hover { background: var(--court-dk); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.sm { padding: 7px 13px; font-size: 14px; }
+.btn.sec { background: #EDF0F1; color: var(--ink); }
+.btn.sec:hover { background: #E2E7E9; }
+.btn.danger { background: var(--danger); }
+.btn.danger:hover { background: #96302F; }
+.btn.ghost { background: transparent; color: var(--ink-soft); font-weight: 400; padding: 11px 8px; }
+.btn.wide { width: 100%; }
+
+.field { display: block; margin-bottom: 12px; }
+.field span { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 5px; }
+.field input { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; background: #fff; }
+.field input:focus { outline: 2px solid var(--court-tint); border-color: var(--court); }
+
+.pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 12px; border: 1px solid var(--line); }
+.pill.ok { background: var(--court-tint); border-color: #CBDDE4; color: var(--court-dk); }
+.pill.wait { background: var(--gold-tint); border-color: #EFE0B4; color: var(--gold-dk); }
+.pill.bad { background: var(--danger-tint); border-color: #EEC9C9; color: var(--danger); }
+.pill.grey { background: #EFF2F3; color: var(--ink-soft); }
+
+/* ---------- Дни ---------- */
+.days { display: flex; gap: 8px; overflow-x: auto; padding: 4px 4px 10px; }
+.day { flex: 0 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 14px; cursor: pointer; text-align: center; min-width: 94px; }
+.day:hover { border-color: var(--court); }
+.day .d-label { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.day .d-free { font-size: 12px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap; }
+.day.active { background: var(--court); border-color: var(--court); color: #fff; }
+.day.active .d-free { color: rgba(255,255,255,.82); }
+
+/* ---------- Панель подбора ---------- */
+.picker { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
+.picker-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.picker-row .lab { font-size: 14px; color: var(--ink-soft); }
+.chips { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.chip { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 14px; cursor: pointer; }
+.chip:hover { border-color: var(--court); }
+.chip.on { background: var(--court); border-color: var(--court); color: #fff; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ink-soft); cursor: pointer; }
+
+/* Вариантов бывает три десятка — без ограничения высоты они отодвигают
+   сетку кортов далеко за пределы экрана телефона. */
+.opts { display: flex; flex-wrap: wrap; gap: 8px; max-height: 216px; overflow-y: auto; }
+.opt { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 12px; text-align: left; line-height: 1.25; cursor: pointer; }
+.opt:hover { border-color: var(--court); }
+.opt.on { border-color: var(--court); background: var(--court-tint); }
+.opt .o-time { display: block; font-weight: 600; font-size: 15px; }
+.opt .o-court { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap; }
+.opt.split .o-court { color: var(--gold-dk); }
+.opts-empty { font-size: 14px; color: var(--ink-soft); padding: 2px; }
+.picker-foot { margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--ink-soft); }
+.grid-hint { margin: 10px 4px 0; font-size: 13px; color: var(--ink-soft); }
+
+/* ---------- Сетка ---------- */
+.grid-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.grid { display: grid; }
+.g-head { position: sticky; top: 49px; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 6px; font-size: 14px; font-weight: 600; text-align: center; }
+.g-head.corner { z-index: 4; }
+.g-head .g-sub { display: block; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+.g-time { position: sticky; left: 0; z-index: 2; background: var(--surface); border-right: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); padding: 0 8px; display: flex; align-items: center; justify-content: flex-end; height: 34px; }
+.g-time.hour { color: var(--ink); font-weight: 600; }
+
+.cell { height: 34px; border-bottom: 1px solid #EEF1F2; border-right: 1px solid #EEF1F2; position: relative; }
+.cell.hour-line { border-top: 1px solid var(--line); }
+.cell.free { background: var(--surface); cursor: pointer; }
+.cell.free:hover { background: var(--court-tint); }
+.cell.busy { background: #E5E9EA; cursor: pointer; }
+.cell.busy:hover { background: #DCE1E3; }
+.cell.regular { background: repeating-linear-gradient(45deg, #E5E9EA 0 6px, #DBE1E2 6px 12px); cursor: pointer; }
+.cell.closed { background: repeating-linear-gradient(45deg, #D2D8DA 0 6px, #C7CED0 6px 12px); }
+.cell.past { background: #F7F8F9; }
+.cell.mine { background: var(--grass); }
+.cell.sel { background: var(--court); }
+.cell.sel:hover { background: var(--court-dk); }
+/* Белая черта в месте перехода на соседний корт: видно, что бронь одна,
+   но играть её придётся на двух кортах. */
+.cell.sel.seg-break, .cell.mine.seg-break { box-shadow: inset 0 3px 0 #fff; }
+.cell .tag { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #8B979C; pointer-events: none; white-space: nowrap; }
+.cell.mine .tag { color: #fff; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 4px 0; font-size: 13px; color: var(--ink-soft); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); display: inline-block; }
+.sw.free { background: #fff; }
+.sw.busy { background: #E5E9EA; }
+.sw.regular { background: repeating-linear-gradient(45deg, #E5E9EA 0 4px, #DBE1E2 4px 8px); }
+.sw.closed { background: repeating-linear-gradient(45deg, #D2D8DA 0 4px, #C7CED0 4px 8px); }
+.sw.mine { background: var(--grass); }
+
+/* ---------- Нижняя панель ---------- */
+.bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 24px rgba(34,39,44,.09); transform: translateY(110%); transition: transform .18s ease-out; }
+.bar.show { transform: none; }
+.bar-inner { max-width: 920px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.bar .info { flex: 1 1 210px; min-width: 0; }
+.bar .info .t1 { font-weight: 600; }
+.bar .info .t2 { font-size: 14px; color: var(--ink-soft); }
+.bar .info .switch-note { color: var(--gold-dk); }
+.bar .info .switch-note:empty { display: none; }
+
+/* ---------- Мои брони ---------- */
+.item { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+.item.past { opacity: .72; }
+.item .t1 { font-weight: 600; }
+.item .t2 { font-size: 14px; color: var(--ink-soft); margin-top: 2px; }
+.item .t3 { font-size: 13px; color: var(--gold-dk); margin-top: 4px; }
+.item .acts { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- Модальные окна ---------- */
+.backdrop { position: fixed; inset: 0; background: rgba(34,39,44,.5); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.backdrop.show { display: flex; }
+.modal { background: var(--surface); border-radius: 14px; max-width: 420px; width: 100%; max-height: 90vh; overflow: auto; padding: 20px; }
+.modal h3 { margin: 0 0 4px; font-size: 19px; }
+.modal .m-sub { color: var(--ink-soft); font-size: 14px; margin-bottom: 16px; }
+.modal .m-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.tabs2 { display: flex; gap: 6px; margin-bottom: 16px; }
+.tabs2 button { flex: 1; appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 9px; cursor: pointer; }
+.tabs2 button.on { background: var(--court); border-color: var(--court); color: #fff; font-weight: 600; }
+
+.summary { background: var(--court-tint); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+.summary .s-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; padding: 2px 0; }
+.summary .s-row.total { font-weight: 600; font-size: 16px; border-top: 1px solid #CBDDE4; margin-top: 6px; padding-top: 8px; }
+.rent { margin-bottom: 14px; }
+.rent-head { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+.rent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px; }
+.rent-row.on { border-color: var(--gold); background: var(--gold-tint); }
+.rent-name b { display: block; font-size: 14px; font-weight: 600; }
+.rent-name span { font-size: 12.5px; color: var(--ink-soft); }
+.stepper { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+/* Кнопки крупные не для красоты: по ним попадают пальцем на телефоне,
+   а промах здесь стоит лишней ракетки в счёте. */
+.stepper-b { width: 34px; height: 34px; border: 1px solid var(--line); background: #fff;
+  border-radius: 9px; font-size: 18px; line-height: 1; cursor: pointer; color: var(--ink); }
+.stepper-b:active { background: var(--court-tint); }
+.stepper-n { min-width: 22px; text-align: center; font-weight: 600; font-size: 15px; }
+.rent-note { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+
+.toast { position: fixed; left: 50%; bottom: 104px; transform: translateX(-50%) translateY(12px); background: var(--ink); color: #fff; font-size: 14px; padding: 11px 17px; border-radius: 10px; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 60; max-width: 90vw; text-align: center; }
+.toast.show { opacity: 1; transform: translateX(-50%); }
+
+.state { padding: 40px 10px; text-align: center; color: var(--ink-soft); }
+footer { max-width: 920px; margin: 26px auto 0; padding: 0 16px; color: var(--ink-soft); font-size: 13px; }
+footer a { color: var(--court-dk); }
+
+@media (max-width: 520px) {
+  .hero h1 { font-size: 18px; }
+  .logo { width: 48px; height: 48px; }
+  .cell, .g-time { height: 32px; }
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="hero-top">
+      <div class="logo"><img id="logoImg" src="data:image/jpeg;base64,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" alt="Логотип теннисного центра «Альфа»"></div>
+      <div class="grow">
+        <h1 id="clubName">Теннисный центр «Альфа»</h1>
+        <p class="where" id="clubWhere">Краснодар</p>
+      </div>
+      <button class="who" id="whoBtn">Войти</button>
+    </div>
+    <div class="rating" id="clubRating"></div>
+    <div class="facts" id="facts"></div>
+    <p class="about" id="clubAbout"></p>
+  </div>
+</header>
+
+<nav class="nav" id="nav" hidden><div class="nav-inner" id="navInner"></div></nav>
+
+<main>
+  <div id="demoNotice" class="notice" hidden></div>
+  <div id="statusNotice" class="notice info" hidden></div>
+
+  <!-- Бронирование -->
+  <section id="viewBook">
+    <div class="section-title">Выберите день</div>
+    <div class="days" id="days"></div>
+
+    <div class="section-title">Подобрать время</div>
+    <div class="picker">
+      <div class="picker-row">
+        <span class="lab">Нужно</span>
+        <span class="chips" id="durChips"></span>
+      </div>
+      <div class="picker-row">
+        <span class="lab">Корт</span>
+        <span class="chips" id="courtChips"></span>
+        <label class="toggle"><input type="checkbox" id="noSwitch"> без перехода</label>
+      </div>
+      <div class="opts" id="opts"></div>
+      <div class="picker-foot" id="pickerFoot"></div>
+    </div>
+
+    <div class="grid-card">
+      <div class="grid" id="grid"><div class="state">Загружаем сетку…</div></div>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw free"></i> свободно</span>
+      <span><i class="sw busy"></i> занято</span>
+      <span><i class="sw regular"></i> постоянная бронь</span>
+      <span><i class="sw mine"></i> ваша бронь</span>
+      <span><i class="sw closed"></i> корт закрыт</span>
+    </div>
+    <p class="grid-hint">Занятое время тоже нажимается — так можно встать в очередь на случай отмены.</p>
+  </section>
+
+  <!-- Мои брони -->
+  <section id="viewMine" hidden></section>
+
+  <!-- Профиль -->
+  <section id="viewProfile" hidden></section>
+
+  <footer>
+    <p id="footerRules">Бронирование от 1 часа, шаг 30 минут.</p>
+  </footer>
+</main>
+
+<div class="bar" id="bar">
+  <div class="bar-inner">
+    <div class="info">
+      <div class="t1" id="selTitle">—</div>
+      <div class="t2" id="selSub"></div>
+      <div class="t2 switch-note" id="selSwitch"></div>
+    </div>
+    <button class="btn ghost" id="selClear" type="button">Сбросить</button>
+    <button class="btn" id="selBook" type="button">Забронировать</button>
+  </div>
+</div>
+
+<div class="backdrop" id="backdrop"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// Клиентская страница теннисного центра «Альфа».
+//
+// Занятость кортов видна всем без входа — ради этого сюда и заходят.
+// Бронировать может только проверенный клиент: предоплаты нет, поэтому
+// администратор один раз подтверждает человека, и дальше он бронирует
+// сам.
+//
+// Пока API_URL пуст, страница работает на демо-данных и поддельном
+// «сервере» в памяти: весь путь от регистрации до отмены проходится
+// без развёрнутого бэкенда.
+// ============================================================
+
+const API_URL = 'https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt';
+
+const state = {
+  config: null,
+  data: null,          // ответ getAvailability
+  date: null,
+  plan: null,          // { fromIdx, toIdx, switches, segments }
+  duration: 60,
+  courtFilter: null,
+  noSwitch: false,
+  view: 'book',
+  auth: null,          // { token, client }
+  mine: null,          // ответ myBookings
+  demo: false,
+  pendingAfterLogin: false,
+};
+
+const TOKEN_KEY = 'alfa_token';
+
+// Обращение к localStorage может выбросить исключение: приватный режим,
+// отключённое хранилище, открытие файла по data:-адресу. Без обёртки
+// это роняет всю страницу целиком, включая сетку занятости, которая
+// вообще-то никакого хранилища не требует.
+const store = {
+  get(key) { try { return localStorage.getItem(key); } catch (e) { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* работаем без запоминания входа */ } },
+  del(key) { try { localStorage.removeItem(key); } catch (e) { /* нечего чистить */ } },
+};
+
+// ---------- Время и формат ----------
+
+function timeToMinutes(t) {
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(String(t));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+}
+function minutesToTime(mins) {
+  return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+}
+function addDays(dateIso, n) {
+  const d = new Date(dateIso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+// Момент слота в поясе клуба, а не браузера: человек может смотреть
+// сайт из другого региона, «прошедшее» считается по времени Краснодара.
+function slotTimestamp(dateIso, timeStr) {
+  const tz = (state.config && state.config.booking.timezoneOffset) || '+03:00';
+  const min = timeToMinutes(timeStr);
+  if (min === 1440) return new Date(addDays(dateIso, 1) + 'T00:00:00' + tz).getTime();
+  return new Date(dateIso + 'T' + timeStr + ':00' + tz).getTime();
+}
+
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+function dayLabel(dateIso, today) {
+  if (dateIso === today) return 'Сегодня';
+  if (dateIso === addDays(today, 1)) return 'Завтра';
+  const d = new Date(dateIso + 'T00:00:00Z');
+  return WD[d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+}
+function dayLabelLong(dateIso, today) {
+  const d = new Date(dateIso + 'T00:00:00Z');
+  const base = d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+  if (dateIso === today) return 'сегодня, ' + base;
+  if (dateIso === addDays(today, 1)) return 'завтра, ' + base;
+  return WD[d.getUTCDay()] + ', ' + base;
+}
+function money(v) { return Math.round(v).toLocaleString('ru-RU') + ' ₽'; }
+function hoursText(minutes) {
+  return (Math.round(minutes / 60 * 10) / 10).toString().replace('.', ',') + ' ч';
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function el(tag, cls) { const d = document.createElement(tag); if (cls) d.className = cls; return d; }
+function btn(label, cls, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = cls; b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// ---------- Телефон ----------
+//
+// Маска только для удобства ввода: сервер всё равно приводит номер к
+// десяти цифрам сам, поэтому вставленный из буфера «+7 (918) 111-22-33»
+// или «89181112233» тоже пройдёт.
+
+function formatPhoneInput(raw) {
+  let digits = String(raw).replace(/\D/g, '');
+  if (!digits) return '';                       // поле можно полностью очистить
+  if (digits[0] === '8') digits = '7' + digits.slice(1);
+  if (digits[0] !== '7') digits = '7' + digits; // человек начал сразу с кода оператора
+  digits = digits.slice(0, 11);
+
+  const rest = digits.slice(1);
+  let out = '+7';
+  if (rest.length) out += ' ' + rest.slice(0, 3);
+  if (rest.length > 3) out += ' ' + rest.slice(3, 6);
+  if (rest.length > 6) out += '-' + rest.slice(6, 8);
+  if (rest.length > 8) out += '-' + rest.slice(8, 10);
+  return out;
+}
+
+function attachPhoneMask(input) {
+  input.type = 'tel';
+  input.inputMode = 'tel';
+  input.maxLength = 16;
+  input.placeholder = '+7 918 000-00-00';
+  input.addEventListener('focus', () => { if (!input.value) input.value = '+7 '; });
+  input.addEventListener('input', () => { input.value = formatPhoneInput(input.value); });
+  input.addEventListener('blur', () => { if (input.value === '+7' || input.value === '+7 ') input.value = ''; });
+}
+
+// ---------- Ошибки ----------
+
+const ERRORS = {
+  'slot-taken': 'Это время только что заняли. Выберите другое.',
+  'too-many-active': 'У вас уже две активные брони. Отмените одну, чтобы записаться снова.',
+  'not-verified': 'Администратор ещё не подтвердил вашу заявку.',
+  'too-many-no-shows': 'Из-за пропущенных броней записывает администратор. Позвоните в клуб.',
+  'already-started': 'Игра уже началась — отменить нельзя. Позвоните в клуб.',
+  'temp-password-expired': 'Временный пароль просрочен. Обратитесь к администратору.',
+  'bad-credentials': 'Неверный телефон или пароль.',
+  'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
+  'password-too-short': 'Пароль должен быть не короче 6 символов.',
+  'invalid-name': 'Укажите имя и фамилию.',
+  'invalid-phone': 'Проверьте номер телефона.',
+  'blocked': 'Доступ закрыт. Обратитесь к администратору клуба.',
+  'token-revoked': 'Нужно войти заново.',
+  'unauthorized': 'Нужно войти заново.',
+  'booking-not-found': 'Бронь не найдена.',
+  'too-soon': 'До начала осталось слишком мало времени.',
+  'beyond-horizon': 'Так далеко записываться пока нельзя.',
+  'duration-too-short': 'Минимальная бронь — 1 час.',
+  'window-too-short': 'Промежуток короче, чем нужное время. Расширьте его.',
+  'outside-hours': 'Это время за пределами работы клуба.',
+};
+function errorText(code) { return ERRORS[code] || 'Не получилось. Попробуйте ещё раз.'; }
+
+// Единственный канал уведомлений — Telegram. Пока привязки нет, честнее
+// говорить об этом прямо, а не обещать «сообщим» в пустоту.
+function hasTelegram() {
+  return !!(state.auth && state.auth.client && state.auth.client.hasTelegram);
+}
+
+// ---------- Слой API ----------
+
+async function api(action, body) {
+  const payload = Object.assign({ action }, body || {});
+  if (state.auth && state.auth.token) payload.token = state.auth.token;
+
+  if (!API_URL) return demoApi(action, payload);
+
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.error || 'request-failed');
+    err.code = data.error;
+    // Токен протух или отозван — вычищаем, иначе страница будет
+    // бесконечно упираться в 401 на каждом действии.
+    if (res.status === 401) logout(true);
+    throw err;
+  }
+  return data;
+}
+
+// ---------- Загрузка ----------
+
+async function load() {
+  if (!API_URL) {
+    state.demo = true;
+    state.config = demoConfig();
+    state.data = demoAvailability(state.config);
+  } else {
+    const [cfg, av] = await Promise.all([api('getConfig'), api('getAvailability', { days: 14 })]);
+    state.config = cfg.config;
+    state.data = av;
+  }
+  state.date = state.data.today;
+
+  const saved = store.get(TOKEN_KEY);
+  if (saved) {
+    state.auth = { token: saved, client: null };
+    try {
+      const me = await api('me');
+      state.auth.client = me.client;
+    } catch (e) { state.auth = null; }
+  }
+
+  renderHero();
+  renderNav();
+  renderDays();
+  renderGrid();
+  renderPicker();
+  if (state.auth) refreshMine();
+}
+
+async function refreshAvailability() {
+  if (!API_URL) return;
+  state.data = await api('getAvailability', { days: 14 });
+}
+
+async function refreshMine() {
+  if (!state.auth) { state.mine = null; return; }
+  try {
+    state.mine = await api('myBookings');
+  } catch (e) { state.mine = null; }
+  renderNav();
+  if (state.view === 'mine') renderMine();
+}
+
+// ---------- Шапка ----------
+
+function renderHero() {
+  const c = state.config;
+  document.getElementById('clubName').textContent = c.club.name;
+
+  // Правила в подвале берём из настроек, а не пишем текстом: срок отмены
+  // меняли уже дважды, и зашитая цифра каждый раз оставалась старой.
+  document.getElementById('footerRules').textContent =
+    'Бронирование от ' + hoursText(c.booking.minBookingMinutes) + ', шаг '
+    + c.booking.slotStep + ' минут. Бесплатная отмена не позднее чем за '
+    + c.booking.cancelDeadlineHours + ' ч до начала.';
+  document.getElementById('clubWhere').textContent =
+    [c.club.city, c.club.address].filter(Boolean).join(' · ');
+
+  const rating = document.getElementById('clubRating');
+  // «на Яндекс.Картах» — ссылка на карточку: оттуда и рейтинг, человеку
+  // логично хотеть посмотреть отзывы целиком.
+  const mapsLink = c.club.mapUrl
+    ? '<a href="' + escapeHtml(c.club.mapUrl) + '" target="_blank" rel="noopener">на Яндекс.Картах</a>'
+    : 'на Яндекс.Картах';
+  rating.innerHTML = c.club.rating
+    ? '<span class="star">★</span> ' + escapeHtml(c.club.rating)
+      + (c.club.ratingCount ? ' · ' + c.club.ratingCount + ' оценки ' + mapsLink : '')
+    : '';
+
+  const close = c.booking.closeTime;
+  // Если есть тариф дешевле базового, показываем «от», а не одну цену:
+  // иначе человек видит 1800 и не узнаёт, что днём корт стоит меньше.
+  const rules = (c.pricing.rules || []).filter(r => r.pricePerHour < c.pricing.pricePerHour);
+  const cheapest = rules.reduce((min, r) => Math.min(min, r.pricePerHour), c.pricing.pricePerHour);
+  const priceFact = cheapest < c.pricing.pricePerHour
+    ? 'от <b>' + money(cheapest) + '</b> / час'
+    : '<b>' + money(c.pricing.pricePerHour) + '</b> / час';
+
+  const facts = [
+    '<span class="fact gold">' + priceFact + '</span>',
+    '<span class="fact"><b>' + escapeHtml(c.booking.openTime) + '–' + escapeHtml(close) + '</b> ежедневно</span>',
+    '<span class="fact">' + c.courts.length + ' крытых корта</span>',
+  ];
+  // Подписи скидочных окон — то, ради чего владелец их и заводит.
+  (c.pricing.rules || []).filter(r => r.showOnHome && r.label).forEach(r => {
+    facts.push('<span class="fact">' + escapeHtml(r.label) + ' <b>' + money(r.pricePerHour)
+      + '</b> · ' + escapeHtml(r.from) + '–' + escapeHtml(r.to) + '</span>');
+  });
+  if (c.club.phone) facts.push('<span class="fact"><a href="tel:' + escapeHtml(c.club.phone.replace(/[^\d+]/g, '')) + '">' + escapeHtml(c.club.phone) + '</a></span>');
+  if (c.club.mapUrl) facts.push('<span class="fact"><a href="' + escapeHtml(c.club.mapUrl) + '" target="_blank" rel="noopener">Как проехать</a></span>');
+  document.getElementById('facts').innerHTML = facts.join('');
+
+  const about = [];
+  if (c.club.features) about.push(escapeHtml(c.club.features) + '.');
+  if (c.club.extraService) about.push('<span class="svc">' + escapeHtml(c.club.extraService) + '</span>');
+  document.getElementById('clubAbout').innerHTML = about.join(' ');
+
+  const who = document.getElementById('whoBtn');
+  who.textContent = state.auth && state.auth.client
+    ? state.auth.client.name.split(' ')[0]
+    : 'Войти';
+
+  if (state.demo) {
+    const n = document.getElementById('demoNotice');
+    n.hidden = false;
+    n.textContent = 'Демонстрационный режим: занятость условная, вход работает с любым паролем. '
+      + 'Всё, что вы забронируете, живёт до перезагрузки страницы.';
+  }
+  renderStatusNotice();
+}
+
+function renderStatusNotice() {
+  const n = document.getElementById('statusNotice');
+  const client = state.auth && state.auth.client;
+  if (!client || client.status === 'verified') { n.hidden = true; return; }
+  n.hidden = false;
+  n.className = 'notice';
+  n.innerHTML = client.status === 'pending'
+    ? '<b>Заявка на рассмотрении.</b> Администратор подтвердит вас, обычно в течение дня. '
+      + 'После этого бронировать можно будет самостоятельно. Занятость кортов видна и сейчас.'
+    : '<b>Доступ закрыт.</b> Обратитесь к администратору клуба.';
+
+  // В демо подтверждать некому, а показать надо и этот экран, и то, что
+  // за ним. Кнопка честно помечена как демонстрационная.
+  if (state.demo && client.status === 'pending') {
+    const b = btn('Показать, как будто администратор подтвердил', 'btn sm', () => {
+      client.status = 'verified';
+      renderStatusNotice(); renderNav();
+      toast('Теперь можно бронировать');
+    });
+    b.style.marginTop = '10px';
+    n.appendChild(b);
+  }
+}
+
+document.getElementById('whoBtn').addEventListener('click', () => {
+  if (state.auth && state.auth.client) showView('profile');
+  else openAuth();
+});
+
+// ---------- Навигация ----------
+
+function renderNav() {
+  const nav = document.getElementById('nav');
+  if (!state.auth || !state.auth.client) { nav.hidden = true; return; }
+  nav.hidden = false;
+
+  const upcoming = state.mine ? state.mine.upcoming.length : 0;
+  const inner = document.getElementById('navInner');
+  inner.innerHTML = '';
+
+  [
+    { id: 'book', label: 'Бронирование' },
+    { id: 'mine', label: 'Мои брони', count: upcoming },
+    { id: 'profile', label: 'Профиль' },
+  ].forEach(t => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = state.view === t.id ? 'on' : '';
+    b.textContent = t.label;
+    if (t.count) {
+      const d = el('span', 'dot'); d.textContent = t.count; b.appendChild(d);
+    }
+    b.addEventListener('click', () => showView(t.id));
+    inner.appendChild(b);
+  });
+}
+
+function showView(name) {
+  state.view = name;
+  document.getElementById('viewBook').hidden = name !== 'book';
+  document.getElementById('viewMine').hidden = name !== 'mine';
+  document.getElementById('viewProfile').hidden = name !== 'profile';
+  document.getElementById('bar').classList.toggle('show', name === 'book' && !!state.plan);
+  if (name === 'mine') renderMine();
+  if (name === 'profile') renderProfile();
+  renderNav();
+  window.scrollTo({ top: 0 });
+}
+
+// ---------- Дни ----------
+
+function freeHours(dateIso) {
+  const step = state.config.booking.slotStep;
+  let free = 0;
+  state.data.slots.forEach(slot => {
+    state.config.courts.forEach(court => {
+      if (cellState(dateIso, court.id, slot) === 'free') free += step;
+    });
+  });
+  return free / 60;
+}
+
+function renderDays() {
+  const wrap = document.getElementById('days');
+  wrap.innerHTML = '';
+  state.data.dates.forEach(date => {
+    const hours = freeHours(date);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'day' + (date === state.date ? ' active' : '');
+    b.innerHTML = '<div class="d-label">' + escapeHtml(dayLabel(date, state.data.today)) + '</div>'
+      + '<div class="d-free">' + (hours > 0 ? 'свободно ' + (Math.round(hours * 10) / 10) + ' ч' : 'всё занято') + '</div>';
+    b.addEventListener('click', () => {
+      state.date = date; state.plan = null;
+      renderDays(); renderGrid(); renderPicker();
+    });
+    wrap.appendChild(b);
+  });
+}
+
+// ---------- Состояние клетки ----------
+
+function busyAt(dateIso, courtId, slot) {
+  const day = state.data.days[dateIso];
+  if (!day) return null;
+  const list = day[String(courtId)] || [];
+  const step = state.config.booking.slotStep;
+  const from = timeToMinutes(slot), to = from + step;
+  return list.find(b => from < timeToMinutes(b.end) && timeToMinutes(b.start) < to) || null;
+}
+
+// Своя бронь определяется сопоставлением с кабинетом, а не отметкой из
+// ответа сервера: сетка занятости отдаётся без входа и владельцев в ней
+// нет и быть не должно. Иначе подсветка работала бы только в демо.
+function myBookingAt(dateIso, courtId, slot) {
+  if (!state.mine || !state.mine.upcoming) return null;
+  const step = state.config.booking.slotStep;
+  const from = timeToMinutes(slot), to = from + step;
+  for (const g of state.mine.upcoming) {
+    if (g.date !== dateIso) continue;
+    for (let i = 0; i < g.segments.length; i++) {
+      const s = g.segments[i];
+      if (s.courtId === courtId && from < timeToMinutes(s.end) && timeToMinutes(s.start) < to) {
+        return { group: g, seg: s, index: i };
+      }
+    }
+  }
+  return null;
+}
+
+// Порядок проверок = приоритет отображения: своя бронь важнее чужой,
+// закрытый корт важнее занятого, прошедшее важнее свободного.
+function cellState(dateIso, courtId, slot) {
+  const b = busyAt(dateIso, courtId, slot);
+  if (b) {
+    if (myBookingAt(dateIso, courtId, slot)) return 'mine';
+    return b.kind === 'closed' ? 'closed' : (b.kind === 'regular' ? 'regular' : 'busy');
+  }
+  const lead = (state.config.booking.minLeadMinutes || 0) * 60000;
+  if (slotTimestamp(dateIso, slot) < Date.now() + lead) return 'past';
+  return 'free';
+}
+
+// ============================================================
+// Подбор корта. Зеркало серверной логики из backend/slots.js.
+//
+// Корты стоят рядом и равнозначны, поэтому занятость считается по
+// клубу, а не по корту: интервал доступен, если в каждой получасовой
+// ячейке свободен хотя бы один корт.
+//
+// Источник истины — сервер, он пересчитывает то же самое при создании
+// брони и присланную раскладку не принимает. Здесь это ради мгновенного
+// отклика и демо-режима. Правки вносить в обоих местах.
+// ============================================================
+
+function buildFreeGrid(dateIso) {
+  return state.data.slots.map(slot =>
+    state.config.courts.filter(c => cellState(dateIso, c.id, slot) === 'free').map(c => c.id));
+}
+function rangeFreeOn(grid, courtId, fromIdx, toIdx) {
+  for (let i = fromIdx; i <= toIdx; i++) {
+    if (!grid[i] || grid[i].indexOf(courtId) === -1) return false;
+  }
+  return true;
+}
+function runLength(grid, courtId, fromIdx, toIdx) {
+  let n = 0;
+  while (fromIdx + n <= toIdx && grid[fromIdx + n].indexOf(courtId) !== -1) n++;
+  return n;
+}
+function assignCourts(grid, fromIdx, toIdx, preferCourtId) {
+  const segments = [];
+  let i = fromIdx;
+  while (i <= toIdx) {
+    const available = grid[i] || [];
+    if (available.length === 0) return null;
+    let court = null;
+    if (i === fromIdx && preferCourtId && available.indexOf(preferCourtId) !== -1) court = preferCourtId;
+    else {
+      let bestLen = -1;
+      available.forEach(id => {
+        const len = runLength(grid, id, i, toIdx);
+        if (len > bestLen) { bestLen = len; court = id; }
+      });
+    }
+    const len = runLength(grid, court, i, toIdx);
+    segments.push({ courtId: court, fromIdx: i, toIdx: i + len - 1 });
+    i += len;
+  }
+  return segments;
+}
+function pickPackedCourt(dateIso, candidates, startMin, endMin) {
+  const day = state.data.days[dateIso] || {};
+  let best = null, bestScore = -Infinity;
+  candidates.forEach(id => {
+    const busy = day[String(id)] || [];
+    let score = 0;
+    if (busy.some(b => timeToMinutes(b.end) === startMin)) score += 10;
+    if (busy.some(b => timeToMinutes(b.start) === endMin)) score += 10;
+    score += busy.reduce((s, b) => s + (timeToMinutes(b.end) - timeToMinutes(b.start)), 0) / 60;
+    if (score > bestScore) { bestScore = score; best = id; }
+  });
+  return best;
+}
+function planBooking(dateIso, grid, fromIdx, toIdx, opts) {
+  const options = opts || {};
+  const preferCourtId = options.preferCourtId || null;
+  const onlyCourtId = options.onlyCourtId || null;
+  const cfg = state.config.booking;
+  if (fromIdx < 0 || toIdx < fromIdx || toIdx >= grid.length) return null;
+
+  const startMin = timeToMinutes(state.data.slots[fromIdx]);
+  const endMin = timeToMinutes(state.data.slots[toIdx]) + cfg.slotStep;
+  const single = (courtId) => ({ fromIdx, toIdx, switches: 0, segments: [{ courtId, fromIdx, toIdx }] });
+
+  const whole = state.config.courts.map(c => c.id)
+    .filter(id => (!onlyCourtId || id === onlyCourtId) && rangeFreeOn(grid, id, fromIdx, toIdx));
+
+  if (preferCourtId && whole.indexOf(preferCourtId) !== -1) return single(preferCourtId);
+  if (whole.length) {
+    return single(cfg.packCourts === false ? whole[0] : pickPackedCourt(dateIso, whole, startMin, endMin));
+  }
+  if (onlyCourtId) return null;
+  if (cfg.allowCourtSwitch === false) return null;
+
+  const segments = assignCourts(grid, fromIdx, toIdx, preferCourtId);
+  if (!segments) return null;
+  const switches = segments.length - 1;
+  if (switches > (cfg.maxSwitches == null ? 1 : cfg.maxSwitches)) return null;
+  return { fromIdx, toIdx, switches, segments };
+}
+function findOptions(dateIso, durationMinutes, opts) {
+  const need = Math.round(durationMinutes / state.config.booking.slotStep);
+  if (need < 1) return [];
+  const grid = buildFreeGrid(dateIso);
+  const out = [];
+  for (let i = 0; i + need - 1 < grid.length; i++) {
+    const plan = planBooking(dateIso, grid, i, i + need - 1, opts);
+    if (plan) out.push(plan);
+  }
+  return out;
+}
+
+// ---------- Сетка ----------
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  const courts = state.config.courts;
+  const slots = state.data.slots;
+
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = '64px repeat(' + courts.length + ', minmax(0, 1fr))';
+
+  const corner = el('div', 'g-head corner');
+  grid.appendChild(corner);
+
+  courts.forEach(court => {
+    const h = el('div', 'g-head');
+    h.innerHTML = escapeHtml(court.name)
+      + (court.surface ? '<span class="g-sub">' + escapeHtml(court.surface) + '</span>' : '');
+    grid.appendChild(h);
+  });
+
+  slots.forEach((slot, idx) => {
+    const isHour = timeToMinutes(slot) % 60 === 0;
+    const t = el('div', 'g-time' + (isHour ? ' hour' : ''));
+    t.textContent = isHour ? slot : '';
+    grid.appendChild(t);
+
+    courts.forEach(court => {
+      const st = cellState(state.date, court.id, slot);
+      const cell = el('div', 'cell ' + st + (isHour && idx > 0 ? ' hour-line' : ''));
+
+      if (isSelected(court.id, idx)) {
+        cell.className += ' sel';
+        if (isSegmentBreak(court.id, idx)) cell.className += ' seg-break';
+      } else if (st === 'mine') {
+        const m = myBookingAt(state.date, court.id, slot);
+        if (m && m.index > 0 && timeToMinutes(m.seg.start) === timeToMinutes(slot)) cell.className += ' seg-break';
+      }
+
+      // Подпись только у первой клетки отрезка, иначе она повторялась бы
+      // в каждой получасовой ячейке подряд.
+      if ((st === 'regular' || st === 'closed' || st === 'mine')
+          && cellState(state.date, court.id, slots[idx - 1] || '') !== st) {
+        const tag = el('span', 'tag');
+        tag.textContent = st === 'regular' ? 'постоянная' : (st === 'closed' ? 'закрыт' : 'вы');
+        cell.appendChild(tag);
+      }
+
+      if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx));
+      else if (st === 'busy' || st === 'regular') {
+        cell.title = 'Занято — нажмите, чтобы встать в очередь';
+        cell.addEventListener('click', () => onBusyClick(court.id, slot));
+      }
+
+      grid.appendChild(cell);
+    });
+  });
+
+  renderBar();
+}
+
+// ---------- Выбор времени ----------
+
+function isSelected(courtId, idx) {
+  const p = state.plan;
+  return !!p && p.segments.some(s => s.courtId === courtId && idx >= s.fromIdx && idx <= s.toIdx);
+}
+function isSegmentBreak(courtId, idx) {
+  const p = state.plan;
+  return !!p && p.segments.some((s, i) => i > 0 && s.courtId === courtId && idx === s.fromIdx);
+}
+function setPlan(plan) {
+  state.plan = plan;
+  renderGrid();
+  renderPicker();
+}
+
+function onCellClick(courtId, idx) {
+  const p = state.plan;
+  const cfg = state.config.booking;
+  const minSlots = Math.ceil(cfg.minBookingMinutes / cfg.slotStep);
+  const grid = buildFreeGrid(state.date);
+
+  if (p && idx >= p.fromIdx && idx <= p.toIdx) { setPlan(null); return; }
+
+  // Клик правее текущего выбора продлевает бронь. Корт клика здесь не
+  // важен: «до сюда» — это запрос по времени, раскладку подбор соберёт
+  // сам, при необходимости с переходом.
+  if (p && idx > p.toIdx) {
+    const extended = planBooking(state.date, grid, p.fromIdx, idx, { preferCourtId: p.segments[0].courtId });
+    if (extended) { setPlan(extended); return; }
+    toast('В это время оба корта заняты');
+    return;
+  }
+
+  const plan = planBooking(state.date, grid, idx, idx + minSlots - 1, { preferCourtId: courtId });
+  if (!plan) { toast('Минимальная бронь — ' + hoursText(cfg.minBookingMinutes) + ' подряд'); return; }
+  setPlan(plan);
+}
+
+// Ставка для получасовой ячейки. Повторяет расчёт сервера один в один:
+// сервер всё равно посчитает сам и клиенту не поверит, но показать цену
+// надо до отправки запроса, и разойтись эти два числа не имеют права.
+function rateAtMinute(dateIso, cellStart) {
+  const rules = (state.config.pricing && state.config.pricing.rules) || [];
+  if (rules.length && dateIso) {
+    const wd = new Date(dateIso + 'T00:00:00Z').getUTCDay();
+    for (let i = 0; i < rules.length; i++) {
+      const r = rules[i];
+      if (r.days && r.days.length && r.days.indexOf(wd) === -1) continue;
+      if (cellStart >= timeToMinutes(r.from) && cellStart < timeToMinutes(r.to)) return r.pricePerHour;
+    }
+  }
+  return state.config.pricing.pricePerHour;
+}
+
+// Сумма по ячейкам, а не по длительности: бронь может начаться в дешёвые
+// часы и закончиться в обычные.
+function priceFor(dateIso, startMin, endMin) {
+  const step = state.config.booking.slotStep;
+  let sum = 0;
+  for (let m = startMin; m < endMin; m += step) {
+    sum += (Math.min(step, endMin - m) / 60) * rateAtMinute(dateIso, m);
+  }
+  return Math.round(sum);
+}
+
+function planInfo() {
+  const p = state.plan;
+  if (!p) return null;
+  const step = state.config.booking.slotStep;
+  const endOf = (i) => minutesToTime(timeToMinutes(state.data.slots[i]) + step);
+  const start = state.data.slots[p.fromIdx];
+  const end = endOf(p.toIdx);
+  const minutes = timeToMinutes(end) - timeToMinutes(start);
+  return {
+    start, end, minutes, switches: p.switches,
+    price: priceFor(state.date, timeToMinutes(start), timeToMinutes(end)),
+    segments: p.segments.map(s => ({
+      court: state.config.courts.find(c => c.id === s.courtId) || { name: 'Корт' },
+      start: state.data.slots[s.fromIdx],
+      end: endOf(s.toIdx),
+    })),
+  };
+}
+
+function renderBar() {
+  const bar = document.getElementById('bar');
+  const info = planInfo();
+  if (!info || state.view !== 'book') { bar.classList.remove('show'); return; }
+
+  document.getElementById('selTitle').textContent =
+    info.start + '–' + info.end + ' · ' + info.segments.map(s => s.court.name).join(' → ');
+  document.getElementById('selSub').textContent =
+    dayLabelLong(state.date, state.data.today) + ' · ' + hoursText(info.minutes) + ' · ' + money(info.price);
+  document.getElementById('selSwitch').textContent = info.switches === 0 ? ''
+    : '⇄ ' + info.segments.slice(1).map(s => 'в ' + s.start + ' переход на ' + s.court.name).join(', ');
+
+  bar.classList.add('show');
+}
+
+document.getElementById('selClear').addEventListener('click', () => setPlan(null));
+document.getElementById('selBook').addEventListener('click', startBooking);
+
+// ---------- Панель подбора ----------
+
+const DURATIONS = [60, 90, 120, 180];
+
+function renderPicker() {
+  const cfg = state.config.booking;
+
+  const durWrap = document.getElementById('durChips');
+  durWrap.innerHTML = '';
+  DURATIONS.filter(m => m >= cfg.minBookingMinutes).forEach(m => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (state.duration === m ? ' on' : '');
+    b.textContent = hoursText(m);
+    b.addEventListener('click', () => { state.duration = m; renderPicker(); });
+    durWrap.appendChild(b);
+  });
+
+  const courtWrap = document.getElementById('courtChips');
+  courtWrap.innerHTML = '';
+  // «Любой» первым: большинству игроков корт безразличен. Но выбор
+  // конкретного обязан работать — на дальнем не ходят мимо во время
+  // матча, и для части людей это принципиально.
+  [{ id: null, name: 'Любой' }].concat(state.config.courts).forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (state.courtFilter === c.id ? ' on' : '');
+    b.textContent = c.name;
+    b.addEventListener('click', () => { state.courtFilter = c.id; renderPicker(); });
+    courtWrap.appendChild(b);
+  });
+
+  const noSwitchBox = document.getElementById('noSwitch');
+  noSwitchBox.checked = state.noSwitch;
+  // Конкретный корт и так исключает переходы — галочка ничего не решает.
+  noSwitchBox.disabled = state.courtFilter !== null;
+
+  const opts = findOptions(state.date, state.duration, { onlyCourtId: state.courtFilter })
+    .filter(p => !(state.noSwitch && p.switches > 0));
+
+  // Очередь должна быть видимым действием, а не находкой для тех, кто
+  // случайно ткнул в занятую клетку.
+  const foot = document.getElementById('pickerFoot');
+  foot.innerHTML = '';
+  const hint = el('span');
+  hint.textContent = opts.length ? 'Ничего не подходит?' : 'Свободного времени в этот день нет.';
+  foot.appendChild(hint);
+  foot.appendChild(btn('Встать в очередь', 'btn sm sec', () => openWaitlist({})));
+
+  const wrap = document.getElementById('opts');
+  wrap.innerHTML = '';
+
+  if (opts.length === 0) {
+    const empty = el('div', 'opts-empty');
+    empty.textContent = 'На ' + hoursText(state.duration)
+      + ' в этот день свободного времени нет — попробуйте другой день или длительность.';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  opts.forEach(p => {
+    const start = state.data.slots[p.fromIdx];
+    const end = minutesToTime(timeToMinutes(state.data.slots[p.toIdx]) + cfg.slotStep);
+    const active = state.plan && state.plan.fromIdx === p.fromIdx && state.plan.toIdx === p.toIdx;
+    const courts = p.segments.map(s => (state.config.courts.find(c => c.id === s.courtId) || {}).name).join(' → ');
+
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'opt' + (p.switches ? ' split' : '') + (active ? ' on' : '');
+    b.innerHTML = '<span class="o-time">' + escapeHtml(start + '–' + end) + '</span>'
+      + '<span class="o-court">' + escapeHtml(courts) + (p.switches ? ' ⇄' : '') + '</span>';
+    b.addEventListener('click', () => setPlan(p));
+    wrap.appendChild(b);
+  });
+}
+
+document.getElementById('noSwitch').addEventListener('change', (e) => {
+  state.noSwitch = e.target.checked;
+  renderPicker();
+});
+
+// ============================================================
+// Вход и регистрация
+// ============================================================
+
+function openAuth(mode) {
+  let tab = mode || 'login';
+
+  function draw() {
+    const body = el('div');
+    body.innerHTML = '<h3>' + (tab === 'login' ? 'Вход' : 'Регистрация') + '</h3>'
+      + '<div class="m-sub">Бронирование доступно проверенным клиентам клуба.</div>';
+
+    const tabs = el('div', 'tabs2');
+    const tLogin = btn('Вход', tab === 'login' ? 'on' : '', () => { tab = 'login'; draw(); });
+    const tReg = btn('Регистрация', tab === 'register' ? 'on' : '', () => { tab = 'register'; draw(); });
+    tabs.appendChild(tLogin); tabs.appendChild(tReg);
+    body.appendChild(tabs);
+
+    let inpName = null;
+    if (tab === 'register') {
+      const f = el('label', 'field');
+      f.innerHTML = '<span>Имя и фамилия</span>';
+      inpName = document.createElement('input');
+      inpName.placeholder = 'Иван Петров';
+      inpName.autocomplete = 'name';
+      f.appendChild(inpName); body.appendChild(f);
+    }
+
+    const fPhone = el('label', 'field');
+    fPhone.innerHTML = '<span>Телефон</span>';
+    const inpPhone = document.createElement('input');
+    inpPhone.autocomplete = 'tel';
+    attachPhoneMask(inpPhone);
+    fPhone.appendChild(inpPhone); body.appendChild(fPhone);
+
+    const fPass = el('label', 'field');
+    fPass.innerHTML = '<span>Пароль</span>';
+    const inpPass = document.createElement('input');
+    inpPass.type = 'password';
+    inpPass.autocomplete = tab === 'login' ? 'current-password' : 'new-password';
+    inpPass.placeholder = tab === 'register' ? 'не короче 6 символов' : '';
+    fPass.appendChild(inpPass); body.appendChild(fPass);
+
+    const submit = async () => {
+      try {
+        const res = tab === 'login'
+          ? await api('login', { phone: inpPhone.value, password: inpPass.value })
+          : await api('register', { name: inpName ? inpName.value : '', phone: inpPhone.value, password: inpPass.value });
+
+        if (tab === 'register' && res.existing) {
+          toast('На этот номер уже есть учётная запись — войдите.', 3600);
+          tab = 'login'; draw();
+          return;
+        }
+
+        state.auth = { token: res.token, client: res.client };
+        store.set(TOKEN_KEY, res.token);
+        closeModal();
+        renderHero(); renderNav();
+        await refreshMine();
+
+        if (tab === 'register') toast('Заявка отправлена администратору', 3600);
+        else toast('С возвращением, ' + res.client.name.split(' ')[0] + '!');
+
+        // Человек нажал «Забронировать» и попал на вход — возвращаем
+        // его ровно туда, откуда увели, а не на главную.
+        if (state.pendingAfterLogin) {
+          state.pendingAfterLogin = false;
+          setTimeout(startBooking, 300);
+        }
+      } catch (e) {
+        toast(errorText(e.code), 3600);
+      }
+    };
+
+    const acts = el('div', 'm-acts');
+    const go = btn(tab === 'login' ? 'Войти' : 'Зарегистрироваться', 'btn wide', submit);
+    acts.appendChild(go);
+    body.appendChild(acts);
+
+    [inpPhone, inpPass].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); }));
+
+    const tgNote = el('div', 'empty');
+    tgNote.style.marginTop = '12px';
+    tgNote.textContent = 'Вход через Telegram появится позже — тогда же придут напоминания о брони.';
+    body.appendChild(tgNote);
+
+    showModal(body);
+    setTimeout(() => (inpName || inpPhone).focus(), 50);
+  }
+
+  draw();
+}
+
+function logout(silent) {
+  state.auth = null;
+  state.mine = null;
+  store.del(TOKEN_KEY);
+  showView('book');
+  renderHero(); renderNav();
+  if (!silent) toast('Вы вышли');
+}
+
+// ============================================================
+// Оформление брони
+// ============================================================
+
+function startBooking() {
+  const info = planInfo();
+  if (!info) return;
+
+  if (!state.auth || !state.auth.client) {
+    state.pendingAfterLogin = true;
+    openAuth('login');
+    return;
+  }
+  if (state.auth.client.status !== 'verified') {
+    showView('book');
+    renderStatusNotice();
+    toast('Администратор ещё не подтвердил вашу заявку', 3600);
+    return;
+  }
+
+  // От этой длительности и длиннее бронь подтверждает администратор.
+  // Именно «от»: ровно три часа тоже уходят на проверку.
+  const approvalFrom = state.config.booking.approvalFromMinutes || 180;
+  const needsApproval = info.minutes >= approvalFrom;
+
+  const body = el('div');
+  body.innerHTML = '<h3>Подтвердите бронь</h3>'
+    + '<div class="m-sub">' + escapeHtml(dayLabelLong(state.date, state.data.today)) + '</div>';
+
+  // Что берут на прокат. Количество живёт здесь, суммы пересчитываются
+  // на каждое нажатие: человек должен видеть итог до того, как согласится,
+  // а не узнавать его на стойке.
+  const inventory = (state.config.pricing && state.config.pricing.inventory) || [];
+  const picked = {};
+  const hours = info.minutes / 60;
+  const extrasList = () => inventory
+    .filter(item => picked[item.id] > 0)
+    .map(item => ({
+      id: item.id, name: item.name, qty: picked[item.id],
+      sum: Math.round(picked[item.id] * hours * item.pricePerHour),
+    }));
+
+  const sum = el('div', 'summary');
+  body.appendChild(sum);
+
+  function renderSummary() {
+    sum.innerHTML = '';
+    const rows = [
+      ['Время', info.start + '–' + info.end],
+      ['Длительность', hoursText(info.minutes)],
+      ['Корт', info.segments.map(s => s.court.name).join(' → ')],
+    ];
+    rows.forEach(([k, v]) => {
+      const r = el('div', 's-row');
+      r.innerHTML = '<span>' + escapeHtml(k) + '</span><span>' + escapeHtml(v) + '</span>';
+      sum.appendChild(r);
+    });
+
+    const chosen = extrasList();
+    // Строку «Корт» с ценой показываем только когда есть что складывать:
+    // у брони без проката это лишнее повторение итога.
+    if (chosen.length) {
+      const r = el('div', 's-row');
+      r.innerHTML = '<span>Аренда корта</span><span>' + money(info.price) + '</span>';
+      sum.appendChild(r);
+      chosen.forEach(x => {
+        const e = el('div', 's-row');
+        e.innerHTML = '<span>' + escapeHtml(x.name + ' ×' + x.qty) + '</span><span>' + money(x.sum) + '</span>';
+        sum.appendChild(e);
+      });
+    }
+
+    const totalSum = info.price + chosen.reduce((s, x) => s + x.sum, 0);
+    const total = el('div', 's-row total');
+    total.innerHTML = '<span>Итого на месте</span><span>' + money(totalSum) + '</span>';
+    sum.appendChild(total);
+  }
+  renderSummary();
+
+  if (inventory.length) {
+    const rent = el('div', 'rent');
+    rent.appendChild(txt('div', 'rent-head', 'Взять на прокат'));
+
+    inventory.forEach(item => {
+      picked[item.id] = 0;
+      const row = el('div', 'rent-row');
+
+      const label = el('div', 'rent-name');
+      label.innerHTML = '<b>' + escapeHtml(item.name) + '</b><span>'
+        + money(item.pricePerHour) + ' / час · ' + money(Math.round(hours * item.pricePerHour)) + ' за вашу бронь</span>';
+      row.appendChild(label);
+
+      const stepper = el('div', 'stepper');
+      const count = txt('span', 'stepper-n', '0');
+      const set = (n) => {
+        picked[item.id] = Math.max(0, Math.min(item.max, n));
+        count.textContent = String(picked[item.id]);
+        row.classList.toggle('on', picked[item.id] > 0);
+        renderSummary();
+      };
+      stepper.appendChild(btn('−', 'stepper-b', () => set(picked[item.id] - 1)));
+      stepper.appendChild(count);
+      stepper.appendChild(btn('+', 'stepper-b', () => set(picked[item.id] + 1)));
+      row.appendChild(stepper);
+
+      rent.appendChild(row);
+    });
+
+    rent.appendChild(txt('div', 'rent-note', 'Оплата на месте вместе с кортом. Отменить прокат можно при отмене брони.'));
+    body.appendChild(rent);
+  }
+
+  if (info.switches > 0) {
+    const n = el('div', 'notice');
+    n.innerHTML = '⇄ <b>Игра на двух кортах.</b> '
+      + escapeHtml(info.segments.slice(1).map(s => 'В ' + s.start + ' нужно перейти на ' + s.court.name).join('. '))
+      + '. Корты стоят рядом, покрытие одинаковое.';
+    n.style.margin = '0 0 14px';
+    body.appendChild(n);
+  }
+  if (needsApproval) {
+    const ttl = state.config.booking.pendingTtlHours || 6;
+    const n = el('div', 'notice');
+    n.innerHTML = '<b>Бронь от ' + hoursText(approvalFrom)
+      + '</b> — её подтверждает администратор. До ответа корт держится за вами. '
+      + 'Если ответа не будет в течение ' + ttl + ' ч, время вернётся в общий доступ.';
+    n.style.margin = '0 0 14px';
+    body.appendChild(n);
+  }
+
+  const acts = el('div', 'm-acts');
+  const confirm = btn('Забронировать', 'btn', async () => {
+    confirm.disabled = true;
+    confirm.textContent = 'Бронируем…';
+    try {
+      const res = await api('createBooking', {
+        date: state.date,
+        start: info.start,
+        durationMinutes: info.minutes,
+        courtId: state.courtFilter,
+        exactCourt: state.courtFilter !== null,
+        // Сумму сервер считает сам и присланной не верит — отправляем
+        // только что и сколько взяли.
+        extras: extrasList().map(x => ({ id: x.id, qty: x.qty })),
+        clientRequestId: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      });
+      closeModal();
+      setPlan(null);
+      await refreshAvailability();
+      await refreshMine();
+      renderDays(); renderGrid(); renderPicker();
+      showView('mine');
+      toast(res.needsApproval ? 'Заявка отправлена администратору' : 'Готово, корт забронирован', 3600);
+    } catch (e) {
+      confirm.disabled = false;
+      confirm.textContent = 'Забронировать';
+      toast(errorText(e.code), 4000);
+      if (e.code === 'slot-taken') {
+        closeModal(); setPlan(null);
+        await refreshAvailability();
+        renderDays(); renderGrid(); renderPicker();
+      }
+    }
+  });
+  acts.appendChild(confirm);
+  acts.appendChild(btn('Назад', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
+// ---------- Лист ожидания ----------
+
+// Клик по занятой клетке — только подсказка, откуда начать: окно
+// подставляется по этой броне, но человек волен его расширить.
+function onBusyClick(courtId, slot) {
+  const block = busyAt(state.date, courtId, slot);
+  if (!block) return;
+  openWaitlist({ from: block.start, to: block.end });
+}
+
+// Очередь ставится на «сколько времени и в каком промежутке», а не на
+// конкретную чужую бронь. Иначе освободившийся соседний слот прошёл бы
+// мимо человека, который его с радостью бы взял.
+function openWaitlist(prefill) {
+  if (!state.auth || !state.auth.client) { openAuth('login'); return; }
+
+  const cfg = state.config.booking;
+  const open = timeToMinutes(cfg.openTime);
+  const close = timeToMinutes(cfg.closeTime);
+  const pre = prefill || {};
+
+  let from = timeToMinutes(pre.from != null ? pre.from : '17:00');
+  let to = timeToMinutes(pre.to != null ? pre.to : '22:00');
+  if (to <= from) to = Math.min(close, from + cfg.minBookingMinutes);
+  // Окно из одной брони обычно короткое — берём длительность по нему,
+  // но не меньше минимальной и не больше того, что человек искал.
+  let duration = Math.min(state.duration, to - from);
+  if (duration < cfg.minBookingMinutes) duration = cfg.minBookingMinutes;
+
+  function timeList(fromMin, toMin) {
+    const out = [];
+    for (let m = fromMin; m <= toMin; m += cfg.slotStep) out.push(minutesToTime(m));
+    return out;
+  }
+
+  function draw() {
+    if (to - from < duration) to = Math.min(close, from + duration);
+    if (from + duration > close) from = close - duration;
+
+    const body = el('div');
+    body.innerHTML = '<h3>Встать в очередь</h3>'
+      + '<div class="m-sub">' + escapeHtml(dayLabelLong(state.date, state.data.today)) + '</div>';
+
+    const rowD = el('div', 'picker-row');
+    rowD.innerHTML = '<span class="lab">Нужно</span>';
+    const chips = el('span', 'chips');
+    DURATIONS.filter(m => m >= cfg.minBookingMinutes && m <= close - open).forEach(m => {
+      const b = btn(hoursText(m), 'chip' + (duration === m ? ' on' : ''), () => { duration = m; draw(); });
+      chips.appendChild(b);
+    });
+    rowD.appendChild(chips);
+    body.appendChild(rowD);
+
+    const grid2 = el('div');
+    grid2.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px';
+
+    const fFrom = el('label', 'field');
+    fFrom.innerHTML = '<span>Не раньше</span>';
+    const selFrom = document.createElement('select');
+    timeList(open, close - duration).forEach(t => {
+      const o = document.createElement('option'); o.value = t; o.textContent = t; selFrom.appendChild(o);
+    });
+    selFrom.value = minutesToTime(from);
+    selFrom.addEventListener('change', () => { from = timeToMinutes(selFrom.value); draw(); });
+    fFrom.appendChild(selFrom);
+
+    const fTo = el('label', 'field');
+    fTo.innerHTML = '<span>Не позже</span>';
+    const selTo = document.createElement('select');
+    timeList(from + duration, close).forEach(t => {
+      const o = document.createElement('option'); o.value = t; o.textContent = t; selTo.appendChild(o);
+    });
+    selTo.value = minutesToTime(to);
+    selTo.addEventListener('change', () => { to = timeToMinutes(selTo.value); draw(); });
+    fTo.appendChild(selTo);
+
+    grid2.appendChild(fFrom); grid2.appendChild(fTo);
+    body.appendChild(grid2);
+
+    const note = el('div', 'notice info');
+    note.style.margin = '4px 0 0';
+    note.innerHTML = 'Сообщим, как только в промежутке <b>' + escapeHtml(minutesToTime(from) + '–' + minutesToTime(to))
+      + '</b> освободится <b>' + escapeHtml(hoursText(duration)) + '</b>. '
+      + 'Вы узнаете первым — раньше, чем время уйдёт в общий чат клуба.';
+    body.appendChild(note);
+
+    // Без этого «сообщим» звучит как «ждите неизвестно где». Человек
+    // должен понимать канал и то, что от него самого требуется.
+    const where = el('div', hasTelegram() ? 'notice info' : 'notice');
+    where.style.margin = '10px 0 0';
+    where.innerHTML = hasTelegram()
+      ? '<b>Куда придёт:</b> в Telegram, личным сообщением от бота клуба.'
+      : '<b>Куда придёт:</b> в Telegram, личным сообщением от бота клуба. '
+        + 'Нужен работающий Telegram и привязка в профиле — без неё сообщить будет некуда, '
+        + 'и следить за освободившимся временем придётся самому.';
+    body.appendChild(where);
+
+    const acts = el('div', 'm-acts');
+    const go = btn('Встать в очередь', 'btn', async () => {
+      go.disabled = true;
+      try {
+        const res = await api('joinWaitlist', {
+          date: state.date,
+          start: minutesToTime(from),
+          end: minutesToTime(to),
+          durationMinutes: duration,
+        });
+        closeModal();
+        await refreshMine();
+        if (state.view === 'mine') renderMine();
+        toast(res.duplicate ? 'Такое ожидание у вас уже есть' : 'Готово, вы в очереди', 3200);
+      } catch (e) {
+        go.disabled = false;
+        toast(errorText(e.code), 3600);
+      }
+    });
+    acts.appendChild(go);
+    acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+    body.appendChild(acts);
+
+    showModal(body);
+  }
+
+  draw();
+}
+
+// ============================================================
+// Мои брони
+// ============================================================
+
+function renderMine() {
+  const view = document.getElementById('viewMine');
+  view.innerHTML = '';
+
+  if (!state.mine) {
+    view.innerHTML = '<div class="state">Загружаем…</div>';
+    return;
+  }
+
+  const { upcoming, past, waitlist } = state.mine;
+
+  const c1 = el('div', 'card');
+  c1.innerHTML = '<h2>Предстоящие</h2>';
+  if (!upcoming.length) {
+    c1.appendChild(txt('div', 'empty', 'Броней пока нет. Выберите время на вкладке «Бронирование».'));
+  }
+  upcoming.forEach(g => c1.appendChild(bookingItem(g, false)));
+  view.appendChild(c1);
+
+  if (waitlist && waitlist.length) {
+    const c2 = el('div', 'card');
+    c2.innerHTML = '<h2>Вы в очереди</h2>';
+    waitlist.forEach(w => {
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(hoursText(w.durationMinutes || 60))
+        + ' в промежутке ' + escapeHtml(w.start + '–' + w.end) + '</div>'
+        + '<div class="t2">' + escapeHtml(dayLabelLong(w.date, state.mine.today))
+        + ' · сообщим, как только освободится</div>';
+
+      it.appendChild(hasTelegram()
+        ? txt('div', 't2', '📩 Сообщение придёт в Telegram от бота клуба')
+        : txt('div', 't3', '⚠ Telegram не привязан — сообщать некуда. Привяжите его в профиле.'));
+
+      const acts = el('div', 'acts');
+      acts.appendChild(btn('Выйти из очереди', 'btn sm sec', async () => {
+        try { await api('leaveWaitlist', { id: w.id }); await refreshMine(); renderMine(); toast('Вы вышли из очереди'); }
+        catch (e) { toast(errorText(e.code)); }
+      }));
+      it.appendChild(acts);
+      c2.appendChild(it);
+    });
+    view.appendChild(c2);
+  }
+
+  if (past && past.length) {
+    const c3 = el('div', 'card');
+    c3.innerHTML = '<h2>Прошедшие</h2>';
+    past.slice(0, 10).forEach(g => c3.appendChild(bookingItem(g, true)));
+    view.appendChild(c3);
+  }
+}
+
+function bookingItem(g, isPast) {
+  const it = el('div', 'item' + (isPast ? ' past' : ''));
+  const courts = g.segments.map(s => {
+    const c = state.config.courts.find(x => x.id === s.courtId);
+    return c ? c.name : 'Корт';
+  });
+
+  let badge = '';
+  if (g.status === 'pending') badge = ' <span class="pill wait">ждёт подтверждения</span>';
+  else if (g.status === 'expired') badge = ' <span class="pill grey">не подтверждена вовремя</span>';
+  else if (g.status === 'noshow') badge = ' <span class="pill bad">не пришли</span>';
+  else if (isPast) badge = ' <span class="pill grey">состоялась</span>';
+
+  if (g.prepayRequired) badge += ' <span class="pill wait">нужна предоплата</span>';
+
+  it.innerHTML = '<div class="t1">' + escapeHtml(g.start + '–' + g.end) + badge + '</div>'
+    + '<div class="t2">' + escapeHtml(dayLabelLong(g.date, state.mine.today))
+    + ' · ' + escapeHtml([...new Set(courts)].join(' → '))
+    + ' · ' + money(g.total != null ? g.total : g.price) + '</div>';
+
+  // Что взято на прокат — строкой под броней: человек должен помнить,
+  // что ракетки ждут его на стойке, а не искать их в кармане.
+  if (g.extras && g.extras.length) {
+    it.appendChild(txt('div', 't3',
+      '🎾 ' + g.extras.map(x => x.name + ' ×' + x.qty).join(', ')
+      + ' · ' + money(g.extrasTotal)));
+  }
+
+  if (g.switches > 0) {
+    const seg = g.segments[1];
+    const court = state.config.courts.find(x => x.id === seg.courtId);
+    it.appendChild(txt('div', 't3', '⇄ в ' + seg.start + ' переход на ' + (court ? court.name : 'соседний корт')));
+  }
+
+  if (!isPast && g.status === 'expired') {
+    // Отменять уже нечего: корт вернулся в общий доступ сам.
+    it.appendChild(txt('div', 't3',
+      'Администратор не ответил вовремя — время вернулось в общий доступ. Выберите заново, если оно ещё свободно.'));
+  } else if (!isPast) {
+    const deadline = slotTimestamp(g.date, g.start)
+      - (state.mine.cancelDeadlineHours || 10) * 3600 * 1000;
+    const late = Date.now() >= deadline;
+    const acts = el('div', 'acts');
+    // Поздняя отмена больше не запрещена — она стоит рейтинга. Кнопку
+    // оставляем: запрет держал бы корт пустым, а так он успевает уйти
+    // в лист ожидания. Но предупредить обязаны до нажатия.
+    if (late) {
+      acts.appendChild(txt('div', 't3',
+        'Бесплатная отмена закрыта. Отменить всё ещё можно, но это снизит ваш рейтинг.'));
+    }
+    acts.appendChild(btn('Отменить', 'btn sm sec', () => confirmCancel(g, late)));
+    it.appendChild(acts);
+  }
+
+  return it;
+}
+
+function confirmCancel(g, late) {
+  const penalty = state.mine.lateCancelPenalty || 0.5;
+  const body = el('div');
+  body.innerHTML = '<h3>Отменить бронь?</h3>'
+    + '<div class="m-sub">' + escapeHtml(dayLabelLong(g.date, state.mine.today) + ' · ' + g.start + '–' + g.end) + '</div>'
+    + (g.switches > 0 ? '<div class="empty" style="padding:0 0 10px">Бронь собрана из двух кортов — снимутся обе части.</div>' : '')
+    // Цену поздней отмены называем прямо в окне подтверждения: узнать
+    // о ней после нажатия — худший из возможных вариантов.
+    + (late ? '<div class="empty" style="padding:0 0 10px">До начала осталось меньше '
+      + (state.mine.cancelDeadlineHours || 10) + ' ч, поэтому отмена снизит рейтинг на '
+      + String(penalty).replace('.', ',') + '. Корт при этом сразу вернётся в общий доступ.</div>' : '');
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отменить бронь', 'btn danger', async () => {
+    try {
+      const res = await api('cancelBooking', { date: g.date, bookingId: g.id });
+      closeModal();
+      await refreshAvailability();
+      await refreshMine();
+      renderDays(); renderGrid(); renderPicker(); renderMine();
+      toast(res && res.late ? 'Бронь отменена, рейтинг снижен' : 'Бронь отменена');
+    } catch (e) { toast(errorText(e.code), 4000); }
+  }));
+  acts.appendChild(btn('Оставить', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// ============================================================
+// Профиль
+// ============================================================
+
+function renderProfile() {
+  const view = document.getElementById('viewProfile');
+  view.innerHTML = '';
+  const client = state.auth && state.auth.client;
+  if (!client) { view.innerHTML = '<div class="state">Нужно войти.</div>'; return; }
+
+  const c1 = el('div', 'card');
+  c1.innerHTML = '<h2>Профиль</h2>';
+
+  const statusPill = client.status === 'verified' ? '<span class="pill ok">проверенный клиент</span>'
+    : client.status === 'pending' ? '<span class="pill wait">заявка на рассмотрении</span>'
+    : '<span class="pill bad">доступ закрыт</span>';
+  c1.appendChild(html('div', 'item', '<div class="t1">' + escapeHtml(client.name) + ' ' + statusPill + '</div>'
+    + '<div class="t2">' + escapeHtml(client.phone) + '</div>'));
+
+  const fName = el('label', 'field');
+  fName.innerHTML = '<span>Имя и фамилия</span>';
+  const inpName = document.createElement('input');
+  inpName.value = client.name;
+  fName.appendChild(inpName);
+  c1.appendChild(fName);
+
+  const saveName = btn('Сохранить имя', 'btn sm', async () => {
+    try {
+      const res = await api('updateProfile', { name: inpName.value });
+      state.auth.client = res.client;
+      renderHero(); renderProfile();
+      toast('Имя сохранено');
+    } catch (e) { toast(errorText(e.code)); }
+  });
+  c1.appendChild(saveName);
+  view.appendChild(c1);
+
+  const c2 = el('div', 'card');
+  c2.innerHTML = '<h2>Пароль</h2>';
+  const fPass = el('label', 'field');
+  fPass.innerHTML = '<span>Новый пароль</span>';
+  const inpPass = document.createElement('input');
+  inpPass.type = 'password'; inpPass.placeholder = 'не короче 6 символов';
+  fPass.appendChild(inpPass);
+  c2.appendChild(fPass);
+  c2.appendChild(btn('Сменить пароль', 'btn sm', async () => {
+    try {
+      const res = await api('updateProfile', { password: inpPass.value });
+      // Смена пароля отзывает старые токены — сервер сразу выдаёт новый,
+      // иначе человек вылетел бы из собственной сессии.
+      state.auth = { token: res.token, client: res.client };
+      store.set(TOKEN_KEY, res.token);
+      inpPass.value = '';
+      toast('Пароль изменён');
+    } catch (e) { toast(errorText(e.code)); }
+  }));
+  c2.appendChild(txt('div', 'empty', 'Забыли пароль — позвоните в клуб, администратор сбросит.'));
+  view.appendChild(c2);
+
+  const c3 = el('div', 'card');
+  c3.innerHTML = '<h2>Telegram</h2>';
+  c3.appendChild(txt('div', 'empty',
+    'Единственный канал уведомлений. После привязки придут напоминания о брони за сутки и за два часа '
+    + 'и сообщения об освободившемся времени из очереди. Нужен работающий Telegram на телефоне. '
+    + 'Привязка появится вместе с ботом клуба.'));
+  view.appendChild(c3);
+
+  const c4 = el('div', 'card');
+  c4.appendChild(btn('Выйти', 'btn sec', () => logout(false)));
+  view.appendChild(c4);
+}
+
+function txt(tag, cls, text) { const d = el(tag, cls); d.textContent = text; return d; }
+function html(tag, cls, markup) { const d = el(tag, cls); d.innerHTML = markup; return d; }
+
+// ---------- Модальные окна и тосты ----------
+
+function showModal(node) {
+  const m = document.getElementById('modal');
+  m.innerHTML = ''; m.appendChild(node);
+  document.getElementById('backdrop').classList.add('show');
+}
+function closeModal() { document.getElementById('backdrop').classList.remove('show'); }
+document.getElementById('backdrop').addEventListener('click', e => { if (e.target.id === 'backdrop') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+let toastTimer = null;
+function toast(text, ms) {
+  const t = document.getElementById('toast');
+  t.textContent = text; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2400);
+}
+
+// ============================================================
+// Демо-режим: данные и поддельный сервер в памяти.
+//
+// Нужен, чтобы весь путь — регистрация, бронь, отмена — проходился без
+// развёрнутого бэкенда. Проверки здесь повторяют серверные по смыслу,
+// но настоящие правила живут на сервере.
+// ============================================================
+
+const demo = { clients: {}, mine: [], waitlist: [], seq: 0 };
+
+function demoConfig() {
+  return {
+    club: {
+      name: 'Теннисный центр «Альфа»', city: 'Краснодар', address: 'Сечевая ул., 51',
+      mapUrl: 'https://yandex.ru/maps/-/CTWDbG~r', phone: '+7 (961) 511-55-33',
+      rating: '4,9', ratingCount: 64,
+      features: 'Быстрое покрытие, кондиционеры, тепловые пушки, хорошее освещение',
+      extraService: 'Перетяжка струн на профессиональном станке — 700 ₽',
+    },
+    booking: {
+      timezoneOffset: '+03:00', openTime: '05:00', closeTime: '24:00',
+      slotStep: 30, minBookingMinutes: 60, horizonDays: 14,
+      minLeadMinutes: 60, approvalOverMinutes: 180, pendingTtlHours: 6, cancelDeadlineHours: 3,
+      maxActiveBookingsPerClient: 2, allowCourtSwitch: true, maxSwitches: 1, packCourts: true,
+    },
+    pricing: { pricePerHour: 1800 },
+    courts: [
+      { id: 1, name: 'Корт 1', surface: 'хард', indoor: true },
+      { id: 2, name: 'Корт 2', surface: 'хард', indoor: true },
+    ],
+  };
+}
+
+function hash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+function demoAvailability(cfg) {
+  const today = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+  const dates = [];
+  for (let i = 0; i < cfg.booking.horizonDays; i++) dates.push(addDays(today, i));
+
+  const slots = [];
+  for (let m = 300; m + 30 <= 1440; m += 30) slots.push(minutesToTime(m));
+
+  const regular = [
+    { weekday: 2, courtId: 1, start: '19:00', end: '20:30' },
+    { weekday: 4, courtId: 1, start: '19:00', end: '20:30' },
+    { weekday: 1, courtId: 2, start: '20:00', end: '21:30' },
+    { weekday: 3, courtId: 2, start: '20:00', end: '21:30' },
+  ];
+
+  const days = {};
+  dates.forEach(date => {
+    const wd = new Date(date + 'T00:00:00Z').getUTCDay();
+    const perCourt = { 1: [], 2: [] };
+
+    regular.forEach(r => {
+      if (r.weekday === wd) perCourt[r.courtId].push({ start: r.start, end: r.end, kind: 'regular' });
+    });
+
+    cfg.courts.forEach(court => {
+      const seed = hash(date + '#' + court.id);
+      const candidates = [
+        { start: '07:00', end: '08:30', p: 45 }, { start: '09:00', end: '10:30', p: 25 },
+        { start: '12:00', end: '13:00', p: 30 }, { start: '15:00', end: '16:30', p: 35 },
+        { start: '17:00', end: '18:30', p: 70 }, { start: '18:30', end: '20:00', p: 65 },
+        { start: '20:30', end: '22:00', p: 75 }, { start: '22:00', end: '23:00', p: 40 },
+      ];
+      candidates.forEach((c, i) => {
+        if ((hash(seed + ':' + i) % 100) >= c.p) return;
+        const busy = perCourt[court.id];
+        const conflict = busy.some(b =>
+          timeToMinutes(c.start) < timeToMinutes(b.end) && timeToMinutes(b.start) < timeToMinutes(c.end));
+        if (!conflict) busy.push({ start: c.start, end: c.end, kind: 'busy' });
+      });
+    });
+
+    if (date === addDays(today, 5)) perCourt[2].push({ start: '05:00', end: '09:00', kind: 'closed' });
+
+    Object.keys(perCourt).forEach(id =>
+      perCourt[id].sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start)));
+    days[date] = perCourt;
+  });
+
+  return { today, dates, slots, courts: cfg.courts.map(c => ({ id: c.id, name: c.name })), days };
+}
+
+function demoDelay(value) {
+  // Небольшая задержка, чтобы поведение кнопок было честным: в жизни
+  // ответ сервера тоже не мгновенный.
+  return new Promise(resolve => setTimeout(() => resolve(value), 220));
+}
+function demoFail(code) {
+  const e = new Error(code); e.code = code;
+  return demoDelay().then(() => { throw e; });
+}
+function demoPhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  return d.length >= 10 ? d.slice(-10) : null;
+}
+
+async function demoApi(action, payload) {
+  const cfg = state.config || demoConfig();
+
+  switch (action) {
+    case 'register': {
+      const name = String(payload.name || '').trim();
+      const phone = demoPhone(payload.phone);
+      if (name.length < 2) return demoFail('invalid-name');
+      if (!phone) return demoFail('invalid-phone');
+      if (String(payload.password || '').length < 6) return demoFail('password-too-short');
+      if (demo.clients[phone]) return demoDelay({ ok: true, existing: true });
+
+      const client = {
+        id: 'c' + (++demo.seq), name, phone: '+7' + phone,
+        status: 'pending', hasTelegram: false, noShowCount: 0,
+      };
+      demo.clients[phone] = client;
+      return demoDelay({ ok: true, token: 'demo.' + phone, client });
+    }
+
+    case 'login': {
+      const phone = demoPhone(payload.phone);
+      if (!phone) return demoFail('bad-credentials');
+      if (!String(payload.password || '')) return demoFail('bad-credentials');
+      // В демо пароль не проверяется: заказчик должен пройти путь, а не
+      // вспоминать, что он вводил при регистрации.
+      if (!demo.clients[phone]) {
+        demo.clients[phone] = {
+          id: 'c' + (++demo.seq), name: 'Гость Демидов', phone: '+7' + phone,
+          status: 'verified', hasTelegram: false, noShowCount: 0,
+        };
+      }
+      return demoDelay({ ok: true, token: 'demo.' + phone, client: demo.clients[phone] });
+    }
+
+    case 'me': {
+      const phone = String(payload.token || '').split('.')[1];
+      if (!phone || !demo.clients[phone]) return demoFail('unauthorized');
+      return demoDelay({ client: demo.clients[phone] });
+    }
+
+    case 'updateProfile': {
+      const client = state.auth.client;
+      if (payload.name != null) {
+        const name = String(payload.name).trim();
+        if (name.length < 2) return demoFail('invalid-name');
+        client.name = name;
+      }
+      if (payload.password != null && String(payload.password).length < 6) return demoFail('password-too-short');
+      return demoDelay({ ok: true, token: state.auth.token, client });
+    }
+
+    case 'createBooking': {
+      const client = state.auth.client;
+      if (client.status !== 'verified') return demoFail('not-verified');
+
+      const active = demo.mine.filter(g => slotTimestamp(g.date, g.end) > Date.now());
+      if (active.length >= cfg.booking.maxActiveBookingsPerClient) return demoFail('too-many-active');
+
+      const grid = buildFreeGrid(payload.date);
+      const startIdx = state.data.slots.indexOf(payload.start);
+      const need = payload.durationMinutes / cfg.booking.slotStep;
+      const plan = planBooking(payload.date, grid, startIdx, startIdx + need - 1, {
+        onlyCourtId: payload.exactCourt ? payload.courtId : null,
+      });
+      if (!plan) return demoFail('slot-taken');
+
+      const step = cfg.booking.slotStep;
+      const endOf = (i) => minutesToTime(timeToMinutes(state.data.slots[i]) + step);
+      const needsApproval = payload.durationMinutes > cfg.booking.approvalOverMinutes;
+
+      const group = {
+        key: 'g' + (++demo.seq), id: 'b' + demo.seq,
+        date: payload.date,
+        start: state.data.slots[plan.fromIdx],
+        end: endOf(plan.toIdx),
+        status: needsApproval ? 'pending' : 'confirmed',
+        price: Math.round(payload.durationMinutes / 60 * cfg.pricing.pricePerHour),
+        switches: plan.switches,
+        segments: plan.segments.map(s => ({
+          courtId: s.courtId, start: state.data.slots[s.fromIdx], end: endOf(s.toIdx),
+        })),
+      };
+
+      demo.mine.push(group);
+      // Отражаем бронь в общей занятости ровно так же, как это сделал бы
+      // сервер — без пометки владельца. Своей её делает сопоставление
+      // с кабинетом в myBookingAt.
+      group.segments.forEach(s => {
+        state.data.days[payload.date][String(s.courtId)].push({
+          start: s.start, end: s.end, kind: 'busy', groupKey: group.key,
+        });
+        state.data.days[payload.date][String(s.courtId)].sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+      });
+
+      return demoDelay({ ok: true, booking: group, needsApproval });
+    }
+
+    case 'myBookings': {
+      const now = Date.now();
+      const sorted = demo.mine.slice().sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+      return demoDelay({
+        today: state.data.today,
+        upcoming: sorted.filter(g => slotTimestamp(g.date, g.end) > now),
+        past: sorted.filter(g => slotTimestamp(g.date, g.end) <= now).reverse(),
+        waitlist: demo.waitlist.slice(),
+        cancelDeadlineHours: cfg.booking.cancelDeadlineHours,
+      });
+    }
+
+    case 'cancelBooking': {
+      const g = demo.mine.find(x => x.id === payload.bookingId);
+      if (!g) return demoFail('booking-not-found');
+      const deadline = slotTimestamp(g.date, g.start) - cfg.booking.cancelDeadlineHours * 3600 * 1000;
+      if (Date.now() > deadline) return demoFail('too-late');
+
+      demo.mine = demo.mine.filter(x => x.id !== g.id);
+      Object.keys(state.data.days[g.date]).forEach(courtId => {
+        state.data.days[g.date][courtId] = state.data.days[g.date][courtId]
+          .filter(b => b.groupKey !== g.key);
+      });
+      return demoDelay({ ok: true });
+    }
+
+    case 'joinWaitlist': {
+      const duration = Number(payload.durationMinutes);
+      const span = timeToMinutes(payload.end) - timeToMinutes(payload.start);
+      if (!Number.isFinite(duration) || duration < cfg.booking.minBookingMinutes) return demoFail('duration-too-short');
+      if (duration > span) return demoFail('window-too-short');
+
+      const dup = demo.waitlist.some(w => w.date === payload.date && w.start === payload.start
+        && w.end === payload.end && w.durationMinutes === duration);
+      if (dup) return demoDelay({ ok: true, duplicate: true });
+
+      demo.waitlist.push({
+        id: 'w' + (++demo.seq), date: payload.date, start: payload.start,
+        end: payload.end, durationMinutes: duration, courtId: payload.courtId,
+      });
+      return demoDelay({ ok: true, duplicate: false });
+    }
+
+    case 'leaveWaitlist': {
+      demo.waitlist = demo.waitlist.filter(w => w.id !== payload.id);
+      return demoDelay({ ok: true });
+    }
+
+    default:
+      return demoFail('unknown-action');
+  }
+}
+
+// ---------- Старт ----------
+
+load().catch(e => {
+  console.error(e);
+  document.getElementById('grid').innerHTML =
+    '<div class="state">Не удалось загрузить сетку. Обновите страницу или попробуйте позже.</div>';
+});
+</script>
+</body>
+</html>
