@@ -504,18 +504,48 @@ function hasTelegram() {
 
 // ---------- Слой API ----------
 
+// Одна неудачная попытка не должна оставлять страницу с вечной надписью
+// «Загружаем сетку…». Так и случилось 27.08.2026 на боевом контуре: первое
+// обращение к холодной функции упёрлось в 504, и страница осталась пустой,
+// хотя следующий же запрос прошёл бы за долю секунды. Повторяем только то,
+// что заведомо безопасно повторить.
+async function request(payload, retries) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 400 * attempt));
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      // 5xx — это «сервер не смог», такое повторяют. 4xx — «запрос не тот»,
+      // повторять бессмысленно, ответ не изменится.
+      if (res.status >= 500 && attempt < retries) { lastError = new Error('server-' + res.status); continue; }
+      return res;
+    } catch (e) {
+      lastError = e; // сеть не ответила вовсе
+    }
+  }
+  throw lastError || new Error('request-failed');
+}
+
+// Действия, которые ничего не меняют. Их можно молча повторить: сеть
+// моргнула — клиент этого даже не заметил. Всё остальное повторять нельзя,
+// человек должен сам решить, нажимать ли второй раз.
+const SAFE_TO_REPEAT = ['getConfig', 'getAvailability', 'me', 'myBookings'];
+
 async function api(action, body) {
   const payload = Object.assign({ action }, body || {});
   if (state.auth && state.auth.token) payload.token = state.auth.token;
 
   if (!API_URL) return demoApi(action, payload);
 
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
+  const res = await request(payload, SAFE_TO_REPEAT.indexOf(action) > -1 ? 2 : 0);
+  // Шлюз при ошибке отвечает не JSON, а страницей с текстом. Без этой
+  // подстраховки разбор падал бы невнятной ошибкой разметки вместо
+  // понятного «сервер недоступен».
+  const data = await res.json().catch(() => ({ error: res.ok ? 'bad-response' : 'server-unavailable' }));
   if (!res.ok) {
     const err = new Error(data.error || 'request-failed');
     err.code = data.error;
