@@ -629,7 +629,15 @@ async function request(payload, retries) {
 // Действия, которые ничего не меняют. Их можно молча повторить: сеть
 // моргнула — клиент этого даже не заметил. Всё остальное повторять нельзя,
 // человек должен сам решить, нажимать ли второй раз.
-const SAFE_TO_REPEAT = ['getConfig', 'getAvailability', 'me', 'myBookings', 'getLanding'];
+//
+// `bootstrap` здесь обязателен: он собрал в себя весь первый экран, и без
+// повтора холодный отказ функции оставлял бы человека перед пустой
+// страницей — ровно там, где раньше переспрашивал каждый из четырёх
+// запросов по отдельности.
+const SAFE_TO_REPEAT = [
+  'bootstrap', 'getConfig', 'getAvailability', 'getLanding', 'openPlayList',
+  'me', 'myBookings',
+];
 
 async function api(action, body) {
   const payload = Object.assign({ action }, body || {});
