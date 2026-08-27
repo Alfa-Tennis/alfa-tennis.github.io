@@ -143,6 +143,10 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .item .acts { margin-top: 9px; display: flex; gap: 8px; flex-wrap: wrap; }
 .item.past { opacity: .68; }
 
+.alarm { background: var(--danger-tint, #fbeaea); border: 1px solid #e3b4b4; color: #8d2f2f;
+  border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; font-size: 14px; }
+.alarm .t2 { margin-top: 5px; font-size: 13px; color: #8d2f2f; opacity: .85; }
+
 /* Каталог */
 .group { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
   color: var(--ink-soft); margin: 14px 2px 7px; }
@@ -487,12 +491,13 @@ async function loadAll() {
   const needEvents = state.tab === 'events';
   const needCatalog = state.tab === 'catalog';
 
-  const [pub, day, clients, review, itemRequests, staff, events, catalog, posts] = await Promise.all([
+  const [pub, day, clients, review, itemRequests, health, staff, events, catalog, posts] = await Promise.all([
     api('getConfig'),
     api('adminDay', { date: state.date }),
     api('listClients', { query: state.clientQuery }),
     api('adminReview'),
     api('listRequests'),
+    api('health'),
     needStaff ? api('listStaff') : Promise.resolve(null),
     needEvents ? api('listEvents') : Promise.resolve(null),
     needCatalog ? api('listCatalog') : Promise.resolve(null),
@@ -518,6 +523,7 @@ async function loadAll() {
     courts: day.courts,
     clients: clients.clients.map(mapClient),
     requests: itemRequests,
+    health,
     staff: staff ? staff.staff : null,
     events: events || null,
     catalog: catalog || null,
@@ -715,12 +721,45 @@ function render() {
   renderTabs();
   const view = document.getElementById('view');
   view.innerHTML = '';
+  renderHealthNotice(view);
   ({ day: renderDay, requests: renderRequests, clients: renderClients,
      series: renderSeries, events: renderEvents, catalog: renderCatalog,
      settings: renderSettings }[state.tab])(view);
 
   lastTab = state.tab;
   window.scrollTo({ top: tabChanged ? 0 : y });
+}
+
+// Тревога о молчащем боте. Показывается на всех вкладках, потому что
+// поломка эта молчаливая: бот перестаёт слать напоминания, а панель
+// выглядит совершенно исправной.
+//
+// В Telegram такую тревогу отправить нельзя — это ровно тот канал,
+// о поломке которого надо сообщить. Поэтому она здесь, на глазах.
+function renderHealthNotice(view) {
+  if (!db.health || db.health.ok) return;
+
+  const t = db.health.telegram || {};
+  const how = t.minutesSinceOk == null
+    ? 'Опроса Telegram ещё не было.'
+    : 'Telegram не отвечает ' + minutesText(t.minutesSinceOk) + '.';
+
+  const box = el('div', 'alarm');
+  box.innerHTML = '<b>Бот молчит.</b> ' + escapeHtml(how)
+    + ' Напоминания клиентам и уведомления администраторам сейчас не уходят.'
+    + '<div class="t2">Панель и запись на сайте при этом работают: сломан только канал до Telegram. '
+    + (t.knownIps > 1
+      ? 'Сервер уже перебрал ' + t.knownIps + ' известных адреса.'
+      : 'Запасных адресов в списке нет.')
+    + (t.lastError ? ' Последняя ошибка: ' + escapeHtml(String(t.lastError)) : '')
+    + '</div>';
+  view.appendChild(box);
+}
+
+function minutesText(m) {
+  if (m < 60) return m + ' мин';
+  const h = Math.floor(m / 60);
+  return h + ' ч ' + (m % 60) + ' мин';
 }
 
 // ============================================================
