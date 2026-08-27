@@ -6,8 +6,12 @@
 <title>Теннисный центр «Альфа» — бронирование кортов в Краснодаре</title>
 <meta name="description" content="Онлайн-бронирование кортов теннисного центра «Альфа», Краснодар. Два крытых корта, с 5:00 до 24:00 без выходных.">
 <style>
-/* Палитра снята с фотографий и логотипа клуба: синее покрытие корта,
-   зелёная зона за линиями, графитовый фасад, золото звёзд логотипа. */
+/* Палитра снята прямо из вектора логотипа: #3F6CA3 у знака и надписи,
+   #A4DB00 у мяча — это не подбор на глаз, а те же значения из файла.
+   Золота в логотипе больше нет, и раньше `--gold` тянул две несовместимые
+   роли сразу — призыв и предупреждение. Теперь это разные переменные:
+   лайм зовёт (`--ball`), янтарь предупреждает (`--warn`). Звезда рейтинга
+   осталась жёлтой намеренно: лаймовая звезда читается как ошибка. */
 :root {
   --ink: #22272C;
   --ink-soft: #5F6B72;
@@ -15,13 +19,21 @@
   --bg: #F2F4F5;
   --surface: #FFFFFF;
 
-  --court: #3E6B7C;
-  --court-dk: #315568;
-  --court-tint: #E7EFF2;
+  --court: #3F6CA3;
+  --court-dk: #2F5480;
+  --court-tint: #E8F0F9;
+  --court-line: #C6D9EE;
 
-  --gold: #F3CF5B;
-  --gold-dk: #74590F;
-  --gold-tint: #FBF2D8;
+  --ball: #A4DB00;
+  --ball-dk: #4C6600;
+  --ball-tint: #F0F8D8;
+
+  --warn: #C98A14;
+  --warn-dk: #7A5410;
+  --warn-tint: #FDF3DE;
+  --warn-line: #EFDCB2;
+
+  --star: #F0B429;
 
   --grass: #5C752F;
   --danger: #B23B3B;
@@ -48,10 +60,12 @@ button { font: inherit; }
 input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- Шапка ---------- */
-.hero { background: linear-gradient(160deg, #23272E 0%, #2E3238 100%); color: #fff; padding: 20px 16px 24px; }
+.hero { background: linear-gradient(160deg, #1E3A5F 0%, #2C4F7C 100%); color: #fff; padding: 20px 16px 24px; }
 .hero-inner { max-width: 920px; margin: 0 auto; }
 .hero-top { display: flex; align-items: center; gap: 14px; }
-.logo { width: 56px; height: 56px; border-radius: 12px; background: #fff; padding: 4px; flex: 0 0 auto; }
+/* Вектор логотипа шире, чем выше (444×263), и в квадратной плашке
+   давал бы белые поля сверху и снизу. Плашка под пропорции знака. */
+.logo { width: 92px; height: 56px; border-radius: 12px; background: #fff; padding: 5px 8px; flex: 0 0 auto; }
 .logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .hero h1 { margin: 0; font-size: 21px; line-height: 1.2; letter-spacing: -.01em; }
 .hero .where { margin: 2px 0 0; font-size: 14px; color: rgba(255,255,255,.72); }
@@ -60,7 +74,7 @@ input, select, textarea { font: inherit; color: inherit; }
 /* Отдельной строкой на всю ширину: рядом с названием на телефоне фраза
    рвалась посередине — «4,9 · 64 / оценки на / Яндекс.Картах». */
 .rating { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 14px; color: rgba(255,255,255,.85); margin-top: 12px; }
-.rating .star { color: var(--gold); }
+.rating .star { color: var(--star); }
 
 .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .fact {
@@ -68,7 +82,7 @@ input, select, textarea { font: inherit; color: inherit; }
   border-radius: 999px; padding: 6px 12px; font-size: 14px;
 }
 .fact b { font-weight: 600; }
-.fact.gold { background: var(--gold); border-color: var(--gold); color: #3A2E06; }
+.fact.accent { background: var(--ball); border-color: var(--ball); color: #2C3A08; }
 .hero a { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
 
 /* Чем клуб хорош — читают до выбора времени, а не после, поэтому это
@@ -91,7 +105,7 @@ input, select, textarea { font: inherit; color: inherit; }
 }
 .nav button:hover { color: var(--ink); }
 .nav button.on { color: var(--court-dk); border-bottom-color: var(--court); font-weight: 600; }
-.nav .dot { background: var(--gold); color: #3A2E06; border-radius: 999px; font-size: 11px; padding: 1px 6px; margin-left: 5px; font-weight: 600; }
+.nav .dot { background: var(--ball); color: #2C3A08; border-radius: 999px; font-size: 11px; padding: 1px 6px; margin-left: 5px; font-weight: 600; }
 
 main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .section-title { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 22px 4px 10px; text-transform: uppercase; letter-spacing: .05em; }
@@ -99,8 +113,8 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
 .card h2 { margin: 0 0 10px; font-size: 16px; }
 
-.notice { margin: 14px 0 0; background: var(--gold-tint); border: 1px solid #EFE0B4; color: var(--gold-dk); border-radius: var(--radius); padding: 10px 14px; font-size: 14px; }
-.notice.info { background: var(--court-tint); border-color: #CBDDE4; color: var(--court-dk); }
+.notice { margin: 14px 0 0; background: var(--warn-tint); border: 1px solid var(--warn-line); color: var(--warn-dk); border-radius: var(--radius); padding: 10px 14px; font-size: 14px; }
+.notice.info { background: var(--court-tint); border-color: var(--court-line); color: var(--court-dk); }
 .empty { color: var(--ink-soft); font-size: 14px; padding: 4px 2px; }
 
 /* ---------- Кнопки ---------- */
@@ -121,8 +135,8 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .field input:focus { outline: 2px solid var(--court-tint); border-color: var(--court); }
 
 .pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 12px; border: 1px solid var(--line); }
-.pill.ok { background: var(--court-tint); border-color: #CBDDE4; color: var(--court-dk); }
-.pill.wait { background: var(--gold-tint); border-color: #EFE0B4; color: var(--gold-dk); }
+.pill.ok { background: var(--court-tint); border-color: var(--court-line); color: var(--court-dk); }
+.pill.wait { background: var(--warn-tint); border-color: var(--warn-line); color: var(--warn-dk); }
 .pill.bad { background: var(--danger-tint); border-color: #EEC9C9; color: var(--danger); }
 .pill.grey { background: #EFF2F3; color: var(--ink-soft); }
 
@@ -153,7 +167,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .opt.on { border-color: var(--court); background: var(--court-tint); }
 .opt .o-time { display: block; font-weight: 600; font-size: 15px; }
 .opt .o-court { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap; }
-.opt.split .o-court { color: var(--gold-dk); }
+.opt.split .o-court { color: var(--warn-dk); }
 .opts-empty { font-size: 14px; color: var(--ink-soft); padding: 2px; }
 .picker-foot { margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--ink-soft); }
 .grid-hint { margin: 10px 4px 0; font-size: 13px; color: var(--ink-soft); }
@@ -180,6 +194,11 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .cell.busy { background: #E5E9EA; cursor: pointer; }
 .cell.busy:hover { background: #DCE1E3; }
 .cell.regular { background: repeating-linear-gradient(45deg, #E5E9EA 0 6px, #DBE1E2 6px 12px); cursor: pointer; }
+/* Открытая тренировка — занято, но не чужое: сюда можно записаться,
+   и клетка обязана отличаться от обычной брони с первого взгляда. */
+.cell.openplay { background: var(--ball-tint); cursor: pointer; box-shadow: inset 3px 0 0 var(--ball); }
+.cell.openplay:hover { background: #E7F4C4; }
+.cell.openplay .tag { color: var(--ball-dk); font-weight: 600; }
 .cell.closed { background: repeating-linear-gradient(45deg, #D2D8DA 0 6px, #C7CED0 6px 12px); }
 .cell.past { background: #F7F8F9; }
 .cell.mine { background: var(--grass); }
@@ -197,6 +216,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .sw.free { background: #fff; }
 .sw.busy { background: #E5E9EA; }
 .sw.regular { background: repeating-linear-gradient(45deg, #E5E9EA 0 4px, #DBE1E2 4px 8px); }
+.sw.openplay { background: var(--ball-tint); box-shadow: inset 3px 0 0 var(--ball); }
 .sw.closed { background: repeating-linear-gradient(45deg, #D2D8DA 0 4px, #C7CED0 4px 8px); }
 .sw.mine { background: var(--grass); }
 
@@ -207,7 +227,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .bar .info { flex: 1 1 210px; min-width: 0; }
 .bar .info .t1 { font-weight: 600; }
 .bar .info .t2 { font-size: 14px; color: var(--ink-soft); }
-.bar .info .switch-note { color: var(--gold-dk); }
+.bar .info .switch-note { color: var(--warn-dk); }
 .bar .info .switch-note:empty { display: none; }
 
 /* ---------- Мои брони ---------- */
@@ -215,7 +235,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .item.past { opacity: .72; }
 .item .t1 { font-weight: 600; }
 .item .t2 { font-size: 14px; color: var(--ink-soft); margin-top: 2px; }
-.item .t3 { font-size: 13px; color: var(--gold-dk); margin-top: 4px; }
+.item .t3 { font-size: 13px; color: var(--warn-dk); margin-top: 4px; }
 .item .acts { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------- Модальные окна ---------- */
@@ -229,14 +249,21 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .tabs2 button { flex: 1; appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 9px; cursor: pointer; }
 .tabs2 button.on { background: var(--court); border-color: var(--court); color: #fff; font-weight: 600; }
 
+/* Код сверки при входе через Telegram: его читают глазами и сравнивают
+   с сообщением бота, поэтому он крупный и с разрядкой. */
+.tg-or { display: flex; align-items: center; gap: 10px; color: var(--ink-soft); font-size: 13px; margin: 16px 0 12px; }
+.tg-or::before, .tg-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.tg-code { font-size: 32px; font-weight: 700; letter-spacing: .22em; text-align: center;
+  background: var(--court-tint); border-radius: 10px; padding: 14px 10px 14px 18px; margin: 14px 0; }
+
 .summary { background: var(--court-tint); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
 .summary .s-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; padding: 2px 0; }
-.summary .s-row.total { font-weight: 600; font-size: 16px; border-top: 1px solid #CBDDE4; margin-top: 6px; padding-top: 8px; }
+.summary .s-row.total { font-weight: 600; font-size: 16px; border-top: 1px solid var(--court-line); margin-top: 6px; padding-top: 8px; }
 .rent { margin-bottom: 14px; }
 .rent-head { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
 .rent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px; }
-.rent-row.on { border-color: var(--gold); background: var(--gold-tint); }
+.rent-row.on { border-color: var(--ball); background: var(--ball-tint); }
 .rent-name b { display: block; font-size: 14px; font-weight: 600; }
 .rent-name span { font-size: 12.5px; color: var(--ink-soft); }
 .stepper { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
@@ -257,8 +284,8 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .cta { background: var(--court); color: #fff; border-radius: var(--radius); padding: 18px 16px; margin-top: 18px; }
 .cta h2 { margin: 0 0 4px; font-size: 19px; }
 .cta p { margin: 0 0 14px; font-size: 14px; color: rgba(255,255,255,.82); line-height: 1.45; }
-.cta .btn { background: var(--gold); color: #3A2E06; }
-.cta .btn:hover { background: #E7BF3F; }
+.cta .btn { background: var(--ball); color: #2C3A08; }
+.cta .btn:hover { background: #93C400; }
 .ev { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
 .ev-when { flex: 0 0 auto; text-align: center; min-width: 52px; }
 .ev-when .d { font-size: 20px; font-weight: 600; line-height: 1.1; }
@@ -302,7 +329,7 @@ footer a { color: var(--court-dk); }
 <header class="hero">
   <div class="hero-inner">
     <div class="hero-top">
-      <div class="logo"><img id="logoImg" src="data:image/jpeg;base64,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" alt="Логотип теннисного центра «Альфа»"></div>
+      <div class="logo"><img id="logoImg" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDQ0IiBoZWlnaHQ9IjI2MyIgdmlld0JveD0iMCAwIDQ0NCAyNjMiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik00NDMuMTI3IDIyMC4yNTFDNDQzLjgzNiAyMjEuNzA4IDQ0Mi43NzkgMjIzLjQwNiA0NDEuMTY0IDIyMy40MDZINDI2LjQ3OUM0MjUuNjM3IDIyMy40MDYgNDI0Ljg3IDIyMi45MjEgNDI0LjUwNyAyMjIuMTU4TDQxOC40MiAyMDkuMzZDNDE4LjA1OCAyMDguNTk3IDQxNy4yOTEgMjA4LjExMiA0MTYuNDQ5IDIwOC4xMTJIMzgyLjgzNEMzODEuOTkyIDIwOC4xMTIgMzgxLjIyNSAyMDguNTk3IDM4MC44NjMgMjA5LjM2TDM3NC43NzYgMjIyLjE1OEMzNzQuNDEzIDIyMi45MjEgMzczLjY0NiAyMjMuNDA2IDM3Mi44MDQgMjIzLjQwNkgzNTguMTE5QzM1Ni41MDQgMjIzLjQwNiAzNTUuNDQ3IDIyMS43MDggMzU2LjE1NiAyMjAuMjUxTDM4Ny42NCAxNTUuNTY0QzM4OC4wMDYgMTU0LjgxMSAzODguNzY4IDE1NC4zMzQgMzg5LjYwMyAxNTQuMzM0SDQwOS42OEM0MTAuNTE1IDE1NC4zMzQgNDExLjI3NyAxNTQuODExIDQxMS42NDMgMTU1LjU2NEw0NDMuMTI3IDIyMC4yNTFaTTM5OS42NDEgMTcwLjgxM0MzOTkuNDAxIDE3MC44MTMgMzk5LjE4MiAxNzAuOTUxIDM5OS4wNzggMTcxLjE2OEwzODcuODczIDE5NC42MDlDMzg3LjE3NyAxOTYuMDY1IDM4OC4yMzQgMTk3Ljc1MSAzODkuODQyIDE5Ny43NTFINDA5LjQ0MUM0MTEuMDQ5IDE5Ny43NTEgNDEyLjEwNiAxOTYuMDY1IDQxMS40MSAxOTQuNjA5TDQwMC4yMDUgMTcxLjE2OEM0MDAuMTAxIDE3MC45NTEgMzk5Ljg4MiAxNzAuODEzIDM5OS42NDEgMTcwLjgxM1YxNzAuODEzWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMzI5LjY4MSAxNjIuMDE5QzMzNi41ODkgMTYyLjAxOSAzNDIuNDc4IDE2My4xNjggMzQ3LjM0NiAxNjUuNDY1QzM1Mi4yODEgMTY3LjY5NiAzNTUuOTk4IDE3MC44NDcgMzU4LjQ5OCAxNzQuOTE2QzM2MC45OTggMTc4LjkxOSAzNjIuMjQ4IDE4My40OCAzNjIuMjQ4IDE4OC42QzM2Mi4yNDggMTkzLjcxOSAzNjAuOTk4IDE5OC4zMTMgMzU4LjQ5OCAyMDIuMzgyQzM1NS45OTggMjA2LjM4NSAzNTIuMjgxIDIwOS41MzYgMzQ3LjM0NiAyMTEuODMzQzM0Mi40NzggMjE0LjA2NCAzMzYuNTg5IDIxNS4xOCAzMjkuNjgxIDIxNS4xOEgzMTguNTUxQzMxNy4zNCAyMTUuMTggMzE2LjM1OCAyMTYuMTU5IDMxNi4zNTggMjE3LjM2OFYyMjIuODM3QzMxNi4zNTggMjI0LjA0NSAzMTUuMzc2IDIyNS4wMjUgMzE0LjE2NSAyMjUuMDI1SDMwMC43ODdDMjk5LjU3NiAyMjUuMDI1IDI5OC41OTQgMjI0LjA0NSAyOTguNTk0IDIyMi44MzdWMjE3LjM2OEMyOTguNTk0IDIxNi4xNTkgMjk3LjYxMiAyMTUuMTggMjk2LjQwMSAyMTUuMThIMjg1LjI3MUMyNzguMzYzIDIxNS4xOCAyNzIuNDQyIDIxNC4wNjQgMjY3LjUwNyAyMTEuODMzQzI2Mi42MzkgMjA5LjUzNiAyNTguOTU0IDIwNi4zODUgMjU2LjQ1NCAyMDIuMzgyQzI1My45NTQgMTk4LjMxMyAyNTIuNzA0IDE5My43MTkgMjUyLjcwNCAxODguNkMyNTIuNzA0IDE4My40OCAyNTMuOTU0IDE3OC45MTkgMjU2LjQ1NCAxNzQuOTE2QzI1OC45NTQgMTcwLjg0NyAyNjIuNjM5IDE2Ny42OTYgMjY3LjUwNyAxNjUuNDY1QzI3Mi40NDIgMTYzLjE2OCAyNzguMzYzIDE2Mi4wMTkgMjg1LjI3MSAxNjIuMDE5SDI5Ni40MDFDMjk3LjYxMiAxNjIuMDE5IDI5OC41OTQgMTYxLjA0IDI5OC41OTQgMTU5LjgzMlYxNTQuMzYyQzI5OC41OTQgMTUzLjE1NCAyOTkuNTc2IDE1Mi4xNzUgMzAwLjc4NyAxNTIuMTc1SDMxNC4xNjVDMzE1LjM3NiAxNTIuMTc1IDMxNi4zNTggMTUzLjE1NCAzMTYuMzU4IDE1NC4zNjJWMTU5LjgzMkMzMTYuMzU4IDE2MS4wNCAzMTcuMzQgMTYyLjAxOSAzMTguNTUxIDE2Mi4wMTlIMzI5LjY4MVpNMjk2LjQwMSAyMDAuOTA1QzI5Ny42MTIgMjAwLjkwNSAyOTguNTk0IDE5OS45MjYgMjk4LjU5NCAxOTguNzE4VjE3OC40ODJDMjk4LjU5NCAxNzcuMjczIDI5Ny42MTIgMTc2LjI5NCAyOTYuNDAxIDE3Ni4yOTRIMjg1Ljc2NUMyODEuMjI1IDE3Ni4yOTQgMjc3LjcwNSAxNzcuNDEgMjc1LjIwNSAxNzkuNjQxQzI3Mi43MDUgMTgxLjg3MyAyNzEuNDU1IDE4NC44NTkgMjcxLjQ1NSAxODguNkMyNzEuNDU1IDE5Mi4zNDEgMjcyLjcwNSAxOTUuMzI3IDI3NS4yMDUgMTk3LjU1OEMyNzcuNzA1IDE5OS43OSAyODEuMjI1IDIwMC45MDUgMjg1Ljc2NSAyMDAuOTA1SDI5Ni40MDFaTTMyOS4xODggMjAwLjkwNUMzMzMuNzI3IDIwMC45MDUgMzM3LjI0NyAxOTkuNzkgMzM5Ljc0NyAxOTcuNTU4QzM0Mi4yNDggMTk1LjMyNyAzNDMuNDk4IDE5Mi4zNDEgMzQzLjQ5OCAxODguNkMzNDMuNDk4IDE4NC44NTkgMzQyLjI0OCAxODEuODczIDMzOS43NDcgMTc5LjY0MUMzMzcuMjQ3IDE3Ny40MSAzMzMuNzI3IDE3Ni4yOTQgMzI5LjE4OCAxNzYuMjk0SDMxOC41NTFDMzE3LjM0IDE3Ni4yOTQgMzE2LjM1OCAxNzcuMjczIDMxNi4zNTggMTc4LjQ4MlYxOTguNzE4QzMxNi4zNTggMTk5LjkyNiAzMTcuMzQgMjAwLjkwNSAzMTguNTUxIDIwMC45MDVIMzI5LjE4OFoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTE3OC4xMDcgMjIzLjQwNkMxNzYuODk4IDIyMy40MDYgMTc1LjkxOCAyMjIuNDI1IDE3NS45MTggMjIxLjIxNFYxNTYuNTI3QzE3NS45MTggMTU1LjMxNiAxNzYuODk4IDE1NC4zMzQgMTc4LjEwNyAxNTQuMzM0SDE5MS40NjFDMTkyLjY3IDE1NC4zMzQgMTkzLjY1IDE1NS4zMTYgMTkzLjY1IDE1Ni41MjdWMTc0LjgzNkMxOTMuNjUgMTc2LjA0NyAxOTQuNjMgMTc3LjAyOSAxOTUuODM5IDE3Ny4wMjlIMjE5LjI2MkMyMjkuMzc2IDE3Ny4wMjkgMjM2Ljg5NSAxNzkuMDY4IDI0MS44MjEgMTgzLjE0N0MyNDYuODEyIDE4Ny4yMjYgMjQ5LjMwNyAxOTIuOTE2IDI0OS4zMDcgMjAwLjIxOEMyNDkuMzA3IDIwNy41MiAyNDYuODEyIDIxMy4yMSAyNDEuODIxIDIxNy4yODhDMjM2Ljg5NSAyMjEuMzY3IDIyOS4zNzYgMjIzLjQwNiAyMTkuMjYyIDIyMy40MDZIMTc4LjEwN1pNMjE4Ljc2OSAyMDkuMDk4QzIyMi43MSAyMDkuMDk4IDIyNS42NjUgMjA4LjMwOSAyMjcuNjM1IDIwNi43M0MyMjkuNjA1IDIwNS4xNTEgMjMwLjU5MSAyMDIuOTgxIDIzMC41OTEgMjAwLjIxOEMyMzAuNTkxIDE5Ny40NTUgMjI5LjYwNSAxOTUuMjg0IDIyNy42MzUgMTkzLjcwNUMyMjUuNjY1IDE5Mi4xMjYgMjIyLjcxIDE5MS4zMzcgMjE4Ljc2OSAxOTEuMzM3SDE5NS44MzlDMTk0LjYzIDE5MS4zMzcgMTkzLjY1IDE5Mi4zMTkgMTkzLjY1IDE5My41M1YyMDYuOTA2QzE5My42NSAyMDguMTE3IDE5NC42MyAyMDkuMDk4IDE5NS44MzkgMjA5LjA5OEgyMTguNzY5WiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNODcuNzMzNCAyMjAuMjUxQzg4LjQ0NjggMjIxLjcwOCA4Ny4zODM3IDIyMy40MDYgODUuNzU4NiAyMjMuNDA2SDcwLjk4MjVDNzAuMTM1NiAyMjMuNDA2IDY5LjM2NCAyMjIuOTIxIDY4Ljk5OTEgMjIyLjE1OEw2Mi44NzQ1IDIwOS4zNkM2Mi41MDk2IDIwOC41OTcgNjEuNzM4IDIwOC4xMTIgNjAuODkxIDIwOC4xMTJIMjcuMDY4MkMyNi4yMjEzIDIwOC4xMTIgMjUuNDQ5NyAyMDguNTk3IDI1LjA4NDggMjA5LjM2TDE4Ljk2MDIgMjIyLjE1OEMxOC41OTUzIDIyMi45MjEgMTcuODIzNyAyMjMuNDA2IDE2Ljk3NjcgMjIzLjQwNkgyLjIwMDY4QzAuNTc1NjAxIDIyMy40MDYgLTAuNDg3NTE5IDIyMS43MDggMC4yMjU4NTkgMjIwLjI1MUwzMS45MDQxIDE1NS41NjRDMzIuMjcyNyAxNTQuODExIDMzLjAzOTEgMTU0LjMzNCAzMy44Nzg5IDE1NC4zMzRINTQuMDgwNEM1NC45MjAyIDE1NC4zMzQgNTUuNjg2NSAxNTQuODExIDU2LjA1NTIgMTU1LjU2NEw4Ny43MzM0IDIyMC4yNTFaTTQzLjk3OTYgMTcwLjgxM0M0My43Mzc4IDE3MC44MTMgNDMuNTE3NSAxNzAuOTUxIDQzLjQxMjggMTcxLjE2OUwzMi4xMzgzIDE5NC42MDlDMzEuNDM4MSAxOTYuMDY1IDMyLjUwMTUgMTk3Ljc1MSAzNC4xMTk4IDE5Ny43NTFINTMuODM5NEM1NS40NTc3IDE5Ny43NTEgNTYuNTIxMSAxOTYuMDY1IDU1LjgyMSAxOTQuNjA5TDQ0LjU0NjQgMTcxLjE2OUM0NC40NDE4IDE3MC45NTEgNDQuMjIxNCAxNzAuODEzIDQzLjk3OTYgMTcwLjgxM1YxNzAuODEzWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMTc4Ljk5NSA1Ny42NDU4QzE2OS41IDQ0Ljk5OTYgMTU4IDM2LjQ5OTYgMTM5IDI3LjQ5OTZDMTM2LjUzOCAyNi40NzU0IDEzNC43NjYgMjkuMzUwNiAxMzYuOTA1IDMwLjk0NTFDMTczLjcyOSA1OC4zOTIgMTc3LjYwOSA5MC4zMjc4IDE3OC42OCAxMTAuNzA0QzE3OC43NDEgMTExLjg3IDE3OS43IDExMi43ODEgMTgwLjg2NSAxMTIuNzgxSDE4My43MDVDMTg0Ljg1OSAxMTIuNzgxIDE4NS44MTQgMTExLjg2NiAxODUuOTA2IDExMC43MTJDMTg5LjU1NCA2NC45OTEgMjE4LjIyNyAzMy4xMjgxIDI0MyAxNS40OTk1QzI0NS45NDYgMTIuNzMwNSAyNDIuOTgxIDkuODk3NjggMjQwLjUgMTAuOTk5N0MyMTQuMTk1IDIyLjY4MDkgMTk2LjEwOCA0MC4xNzk0IDE4My4xOTQgNTguMTQ1NEMxODIgNTkuNDk5NiAxODAuMTU2IDU5LjE5MTEgMTc4Ljk5NSA1Ny42NDU4WiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMTY1LjQ2OSAxNTQuMzMzQzE2Ni42ODIgMTU0LjMzMyAxNjcuNjY1IDE1NS4zMTUgMTY3LjY2NiAxNTYuNTI2VjIyMS4yMTNDMTY3LjY2NiAyMjIuNDI0IDE2Ni42ODIgMjIzLjQwNiAxNjUuNDY5IDIyMy40MDZIMTUyLjA3NUMxNTAuODYyIDIyMy40MDYgMTQ5Ljg3OCAyMjIuNDI0IDE0OS44NzggMjIxLjIxM1YxNzEuODIxQzE0OS44NzggMTcwLjYxIDE0OC44OTYgMTY5LjYyOCAxNDcuNjgzIDE2OS42MjhIMTI0LjQ0NEMxMjMuNDkxIDE2OS42MjggMTIyLjY3MSAxNzAuMjk5IDEyMi40ODMgMTcxLjIzM0wxMTAuMzA1IDIyMS43NjRDMTEwLjA4NSAyMjIuNzc3IDEwOS4xODQgMjIzLjUgMTA4LjE0MyAyMjMuNUg5NC40NTc2QzkzLjA3MDQgMjIzLjUgOTIuMDI1NyAyMjIuMjQzIDkyLjI4NDcgMjIwLjg4NkwxMDYuODA0IDE1Ni41MzhDMTA2Ljg4MyAxNTYuMTI0IDEwNy4wNjcgMTU1Ljc2OSAxMDcuMzE5IDE1NS40ODdDMTA3LjY5MSAxNTQuNzk5IDEwOC40MTggMTU0LjMzMyAxMDkuMjUyIDE1NC4zMzNIMTY1LjQ2OVoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTE4MS4wNDUgMEMxODQuMzk0IDAgMTg3LjUwMiAxLjAzNDUgMTkwLjA2NiAyLjgwMTNDMTkwLjMyMiAyLjk3NzQzIDE5MC4zNjcgMy4zMzI5MiAxOTAuMTc5IDMuNTgwMThDMTg2LjM1MyA4LjYxOTg2IDE4NS41MiAxMy44NTQ0IDE4Ni4yMDMgMTguNDUxNEMxODYuNzg5IDIyLjM5NDMgMTg4LjQ3OSAyNS44MTEyIDE5MC4yMjIgMjguMjQ0MkMxOTAuMzk5IDI4LjQ5MTkgMTkwLjM1MSAyOC44MzgzIDE5MC4xMDEgMjkuMDExOEMxODcuNTMgMzAuNzkzNCAxODQuNDEgMzEuODM4IDE4MS4wNDUgMzEuODM4QzE3Ny4yOTIgMzEuODM4IDE3My44NDMgMzAuNTM4MiAxNzEuMTIxIDI4LjM2NTRDMTcwLjg5MSAyOC4xODE2IDE3MC44NiAyNy44NDY5IDE3MS4wMzcgMjcuNjExNEMxNzQuOCAyMi42MDE1IDE3NS42MiAxNy40MDUzIDE3NC45NDEgMTIuODM3N0MxNzQuNDE3IDkuMzEwMTEgMTczLjAwOSA2LjIwMzIxIDE3MS40NzEgMy44NDUyM0MxNzEuMzEzIDMuNjAzNDEgMTcxLjM2MSAzLjI3OTIyIDE3MS41OTMgMy4xMDc2MUMxNzQuMjM2IDEuMTU0MzQgMTc3LjUwNiAwIDE4MS4wNDUgMFpNMTkzLjI1MyA2LjgxNDg0QzE5My40NjEgNi41MTg0NiAxOTMuODk1IDYuNTE2NDkgMTk0LjEwMyA2LjgxMzI1QzE5NS45MDYgOS4zOTM1NCAxOTYuOTY0IDEyLjUzMjUgMTk2Ljk2NCAxNS45MTlDMTk2Ljk2NCAxOS4yNzg2IDE5NS45MjIgMjIuMzk0MSAxOTQuMTQ1IDI0Ljk2MjZDMTkzLjkzNCAyNS4yNjc3IDE5My40ODggMjUuMjU5MiAxOTMuMjg3IDI0Ljk0NzJDMTkyLjA3OSAyMy4wNzA1IDE5MC45NiAyMC41ODY5IDE5MC41NDYgMTcuODA2QzE5MC4wNTIgMTQuNDgxIDE5MC41NSAxMC42NjgxIDE5My4yNTMgNi44MTQ4NFpNMTY3LjYxIDcuMzc1NThDMTY3LjgyMSA3LjA0Mzg5IDE2OC4zIDcuMDYwNDIgMTY4LjQ5MSA3LjQwNDI5QzE2OS40NDEgOS4xMTU3NyAxNzAuMjU5IDExLjE5ODkgMTcwLjU5OCAxMy40ODMxQzE3MS4wNzMgMTYuNjc2NyAxNzAuNjMxIDIwLjMyIDE2OC4yIDI0LjAxNzNDMTY3Ljk4OSAyNC4zMzgzIDE2Ny41MjIgMjQuMzI5IDE2Ny4zMjcgMjMuOTk4MkMxNjUuOTI5IDIxLjYyOTggMTY1LjEyNiAxOC44Njg0IDE2NS4xMjYgMTUuOTE5QzE2NS4xMjYgMTIuNzc1MiAxNjYuMDM3IDkuODQzOTcgMTY3LjYxIDcuMzc1NThaIiBmaWxsPSIjQTREQjAwIi8+CjxwYXRoIGQ9Ik0zOTcuMzkzIDI0NC43MTFDMzk5LjE2NyAyNDQuNzExIDQwMC41MTUgMjQ1LjExMiA0MDEuNDM1IDI0NS45MTRDNDAyLjM1NSAyNDYuNzAyIDQwMi44MTUgMjQ3Ljc4IDQwMi44MTUgMjQ5LjE0N0M0MDIuODE1IDI1MC41MTQgNDAyLjM1NSAyNTEuNTk5IDQwMS40MzUgMjUyLjQwMUM0MDAuNTE1IDI1My4xODkgMzk5LjE2NyAyNTMuNTg0IDM5Ny4zOTMgMjUzLjU4NEgzOTEuNTc2VjI1OC41MTNIMzg5LjYwNFYyNDQuNzExSDM5Ny4zOTNaTTM5Ny4zOTMgMjUxLjcxMUMzOTguNDg0IDI1MS43MTEgMzk5LjMxMiAyNTEuNDggMzk5Ljg3NyAyNTEuMDJDNDAwLjQ1NSAyNTAuNTQ3IDQwMC43NDUgMjQ5LjkyMyA0MDAuNzQ1IDI0OS4xNDdDNDAwLjc0NSAyNDguMzcyIDQwMC40NTUgMjQ3Ljc1NCAzOTkuODc3IDI0Ny4yOTRDMzk5LjMxMiAyNDYuODIxIDM5OC40ODQgMjQ2LjU4NCAzOTcuMzkzIDI0Ni41ODRIMzkxLjU3NlYyNTEuNzExSDM5Ny4zOTNaIiBmaWxsPSIjM0Y2Q0EzIi8+CjxwYXRoIGQ9Ik0zNjUuODQyIDI0NC43MTFIMzc4Ljg1NVYyNDYuNTg0SDM3My4zMzRWMjU4LjUxM0gzNzEuMzYzVjI0Ni41ODRIMzY1Ljg0MlYyNDQuNzExWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMzUzLjEzMiAyNTAuNjI2VjI0NC43MTFIMzU1LjEwNFYyNTguNTEzSDM1My4xMzJWMjUyLjQ5OUgzNDMuNjY4VjI1OC41MTNIMzQxLjY5NlYyNDQuNzExSDM0My42NjhWMjUwLjYyNkgzNTMuMTMyWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMzIwLjM5NyAyNTIuNDk5VjI1Ni42NEgzMzAuMjU1VjI1OC41MTNIMzE4LjQyNVYyNDQuNzExSDMyOS44NjFWMjQ2LjU4NEgzMjAuMzk3VjI1MC42MjZIMzI5LjA3MlYyNTIuNDk5SDMyMC4zOTdaIiBmaWxsPSIjM0Y2Q0EzIi8+CjxwYXRoIGQ9Ik0zMDcuNDggMjYyLjI1OUgzMDUuNTA4VjI1OC41MTNIMjkyLjU5NFYyNDQuNzExSDI5NC41NjVWMjU2LjY0SDMwMy42MzVWMjQ0LjcxMUgzMDUuNjA3VjI1Ni42NEgzMDcuNDhWMjYyLjI1OVoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTI1NS44MjMgMjU4LjUxNEgyNTIuOTY0VjI0NC43MTJIMjU0LjkzNlYyNTYuNDQzSDI1NS4wMzRMMjYzLjExOCAyNDQuNzEySDI2NS45NzdWMjU4LjUxNEgyNjQuMDA1VjI0Ni43ODJIMjYzLjkwN0wyNTUuODIzIDI1OC41MTRaTTI1OS40NzEgMjQzLjMzMkMyNTguMTgyIDI0My4zMzIgMjU3LjIwMyAyNDMuMDU1IDI1Ni41MzMgMjQyLjUwM0MyNTUuODYyIDI0MS45MzggMjU1LjUyNyAyNDEuMTk2IDI1NS41MjcgMjQwLjI3NUgyNTcuMzAyQzI1Ny4zMDIgMjQxLjI2MSAyNTguMDI1IDI0MS43NTQgMjU5LjQ3MSAyNDEuNzU0QzI2MC45MTYgMjQxLjc1NCAyNjEuNjM5IDI0MS4yNjEgMjYxLjYzOSAyNDAuMjc1SDI2My40MTRDMjYzLjQxNCAyNDEuMTk2IDI2My4wNzkgMjQxLjkzOCAyNjIuNDA4IDI0Mi41MDNDMjYxLjczOCAyNDMuMDU1IDI2MC43NTkgMjQzLjMzMiAyNTkuNDcxIDI0My4zMzJaIiBmaWxsPSIjM0Y2Q0EzIi8+CjxwYXRoIGQ9Ik0yMjQuNzY1IDI1OC41MTNWMjQ0LjcxMUgyMjYuNzM2VjI0OS44MzdIMjMxLjk2MUMyMzMuNzg5IDI0OS44MzcgMjM1LjE0OSAyNTAuMjE5IDIzNi4wNDMgMjUwLjk4MUMyMzYuOTM3IDI1MS43NDMgMjM3LjM4NCAyNTIuODA4IDIzNy4zODQgMjU0LjE3NUMyMzcuMzg0IDI1NS41NDIgMjM2LjkzNyAyNTYuNjA3IDIzNi4wNDMgMjU3LjM2OUMyMzUuMTQ5IDI1OC4xMzIgMjMzLjc4OSAyNTguNTEzIDIzMS45NjEgMjU4LjUxM0gyMjQuNzY1Wk0yNDAuOTMzIDI1OC41MTNIMjM4Ljk2MVYyNDQuNzExSDI0MC45MzNWMjU4LjUxM1pNMjMxLjk2MSAyNTYuNjRDMjMzLjEwNSAyNTYuNjQgMjMzLjk0NiAyNTYuNDIzIDIzNC40ODUgMjU1Ljk4OUMyMzUuMDM3IDI1NS41NTUgMjM1LjMxMyAyNTQuOTUxIDIzNS4zMTMgMjU0LjE3NUMyMzUuMzEzIDI1My40IDIzNS4wMzcgMjUyLjc5NSAyMzQuNDg1IDI1Mi4zNjFDMjMzLjk0NiAyNTEuOTI3IDIzMy4xMDUgMjUxLjcxMSAyMzEuOTYxIDI1MS43MTFIMjI2LjczNlYyNTYuNjRIMjMxLjk2MVoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTIxMC43NzMgMjUwLjYyNlYyNDQuNzExSDIxMi43NDVWMjU4LjUxM0gyMTAuNzczVjI1Mi40OTlIMjAxLjMwOVYyNTguNTEzSDE5OS4zMzdWMjQ0LjcxMUgyMDEuMzA5VjI1MC42MjZIMjEwLjc3M1oiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTE4MS42ODUgMjU4LjcxMUMxNzkuOTUgMjU4LjcxMSAxNzguNDUyIDI1OC40MDkgMTc3LjE5IDI1Ny44MDRDMTc1LjkyOCAyNTcuMTg2IDE3NC45NjIgMjU2LjMzOCAxNzQuMjkyIDI1NS4yNkMxNzMuNjM0IDI1NC4xODMgMTczLjMwNiAyNTIuOTY3IDE3My4zMDYgMjUxLjYxM0MxNzMuMzA2IDI1MC4yNDYgMTczLjY0MSAyNDkuMDMgMTc0LjMxMSAyNDcuOTY1QzE3NC45OTUgMjQ2Ljg4NyAxNzUuOTk0IDI0Ni4wNDYgMTc3LjMwOCAyNDUuNDQxQzE3OC42MzYgMjQ0LjgyNCAxODAuMjI2IDI0NC41MTUgMTgyLjA4IDI0NC41MTVDMTgzLjIzNyAyNDQuNTE1IDE4NC4zMjEgMjQ0LjY2NiAxODUuMzMzIDI0NC45NjhDMTg2LjM1OCAyNDUuMjcgMTg3LjE0NyAyNDUuNjEyIDE4Ny42OTkgMjQ1Ljk5M1YyNDguMDY0QzE4Ny4xNzMgMjQ3LjYxNyAxODYuMzk4IDI0Ny4yMDkgMTg1LjM3MyAyNDYuODQxQzE4NC4zNiAyNDYuNDczIDE4My4yNjMgMjQ2LjI4OSAxODIuMDggMjQ2LjI4OUMxODAuNjczIDI0Ni4yODkgMTc5LjQ2NCAyNDYuNTI2IDE3OC40NTIgMjQ2Ljk5OUMxNzcuNDUzIDI0Ny40NTkgMTc2LjY5IDI0OC4wOTcgMTc2LjE2NSAyNDguOTEyQzE3NS42MzkgMjQ5LjcxMyAxNzUuMzc2IDI1MC42MTQgMTc1LjM3NiAyNTEuNjEzQzE3NS4zNzYgMjUyLjU5OSAxNzUuNjI2IDI1My40OTkgMTc2LjEyNSAyNTQuMzE0QzE3Ni42MzggMjU1LjEyOSAxNzcuMzc0IDI1NS43NzMgMTc4LjMzNCAyNTYuMjQ2QzE3OS4yOTMgMjU2LjcwNiAxODAuNDEgMjU2LjkzNiAxODEuNjg1IDI1Ni45MzZDMTgyLjc5IDI1Ni45MzYgMTgzLjgyOCAyNTYuNzk4IDE4NC44MDEgMjU2LjUyMkMxODUuNzg3IDI1Ni4yMzMgMTg2LjU1NiAyNTUuOTE4IDE4Ny4xMDggMjU1LjU3NlYyNTcuNTg3QzE4Ni41NjkgMjU3Ljg3NiAxODUuODA2IDI1OC4xMzkgMTg0LjgyIDI1OC4zNzZDMTgzLjgzNSAyNTguNTk5IDE4Mi43OSAyNTguNzExIDE4MS42ODUgMjU4LjcxMVoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTE1MS40MTkgMjU4LjUxM0gxNDguNTZWMjQ0LjcxMUgxNTAuNTMxVjI1Ni40NDNIMTUwLjYzTDE1OC43MTQgMjQ0LjcxMUgxNjEuNTczVjI1OC41MTNIMTU5LjYwMVYyNDYuNzgxSDE1OS41MDNMMTUxLjQxOSAyNTguNTEzWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMTM0LjU2OCAyNTAuNjI2VjI0NC43MTFIMTM2LjUzOVYyNTguNTEzSDEzNC41NjhWMjUyLjQ5OUgxMjUuMTA0VjI1OC41MTNIMTIzLjEzMlYyNDQuNzExSDEyNS4xMDRWMjUwLjYyNkgxMzQuNTY4WiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMTA5LjE0IDI1MC42MjZWMjQ0LjcxMUgxMTEuMTEyVjI1OC41MTNIMTA5LjE0VjI1Mi40OTlIOTkuNjc1OFYyNTguNTEzSDk3LjcwNDFWMjQ0LjcxMUg5OS42NzU4VjI1MC42MjZIMTA5LjE0WiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNNzYuNDA1MyAyNTIuNDk5VjI1Ni42NEg4Ni4yNjM4VjI1OC41MTNINzQuNDMzNlYyNDQuNzExSDg1Ljg2OTVWMjQ2LjU4NEg3Ni40MDUzVjI1MC42MjZIODUuMDgwOFYyNTIuNDk5SDc2LjQwNTNaIiBmaWxsPSIjM0Y2Q0EzIi8+CjxwYXRoIGQ9Ik01MC42NzA5IDI0NC43MTFINjMuNjg0MlYyNDYuNTg0SDU4LjE2MzRWMjU4LjUxM0g1Ni4xOTE3VjI0Ni41ODRINTAuNjcwOVYyNDQuNzExWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMzU1LjI4NSAyLjA2MDMzQzM1Ny44ODcgMS40NjEwOCAzNTkuMDg4IDUuNDk2OTIgMzU2LjY1OSA2LjYwODE4QzMwOS4yOCAyOC4yODE1IDI1OS4wMzYgNjguNDMxNiAyNTMuNzI5IDEzOC4wNzRDMjUzLjY0MSAxMzkuMjI2IDI1Mi42ODggMTQwLjE0NCAyNTEuNTM1IDE0MC4xNDRIMjQ2LjMzNEMyNDUuMTcxIDE0MC4xNDQgMjQ0LjIxNiAxMzkuMjUzIDI0NC4xMjYgMTM4LjA5MUMyNDIuNzUyIDEyMC4zODIgMjMzLjY4NiA5MC41MjA1IDIxMi44NCA2MS4yODM0QzIxMi4zNDIgNjAuNTg0OSAyMTIuMzMzIDU5LjY0MjYgMjEyLjgzNyA1OC45NDg2QzIxNS43MTIgNTQuOTkyNSAyMTguOTA2IDUxLjA4MTUgMjIzLjE0NCA0Ny4yMDY1QzIyMy45MDQgNDYuNTEyIDIyNS4wNyA0Ni41Mzk5IDIyNS44MSA0Ny4yNTU3QzIzMy4wNDIgNTQuMjU0MiAyMzguOTE2IDYxLjEwMTcgMjQ1Ljg4MSA3MS4xODE0QzI0Ni43MjUgNzIuNzU1NCAyNDkuMDE1IDcyLjc5NzUgMjQ5Ljg5OCA3MS4yNDQ5QzI3NCAzOCAzMDMuNSAxNy41IDM1NS4yODUgMi4wNjAzM1oiIGZpbGw9IiMzRjZDQTMiLz4KPC9zdmc+Cg==" alt="Логотип теннисного центра «Альфа»"></div>
       <div class="grow">
         <h1 id="clubName">Теннисный центр «Альфа»</h1>
         <p class="where" id="clubWhere">Краснодар</p>
@@ -351,6 +378,7 @@ footer a { color: var(--court-dk); }
       <span><i class="sw free"></i> свободно</span>
       <span><i class="sw busy"></i> занято</span>
       <span><i class="sw regular"></i> постоянная бронь</span>
+      <span><i class="sw openplay"></i> открытая тренировка</span>
       <span><i class="sw mine"></i> ваша бронь</span>
       <span><i class="sw closed"></i> корт закрыт</span>
     </div>
@@ -409,6 +437,7 @@ const state = {
   noSwitch: false,
   view: 'home',
   landing: null,       // ответ getLanding: афиша и всё, что на главной
+  openPlay: null,      // ответ openPlayList: открытые тренировки
   auth: null,          // { token, client }
   mine: null,          // ответ myBookings
   tgUnlinked: false,   // открыли из Telegram, но учётка не привязана
@@ -436,6 +465,16 @@ function timeToMinutes(t) {
 function minutesToTime(mins) {
   return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
 }
+// Клубные сутки уходят за полночь: зимой корт работает до часу ночи, и
+// внутри такое время живёт как «24:30». Хранить и сравнивать удобно
+// именно так — строки времени сортируются как строки, и «00:30» уехало
+// бы в начало дня. Человеку показываем настоящие часы.
+function fmtTime(t) {
+  const min = timeToMinutes(t);
+  if (!Number.isFinite(min)) return String(t == null ? '' : t);
+  return minutesToTime(min >= 1440 ? min - 1440 : min);
+}
+function fmtRange(from, to) { return fmtTime(from) + '–' + fmtTime(to); }
 function addDays(dateIso, n) {
   const d = new Date(dateIso + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + n);
@@ -446,7 +485,8 @@ function addDays(dateIso, n) {
 function slotTimestamp(dateIso, timeStr) {
   const tz = (state.config && state.config.booking.timezoneOffset) || '+03:00';
   const min = timeToMinutes(timeStr);
-  if (min === 1440) return new Date(addDays(dateIso, 1) + 'T00:00:00' + tz).getTime();
+  // Всё, что от 24:00 и дальше, физически наступает следующим утром.
+  if (min >= 1440) return new Date(addDays(dateIso, 1) + 'T' + minutesToTime(min - 1440) + ':00' + tz).getTime();
   return new Date(dateIso + 'T' + timeStr + ':00' + tz).getTime();
 }
 
@@ -535,6 +575,8 @@ const ERRORS = {
   'booking-not-found': 'Бронь не найдена.',
   'not-linked': 'Telegram не привязан к учётке. Откройте бота клуба и поделитесь номером.',
   'bad-init-data': 'Telegram не подтвердил вход. Откройте страницу заново.',
+  'declined': 'Вход отклонён в Telegram.',
+  'bad-code': 'Ссылка для входа устарела. Начните заново.',
   'telegram-not-configured': 'Привязка Telegram пока недоступна. Позвоните в клуб.',
   'server-unavailable': 'Сервер не отвечает. Попробуйте через минуту.',
   'too-soon': 'До начала осталось слишком мало времени.',
@@ -542,6 +584,11 @@ const ERRORS = {
   'duration-too-short': 'Минимальная бронь — 1 час.',
   'window-too-short': 'Промежуток короче, чем нужное время. Расширьте его.',
   'outside-hours': 'Это время за пределами работы клуба.',
+  'openplay-not-found': 'Тренировка не найдена — обновите страницу.',
+  'openplay-cancelled': 'Эта тренировка отменена.',
+  'signups-closed': 'Набор закрыт. Позвоните в клуб, если хотите попасть.',
+  'already-signed': 'Вы уже записаны на эту тренировку.',
+  'not-signed': 'Вы на эту тренировку не записаны.',
 };
 function errorText(code) { return ERRORS[code] || 'Не получилось. Попробуйте ещё раз.'; }
 
@@ -596,6 +643,10 @@ async function api(action, body) {
   if (!res.ok) {
     const err = new Error(data.error || 'request-failed');
     err.code = data.error;
+    // Часть отказов несёт подробность, без которой их не показать
+    // по-человечески: «уровень ниже» и «уровень выше» — разные тексты.
+    err.data = data;
+    err.hint = data.hint;
     // Токен протух или отозван — вычищаем, иначе страница будет
     // бесконечно упираться в 401 на каждом действии.
     if (res.status === 401) logout(true);
@@ -655,14 +706,18 @@ async function load() {
   //
   // Упавшая афиша не должна уносить с собой сетку занятости: главное на
   // странице — забронировать корт, объявления вторичны.
-  const [cfg, av, land] = await Promise.all([
+  const [cfg, av, land, sessions] = await Promise.all([
     api('getConfig'),
     api('getAvailability', { days: 14 }),
     api('getLanding').catch(() => null),
+    // Список открытых тренировок видят и гости: это витрина, ради
+    // которой человек и заходит. Упавший список сетку не уносит.
+    api('openPlayList', { days: 14 }).catch(() => null),
   ]);
   state.config = cfg.config;
   state.data = av;
   state.landing = land;
+  state.openPlay = sessions;
   state.date = state.data.today;
 
   // В Telegram личность подтверждена подписью — она главнее сохранённого
@@ -694,6 +749,10 @@ async function load() {
 async function refreshAvailability() {
   if (!API_URL) return;
   state.data = await api('getAvailability', { days: 14 });
+  // Состав тренировок обновляем тем же заходом: набор меняется чаще
+  // самой сетки, и показывать «2 места» там, где мест уже нет, —
+  // ровно тот случай, когда человек жмёт кнопку и получает отказ.
+  try { state.openPlay = await api('openPlayList', { days: 14 }); } catch (e) { /* сетка важнее */ }
 }
 
 async function refreshMine() {
@@ -741,8 +800,8 @@ function renderHero() {
     : '<b>' + money(c.pricing.pricePerHour) + '</b> / час';
 
   const facts = [
-    '<span class="fact gold">' + priceFact + '</span>',
-    '<span class="fact"><b>' + escapeHtml(c.booking.openTime) + '–' + escapeHtml(close) + '</b> ежедневно</span>',
+    '<span class="fact accent">' + priceFact + '</span>',
+    '<span class="fact"><b>' + escapeHtml(fmtRange(c.booking.openTime, close)) + '</b> ежедневно</span>',
     '<span class="fact">' + c.courts.length + ' крытых корта</span>',
   ];
   // Подписи скидочных окон — то, ради чего владелец их и заводит.
@@ -817,7 +876,7 @@ function renderHome() {
   const cta = el('div', 'cta');
   cta.innerHTML = '<h2>Забронировать корт</h2>'
     + '<p>' + escapeHtml(c.courts.length + ' крытых корта, ежедневно с '
-      + c.booking.openTime + ' до ' + c.booking.closeTime + ', ' + price
+      + fmtTime(c.booking.openTime) + ' до ' + fmtTime(c.booking.closeTime) + ', ' + price
       + '. Оплата на месте.') + '</p>';
   cta.appendChild(btn('Выбрать время', 'btn', () => showView('book')));
   view.appendChild(cta);
@@ -826,6 +885,13 @@ function renderHome() {
   if (posts.length) {
     view.appendChild(txt('div', 'section-title', 'Новости клуба'));
     view.appendChild(homeNews(posts, c));
+  }
+
+  // Открытые тренировки выше афиши: на турнир смотрят, а на тренировку
+  // записываются, и окно набора живёт считанные дни.
+  if (openPlaySessions().length) {
+    view.appendChild(txt('div', 'section-title', 'Открытые тренировки'));
+    view.appendChild(homeOpenPlay());
   }
 
   view.appendChild(txt('div', 'section-title', 'Афиша турниров'));
@@ -1249,6 +1315,7 @@ function cellState(dateIso, courtId, slot) {
   const b = busyAt(dateIso, courtId, slot);
   if (b) {
     if (myBookingAt(dateIso, courtId, slot)) return 'mine';
+    if (b.kind === 'openplay') return 'openplay';
     return b.kind === 'closed' ? 'closed' : (b.kind === 'regular' ? 'regular' : 'busy');
   }
   const lead = (state.config.booking.minLeadMinutes || 0) * 60000;
@@ -1379,7 +1446,7 @@ function renderGrid() {
   slots.forEach((slot, idx) => {
     const isHour = timeToMinutes(slot) % 60 === 0;
     const t = el('div', 'g-time' + (isHour ? ' hour' : ''));
-    t.textContent = isHour ? slot : '';
+    t.textContent = isHour ? fmtTime(slot) : '';
     grid.appendChild(t);
 
     courts.forEach(court => {
@@ -1396,15 +1463,21 @@ function renderGrid() {
 
       // Подпись только у первой клетки отрезка, иначе она повторялась бы
       // в каждой получасовой ячейке подряд.
-      if ((st === 'regular' || st === 'closed' || st === 'mine')
+      if ((st === 'regular' || st === 'closed' || st === 'mine' || st === 'openplay')
           && cellState(state.date, court.id, slots[idx - 1] || '') !== st) {
         const tag = el('span', 'tag');
-        tag.textContent = st === 'regular' ? 'постоянная' : (st === 'closed' ? 'закрыт' : 'вы');
+        tag.textContent = st === 'openplay' ? openPlayTag(state.date, court.id, slot)
+          : (st === 'regular' ? 'постоянная' : (st === 'closed' ? 'закрыт' : 'вы'));
         cell.appendChild(tag);
       }
 
       if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx));
-      else if (st === 'busy' || st === 'regular') {
+      else if (st === 'openplay') {
+        // Тренировка — единственное «занято», куда можно попасть:
+        // не очередь на чужую бронь, а запись в состав.
+        cell.title = 'Открытая тренировка — нажмите, чтобы посмотреть состав';
+        cell.addEventListener('click', () => onOpenPlayClick(state.date, court.id, slot));
+      } else if (st === 'busy' || st === 'regular') {
         cell.title = 'Занято — нажмите, чтобы встать в очередь';
         cell.addEventListener('click', () => onBusyClick(court.id, slot));
       }
@@ -1507,11 +1580,11 @@ function renderBar() {
   if (!info || state.view !== 'book') { bar.classList.remove('show'); return; }
 
   document.getElementById('selTitle').textContent =
-    info.start + '–' + info.end + ' · ' + info.segments.map(s => s.court.name).join(' → ');
+    fmtRange(info.start, info.end) + ' · ' + info.segments.map(s => s.court.name).join(' → ');
   document.getElementById('selSub').textContent =
     dayLabelLong(state.date, state.data.today) + ' · ' + hoursText(info.minutes) + ' · ' + money(info.price);
   document.getElementById('selSwitch').textContent = info.switches === 0 ? ''
-    : '⇄ ' + info.segments.slice(1).map(s => 'в ' + s.start + ' переход на ' + s.court.name).join(', ');
+    : '⇄ ' + info.segments.slice(1).map(s => 'в ' + fmtTime(s.start) + ' переход на ' + s.court.name).join(', ');
 
   bar.classList.add('show');
 }
@@ -1588,7 +1661,7 @@ function renderPicker() {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'opt' + (p.switches ? ' split' : '') + (active ? ' on' : '');
-    b.innerHTML = '<span class="o-time">' + escapeHtml(start + '–' + end) + '</span>'
+    b.innerHTML = '<span class="o-time">' + escapeHtml(fmtRange(start, end)) + '</span>'
       + '<span class="o-court">' + escapeHtml(courts) + (p.switches ? ' ⇄' : '') + '</span>';
     b.addEventListener('click', () => setPlan(p));
     wrap.appendChild(b);
@@ -1606,6 +1679,123 @@ document.getElementById('noSwitch').addEventListener('change', (e) => {
 
 function openAuth(mode) {
   let tab = mode || 'login';
+
+  // Вход через Telegram в обычном браузере: подписи initData здесь нет, а
+  // Login Widget запрещён — он тянет скрипт с telegram.org. Поэтому
+  // ссылка с одноразовым кодом в бота, подтверждение кнопкой там и опрос
+  // отсюда.
+  //
+  // Ссылку просим заранее, ещё до нажатия: окно, открытое после ожидания
+  // сети, браузер считает непрошеным и блокирует. К моменту нажатия она
+  // уже есть, и window.open проходит как обычное действие человека.
+  let tgStart = null;
+  let tgBox = null;
+
+  const tgPossible = () => !!(state.config.club.botUsername) && !telegramInitData();
+
+  if (tgPossible()) {
+    api('tgLoginStart')
+      .then(r => { tgStart = r; paintTg(); })
+      .catch(() => { /* молча: вход по паролю никуда не делся */ });
+  }
+
+  function paintTg() {
+    if (!tgBox) return;
+    tgBox.innerHTML = '';
+    if (!tgStart) return;
+
+    const or = el('div', 'tg-or');
+    or.textContent = 'или';
+    tgBox.appendChild(or);
+
+    const go = btn('Войти через Telegram', 'btn sec wide', () => {
+      // Открываем соседней вкладкой, а не переходом: эта должна остаться
+      // на месте и дождаться подтверждения. На телефоне ссылка отдаётся
+      // приложению Telegram, и вкладка тоже никуда не девается.
+      const opened = window.open(tgStart.url, '_blank', 'noopener');
+      showTgWaiting(!opened);
+    });
+    tgBox.appendChild(go);
+
+    const note = el('div', 'empty');
+    note.style.marginTop = '10px';
+    note.textContent = 'Работает, если Telegram уже привязан к учётке. Если нет — бот подскажет, что нажать.';
+    tgBox.appendChild(note);
+  }
+
+  // Панель ожидания. Она же — единственное место, где человеку показан код
+  // сверки: сверять его с сообщением бота и есть защита от чужой ссылки.
+  function showTgWaiting(popupBlocked) {
+    const body = el('div');
+    body.innerHTML = '<h3>Подтвердите вход в Telegram</h3>'
+      + '<div class="m-sub">Бот прислал сообщение с кодом. Сверьте его с этим и нажмите «Это я».</div>'
+      + '<div class="tg-code">' + escapeHtml(tgStart.confirmCode) + '</div>';
+
+    if (popupBlocked) {
+      const warn = el('div', 'notice');
+      warn.innerHTML = 'Браузер не дал открыть Telegram. '
+        + '<a href="' + escapeHtml(tgStart.url) + '" target="_blank" rel="noopener">Откройте бота вручную</a>.';
+      body.appendChild(warn);
+    }
+
+    const status = txt('div', 'empty', 'Ждём подтверждения…');
+    body.appendChild(status);
+
+    const acts = el('div', 'm-acts');
+    acts.appendChild(btn('Войти по паролю', 'btn sec', () => openAuth('login')));
+    body.appendChild(acts);
+
+    showModal(body);
+    pollTgLogin(body, status);
+  }
+
+  // Панель жива, пока она и есть содержимое открытого окна. Закрыли окно
+  // или ушли в другое — опрос прекращается сам, без подписок на события.
+  function stillWaiting(panel) {
+    return document.getElementById('backdrop').classList.contains('show')
+      && document.getElementById('modal').contains(panel);
+  }
+
+  async function pollTgLogin(panel, status) {
+    const started = tgStart;
+    const every = (started.pollSeconds || 3) * 1000;
+    const until = Date.now() + (started.expiresInMinutes || 5) * 60000;
+
+    while (Date.now() < until) {
+      await new Promise(r => setTimeout(r, every));
+      if (!stillWaiting(panel)) return;
+
+      let r;
+      try {
+        r = await api('tgLoginPoll', { code: started.code });
+      } catch (e) {
+        // Сеть моргнула — спросим через три секунды снова. Мёртвый код —
+        // другое дело, ждать больше нечего.
+        if (e.code === 'bad-code') break;
+        continue;
+      }
+
+      if (r.pending) continue;
+      if (!r.ok) { status.textContent = errorText(r.error); return; }
+
+      state.auth = { token: r.token, client: r.client };
+      store.set(TOKEN_KEY, r.token);
+      closeModal();
+      renderHero(); renderNav();
+      await refreshMine();
+      toast('С возвращением, ' + r.client.name.split(' ')[0] + '!');
+
+      if (state.pendingAfterLogin) {
+        state.pendingAfterLogin = false;
+        setTimeout(startBooking, 300);
+      }
+      return;
+    }
+
+    if (stillWaiting(panel)) {
+      status.textContent = 'Время вышло. Вернитесь назад и начните вход заново.';
+    }
+  }
 
   function draw() {
     const body = el('div');
@@ -1682,11 +1872,17 @@ function openAuth(mode) {
 
     [inpPhone, inpPass].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); }));
 
-    const tgNote = el('div', 'empty');
-    tgNote.style.marginTop = '12px';
-    tgNote.textContent = 'Есть Telegram? Войдите здесь один раз и привяжите его в профиле — '
-      + 'дальше вход будет без пароля, и придут напоминания о брони.';
-    body.appendChild(tgNote);
+    if (tgPossible()) {
+      tgBox = el('div');
+      body.appendChild(tgBox);
+      paintTg();
+    } else {
+      const tgNote = el('div', 'empty');
+      tgNote.style.marginTop = '12px';
+      tgNote.textContent = 'Есть Telegram? Войдите здесь один раз и привяжите его в профиле — '
+        + 'дальше вход будет без пароля, и придут напоминания о брони.';
+      body.appendChild(tgNote);
+    }
 
     showModal(body);
     setTimeout(() => (inpName || inpPhone).focus(), 50);
@@ -1752,7 +1948,7 @@ function startBooking() {
   function renderSummary() {
     sum.innerHTML = '';
     const rows = [
-      ['Время', info.start + '–' + info.end],
+      ['Время', fmtRange(info.start, info.end)],
       ['Длительность', hoursText(info.minutes)],
       ['Корт', info.segments.map(s => s.court.name).join(' → ')],
     ];
@@ -1819,7 +2015,7 @@ function startBooking() {
   if (info.switches > 0) {
     const n = el('div', 'notice');
     n.innerHTML = '⇄ <b>Игра на двух кортах.</b> '
-      + escapeHtml(info.segments.slice(1).map(s => 'В ' + s.start + ' нужно перейти на ' + s.court.name).join('. '))
+      + escapeHtml(info.segments.slice(1).map(s => 'В ' + fmtTime(s.start) + ' нужно перейти на ' + s.court.name).join('. '))
       + '. Корты стоят рядом, покрытие одинаковое.';
     n.style.margin = '0 0 14px';
     body.appendChild(n);
@@ -1879,6 +2075,207 @@ function startBooking() {
 
 // Клик по занятой клетке — только подсказка, откуда начать: окно
 // подставляется по этой броне, но человек волен его расширить.
+// ============================================================
+// Открытые тренировки
+// ============================================================
+//
+// Клуб занимает корт как обычной бронью, поэтому в сетке это «занято».
+// Но занято особым образом: сюда можно попасть, и весь смысл экрана —
+// показать состав. Имена видны всем намеренно: ровно так список висит
+// в группе клуба, и «о, с ним я бы сыграл» — обычный повод записаться.
+
+function openPlaySessions() {
+  return (state.openPlay && state.openPlay.sessions) ? state.openPlay.sessions : [];
+}
+
+function sessionById(id) {
+  return openPlaySessions().find(s => s.id === id) || null;
+}
+
+// Тренировку в сетке находим по времени и корту: id клетки приходит
+// в занятости, но сводить карточку по нему надёжнее — состав едет
+// отдельным запросом и в клетке его нет.
+function sessionAt(dateIso, courtId, slot) {
+  const min = timeToMinutes(slot);
+  return openPlaySessions().find(s => s.date === dateIso
+    && s.segments.some(seg => seg.courtId === courtId
+      && min >= timeToMinutes(seg.start) && min < timeToMinutes(seg.end))) || null;
+}
+
+function openPlayTag(dateIso, courtId, slot) {
+  const s = sessionAt(dateIso, courtId, slot);
+  if (!s) return 'тренировка';
+  const op = s.openPlay;
+  if (op.mine) return 'тренировка · вы записаны';
+  if (op.full) return 'тренировка · мест нет';
+  return 'тренировка · ' + seatsText(op.left);
+}
+
+function seatsText(n) {
+  const last = n % 10, tens = n % 100;
+  if (tens >= 11 && tens <= 14) return n + ' мест';
+  if (last === 1) return n + ' место';
+  if (last >= 2 && last <= 4) return n + ' места';
+  return n + ' мест';
+}
+
+function onOpenPlayClick(dateIso, courtId, slot) {
+  const s = sessionAt(dateIso, courtId, slot);
+  if (!s) { toast('Не удалось открыть тренировку — обновите страницу'); return; }
+  openSessionCard(s.id);
+}
+
+// Принимает и id, и саму карточку: в кабинете записи приходят из
+// myBookings, и требовать, чтобы та же тренировка нашлась ещё и в
+// списке ближайших, значило бы ломать экран на границе горизонта.
+function openSessionCard(idOrSession) {
+  const s = typeof idOrSession === 'string' ? sessionById(idOrSession) : idOrSession;
+  if (!s) { toast('Тренировка не найдена — обновите страницу'); return; }
+  const op = s.openPlay;
+
+  const body = el('div');
+  body.innerHTML = '<h3>' + escapeHtml(op.title) + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(dayLabelLong(s.date, state.data.today)
+      + ' · ' + fmtRange(s.start, s.end) + ' · ' + op.level) + '</div>';
+
+  const info = el('div', 'summary');
+  const courts = s.courts.filter((c, i) => s.courts.indexOf(c) === i).join(' → ');
+  info.innerHTML = '<div class="s-row"><span>Корт</span><span>' + escapeHtml(courts) + '</span></div>'
+    + '<div class="s-row"><span>Записались</span><span>' + op.taken + ' из ' + op.seats + '</span></div>'
+    + '<div class="s-row"><span>Корт целиком</span><span>' + money(s.total) + '</span></div>'
+    // Две цифры намеренно: делить корт на одного записавшегося честно
+    // арифметически, но читается как цена, по которой никто не придёт.
+    // Как игроки делят сумму на месте, клуб всё равно не решает.
+    + '<div class="s-row"><span>При полном составе</span><span>' + money(op.perFull) + ' с человека</span></div>'
+    + (op.perPerson && op.taken > 1 && !op.full
+      ? '<div class="s-row"><span>Если придут только записавшиеся</span><span>' + money(op.perPerson) + '</span></div>'
+      : '');
+  body.appendChild(info);
+
+  if (op.note) body.appendChild(txt('div', 'empty', op.note));
+
+  const list = el('div', 'card');
+  if (!op.signups.length) {
+    list.appendChild(txt('div', 'empty', 'Пока никто не записался — будете первым.'));
+  } else {
+    op.signups.forEach((p, i) => {
+      const row = el('div', 'item');
+      row.innerHTML = '<div class="t1">' + (i + 1) + '. ' + escapeHtml(p.name)
+        + (p.partnerName ? ' + ' + escapeHtml(p.partnerName) : '')
+        + (p.mine ? ' <span class="pill ok">это вы</span>' : '') + '</div>';
+      list.appendChild(row);
+    });
+  }
+  if (op.queue.length) {
+    list.appendChild(txt('div', 'section-title', 'В очереди'));
+    op.queue.forEach((p, i) => {
+      const row = el('div', 'item');
+      row.innerHTML = '<div class="t1">' + (i + 1) + '. ' + escapeHtml(p.name)
+        + (p.partnerName ? ' + ' + escapeHtml(p.partnerName) : '')
+        + (p.mine ? ' <span class="pill ok">это вы</span>' : '') + '</div>';
+      list.appendChild(row);
+    });
+  }
+  body.appendChild(list);
+
+  const acts = el('div', 'm-acts');
+  if (op.mine) {
+    acts.appendChild(btn('Отказаться', 'btn danger', () => leaveSession(s)));
+  } else if (op.signupsClosed) {
+    body.appendChild(txt('div', 'notice', 'Набор закрыт. Позвоните в клуб, если хотите попасть.'));
+  } else {
+    const fPair = el('label', 'field');
+    fPair.innerHTML = '<span>Идёте парой? Впишите партнёра — займёте два места</span>';
+    const inpPair = document.createElement('input');
+    inpPair.placeholder = 'Имя партнёра, если есть';
+    fPair.appendChild(inpPair);
+    body.insertBefore(fPair, list);
+
+    acts.appendChild(btn(op.full ? 'Встать в очередь' : 'Записаться', 'btn',
+      () => joinSession(s, inpPair.value.trim(), false)));
+  }
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
+async function joinSession(s, partnerName, confirmLevel) {
+  if (!state.auth || !state.auth.client) { openAuth('login'); return; }
+
+  try {
+    const res = await api('joinOpenPlay', {
+      date: s.date, bookingId: s.id,
+      partnerName: partnerName || undefined,
+      confirmLevel: confirmLevel || undefined,
+    });
+    closeModal();
+    await refreshAvailability();
+    await refreshMine();
+    renderGrid();
+    if (state.view === 'home') renderHome();
+    toast(res.placed === 'queue' ? 'Мест не было — вы в очереди' : 'Вы записаны');
+  } catch (e) {
+    // Уровень не запрещает записаться, а предупреждает: ссорить систему
+    // с людьми из-за половины балла не стоит, решает организатор.
+    if (e.code === 'needs-level-confirm') {
+      confirmLevelAndJoin(s, partnerName, e.hint);
+      return;
+    }
+    toast(errorText(e.code), 4000);
+  }
+}
+
+function confirmLevelAndJoin(s, partnerName, hint) {
+  const op = s.openPlay;
+  const body = el('div');
+  body.innerHTML = '<h3>Проверьте уровень</h3>'
+    + '<div class="m-sub">' + escapeHtml(op.title + ' · ' + op.level) + '</div>';
+  body.appendChild(html('div', 'notice', hint === 'below'
+    ? 'Ваш уровень ниже диапазона этой тренировки. Записаться можно, но игра может оказаться тяжёлой.'
+    : 'Ваш уровень выше диапазона этой тренировки. Записаться можно, но игра может оказаться слишком лёгкой.'));
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Всё равно записаться', 'btn', () => joinSession(s, partnerName, true)));
+  acts.appendChild(btn('Передумал', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+async function leaveSession(s) {
+  try {
+    await api('leaveOpenPlay', { date: s.date, bookingId: s.id });
+    closeModal();
+    await refreshAvailability();
+    await refreshMine();
+    renderGrid();
+    if (state.view === 'home') renderHome();
+    toast('Вы сняты с тренировки');
+  } catch (e) {
+    toast(errorText(e.code), 4000);
+  }
+}
+
+// Блок на главной. Показывается, только когда тренировки есть: пустой
+// заголовок «Открытые тренировки» читается как «их у нас не бывает».
+function homeOpenPlay() {
+  const card = el('div', 'card');
+  openPlaySessions().slice(0, 6).forEach(s => {
+    const op = s.openPlay;
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(op.title)
+      + ' <span class="pill ' + (op.full ? 'grey' : 'ok') + '">'
+      + (op.full ? 'мест нет' : seatsText(op.left)) + '</span>'
+      + (op.mine ? ' <span class="pill ok">вы записаны</span>' : '') + '</div>'
+      + '<div class="t2">' + escapeHtml(dayLabelLong(s.date, state.data.today)
+        + ' · ' + fmtRange(s.start, s.end) + ' · ' + op.level) + '</div>';
+    it.appendChild(btn(op.mine ? 'Посмотреть состав' : 'Подробнее', 'btn sm sec',
+      () => openSessionCard(s.id)));
+    card.appendChild(it);
+  });
+  return card;
+}
+
 function onBusyClick(courtId, slot) {
   const block = busyAt(state.date, courtId, slot);
   if (!block) return;
@@ -1934,8 +2331,9 @@ function openWaitlist(prefill) {
     const fFrom = el('label', 'field');
     fFrom.innerHTML = '<span>Не раньше</span>';
     const selFrom = document.createElement('select');
+    // Значение остаётся клубным («24:30»), подпись — человеческой.
     timeList(open, close - duration).forEach(t => {
-      const o = document.createElement('option'); o.value = t; o.textContent = t; selFrom.appendChild(o);
+      const o = document.createElement('option'); o.value = t; o.textContent = fmtTime(t); selFrom.appendChild(o);
     });
     selFrom.value = minutesToTime(from);
     selFrom.addEventListener('change', () => { from = timeToMinutes(selFrom.value); draw(); });
@@ -1945,7 +2343,7 @@ function openWaitlist(prefill) {
     fTo.innerHTML = '<span>Не позже</span>';
     const selTo = document.createElement('select');
     timeList(from + duration, close).forEach(t => {
-      const o = document.createElement('option'); o.value = t; o.textContent = t; selTo.appendChild(o);
+      const o = document.createElement('option'); o.value = t; o.textContent = fmtTime(t); selTo.appendChild(o);
     });
     selTo.value = minutesToTime(to);
     selTo.addEventListener('change', () => { to = timeToMinutes(selTo.value); draw(); });
@@ -1956,7 +2354,7 @@ function openWaitlist(prefill) {
 
     const note = el('div', 'notice info');
     note.style.margin = '4px 0 0';
-    note.innerHTML = 'Сообщим, как только в промежутке <b>' + escapeHtml(minutesToTime(from) + '–' + minutesToTime(to))
+    note.innerHTML = 'Сообщим, как только в промежутке <b>' + escapeHtml(fmtRange(minutesToTime(from), minutesToTime(to)))
       + '</b> освободится <b>' + escapeHtml(hoursText(duration)) + '</b>. '
       + 'Вы узнаете первым — раньше, чем время уйдёт в общий чат клуба.';
     body.appendChild(note);
@@ -2024,13 +2422,39 @@ function renderMine() {
   upcoming.forEach(g => c1.appendChild(bookingItem(g, false)));
   view.appendChild(c1);
 
+  // Записи в тренировках — не свои брони: корт занят клубом, а «отмена»
+  // здесь означает снять себя из состава. Поэтому отдельной карточкой,
+  // а не в общем списке предстоящих.
+  const sessions = state.mine.openPlay || [];
+  if (sessions.length) {
+    const cs = el('div', 'card');
+    cs.innerHTML = '<h2>Вы записаны на тренировки</h2>';
+    sessions.forEach(s => {
+      const op = s.openPlay;
+      const inQueue = op.queue.some(p => p.mine);
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(op.title)
+        + (inQueue ? ' <span class="pill wait">в очереди</span>' : '')
+        + '</div>'
+        + '<div class="t2">' + escapeHtml(dayLabelLong(s.date, state.mine.today)
+          + ' · ' + fmtRange(s.start, s.end) + ' · ' + op.level
+          + ' · ' + op.taken + ' из ' + op.seats) + '</div>';
+      const acts = el('div', 'acts');
+      acts.appendChild(btn('Состав', 'btn sm sec', () => openSessionCard(s)));
+      acts.appendChild(btn('Отказаться', 'btn sm sec', () => leaveSession(s)));
+      it.appendChild(acts);
+      cs.appendChild(it);
+    });
+    view.appendChild(cs);
+  }
+
   if (waitlist && waitlist.length) {
     const c2 = el('div', 'card');
     c2.innerHTML = '<h2>Вы в очереди</h2>';
     waitlist.forEach(w => {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(hoursText(w.durationMinutes || 60))
-        + ' в промежутке ' + escapeHtml(w.start + '–' + w.end) + '</div>'
+        + ' в промежутке ' + escapeHtml(fmtRange(w.start, w.end)) + '</div>'
         + '<div class="t2">' + escapeHtml(dayLabelLong(w.date, state.mine.today))
         + ' · сообщим, как только освободится</div>';
 
@@ -2072,7 +2496,7 @@ function bookingItem(g, isPast) {
 
   if (g.prepayRequired) badge += ' <span class="pill wait">нужна предоплата</span>';
 
-  it.innerHTML = '<div class="t1">' + escapeHtml(g.start + '–' + g.end) + badge + '</div>'
+  it.innerHTML = '<div class="t1">' + escapeHtml(fmtRange(g.start, g.end)) + badge + '</div>'
     + '<div class="t2">' + escapeHtml(dayLabelLong(g.date, state.mine.today))
     + ' · ' + escapeHtml([...new Set(courts)].join(' → '))
     + ' · ' + money(g.total != null ? g.total : g.price) + '</div>';
@@ -2088,7 +2512,7 @@ function bookingItem(g, isPast) {
   if (g.switches > 0) {
     const seg = g.segments[1];
     const court = state.config.courts.find(x => x.id === seg.courtId);
-    it.appendChild(txt('div', 't3', '⇄ в ' + seg.start + ' переход на ' + (court ? court.name : 'соседний корт')));
+    it.appendChild(txt('div', 't3', '⇄ в ' + fmtTime(seg.start) + ' переход на ' + (court ? court.name : 'соседний корт')));
   }
 
   if (!isPast && g.status === 'expired') {
@@ -2118,7 +2542,7 @@ function confirmCancel(g, late) {
   const penalty = state.mine.lateCancelPenalty || 0.5;
   const body = el('div');
   body.innerHTML = '<h3>Отменить бронь?</h3>'
-    + '<div class="m-sub">' + escapeHtml(dayLabelLong(g.date, state.mine.today) + ' · ' + g.start + '–' + g.end) + '</div>'
+    + '<div class="m-sub">' + escapeHtml(dayLabelLong(g.date, state.mine.today) + ' · ' + fmtRange(g.start, g.end)) + '</div>'
     + (g.switches > 0 ? '<div class="empty" style="padding:0 0 10px">Бронь собрана из двух кортов — снимутся обе части.</div>' : '')
     // Цену поздней отмены называем прямо в окне подтверждения: узнать
     // о ней после нажатия — худший из возможных вариантов.
