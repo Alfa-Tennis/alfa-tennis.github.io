@@ -706,18 +706,15 @@ async function load() {
   //
   // Упавшая афиша не должна уносить с собой сетку занятости: главное на
   // странице — забронировать корт, объявления вторичны.
-  const [cfg, av, land, sessions] = await Promise.all([
-    api('getConfig'),
-    api('getAvailability', { days: 14 }),
-    api('getLanding').catch(() => null),
-    // Список открытых тренировок видят и гости: это витрина, ради
-    // которой человек и заходит. Упавший список сетку не уносит.
-    api('openPlayList', { days: 14 }).catch(() => null),
-  ]);
-  state.config = cfg.config;
-  state.data = av;
-  state.landing = land;
-  state.openPlay = sessions;
+  // Один запрос вместо четырёх параллельных. У функции один запрос на
+  // экземпляр, поэтому четыре параллельных поднимали до четырёх
+  // контейнеров, из которых тёплым был один: остальные платили холодный
+  // старт, и первое открытие после тишины занимало полторы-две секунды.
+  const boot = await api('bootstrap', { days: 14 });
+  state.config = boot.config;
+  state.data = boot.availability;
+  state.landing = boot.landing;
+  state.openPlay = boot.openPlay;
   state.date = state.data.today;
 
   // В Telegram личность подтверждена подписью — она главнее сохранённого
@@ -759,9 +756,24 @@ async function refreshMine() {
   if (!state.auth) { state.mine = null; return; }
   try {
     state.mine = await api('myBookings');
+    markMySessions();
   } catch (e) { state.mine = null; }
   renderNav();
   if (state.view === 'mine') renderMine();
+}
+
+// Общий список тренировок собирается до того, как страница вспомнит вход
+// (токен восстанавливается позже, а из Mini App подпись разбирается ещё
+// позже). Поэтому пометки «вы записаны» в нём пустые. Свои записи уже
+// приехали вместе с кабинетом — переносим их сюда, вместо того чтобы
+// спрашивать сервер второй раз о том же.
+function markMySessions() {
+  const mine = (state.mine && state.mine.openPlay) || [];
+  if (!mine.length || !state.openPlay || !state.openPlay.sessions) return;
+  state.openPlay.sessions = state.openPlay.sessions.map(s => {
+    const own = mine.find(m => m.id === s.id);
+    return own || s;
+  });
 }
 
 // ---------- Шапка ----------
