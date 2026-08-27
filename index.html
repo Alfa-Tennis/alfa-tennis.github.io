@@ -1502,7 +1502,11 @@ function renderGrid() {
       // же, как уже прошедшее время, — серым и молчащим. Человеку в клубе
       // в 23:05 это читается как «занято», хотя корт пуст: причина в
       // правиле клуба, и сказать её надо прямо здесь.
-      if (st === 'past' && !busyAt(state.date, court.id, slot)
+      // Сейчас запас нулевой, и эта ветка молчит. Оставлена намеренно:
+      // график у клуба сезонный, и запас однажды вернут настройками —
+      // тогда подсказка понадобится снова, без правки страницы.
+      if (st === 'past' && state.config.booking.minLeadMinutes > 0
+          && !busyAt(state.date, court.id, slot)
           && slotTimestamp(state.date, slot) > Date.now()) {
         cell.title = 'Запись закрывается за '
           + hoursText(state.config.booking.minLeadMinutes) + ' до начала. Позвоните в клуб.';
