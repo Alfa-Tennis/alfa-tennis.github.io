@@ -159,9 +159,15 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .grid-hint { margin: 10px 4px 0; font-size: 13px; color: var(--ink-soft); }
 
 /* ---------- Сетка ---------- */
-.grid-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+/* overflow: clip, а не hidden — намеренно. `hidden` делает карточку
+   собственной областью прокрутки, и `position: sticky` у шапки сетки
+   начинает считать отступ от карточки, а не от окна: шапка встаёт на
+   49 пикселей ниже своей строки и навсегда накрывает 05:00 и половину
+   05:30. Именно это и видел владелец. `clip` обрезает так же, но
+   области прокрутки не создаёт. */
+.grid-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: clip; }
 .grid { display: grid; }
-.g-head { position: sticky; top: 49px; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 6px; font-size: 14px; font-weight: 600; text-align: center; }
+.g-head { position: sticky; top: var(--nav-h, 53px); z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 6px; font-size: 14px; font-weight: 600; text-align: center; }
 .g-head.corner { z-index: 4; }
 .g-head .g-sub { display: block; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
 .g-time { position: sticky; left: 0; z-index: 2; background: var(--surface); border-right: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); padding: 0 8px; display: flex; align-items: center; justify-content: flex-end; height: 34px; }
@@ -1148,7 +1154,19 @@ function renderNav() {
     b.addEventListener('click', () => showView(t.id));
     inner.appendChild(b);
   });
+
+  syncNavHeight();
 }
+
+// Высоту навигации меряем, а не записываем числом: под ней паркуется
+// шапка сетки, и разъехавшееся на четыре пикселя число — это полоска
+// чужого фона поверх заголовков кортов.
+function syncNavHeight() {
+  const nav = document.getElementById('nav');
+  const h = nav && !nav.hidden ? Math.round(nav.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty('--nav-h', h + 'px');
+}
+window.addEventListener('resize', syncNavHeight);
 
 function showView(name) {
   state.view = name;

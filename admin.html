@@ -114,7 +114,7 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 
 /* ---------- Сетка дня ---------- */
 .grid { display: grid; position: relative; }
-.g-head { position: sticky; top: 45px; z-index: 5; background: var(--surface);
+.g-head { position: sticky; top: var(--nav-h, 45px); z-index: 5; background: var(--surface);
   border-bottom: 1px solid var(--line); padding: 8px 4px; font-size: 14px; font-weight: 600; text-align: center; }
 .g-time { border-right: 1px solid var(--line); font-size: 12px; color: var(--ink-soft);
   padding-right: 8px; display: flex; align-items: center; justify-content: flex-end; }
@@ -665,6 +665,15 @@ const TABS = [
 // запрос платят все.
 const LAZY = { settings: 'staff', events: 'events', catalog: 'catalog' };
 
+// Высоту вкладок меряем, а не записываем числом: под ними паркуется
+// шапка сетки дня.
+function syncNavHeight() {
+  const nav = document.querySelector('.tabs');
+  const h = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty('--nav-h', h + 'px');
+}
+window.addEventListener('resize', syncNavHeight);
+
 function renderTabs() {
   const wrap = document.getElementById('tabs');
   wrap.innerHTML = '';
@@ -690,6 +699,7 @@ function renderTabs() {
     });
     wrap.appendChild(b);
   });
+  syncNavHeight();
 }
 
 // Наверх прокручиваем только при смене раздела. Внутри раздела render()
@@ -743,7 +753,10 @@ function renderDay(view) {
 
   const card = el('div', 'card');
   card.style.padding = '0';
-  card.style.overflow = 'hidden';
+  // clip, а не hidden: `hidden` сделал бы карточку своей областью
+  // прокрутки, и липкая шапка сетки встала бы ниже своей строки,
+  // навсегда накрыв первые полчаса дня.
+  card.style.overflow = 'clip';
   card.appendChild(buildDayGrid(date, blocks));
   view.appendChild(card);
 
