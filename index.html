@@ -1250,15 +1250,42 @@ function showView(name) {
 
 // ---------- Дни ----------
 
+// Считаем не сумму свободных клеток, а время, которое действительно
+// можно забронировать: свободные полчаса, к которым не примыкает ещё
+// столько же, продать нельзя — минимальная бронь час.
+//
+// Раньше суммировались все свободные клетки, и на хвосте дня выходила
+// прямая ложь: чип обещал «свободно 1 ч», а подбор честно отвечал, что
+// на час времени нет. Оба были правы по-своему, и это худший вид
+// расхождения — когда экран спорит сам с собой.
 function freeHours(dateIso) {
   const step = state.config.booking.slotStep;
+  const need = Math.ceil(state.config.booking.minBookingMinutes / step);
+  const slots = state.data.slots;
   let free = 0;
-  state.data.slots.forEach(slot => {
-    state.config.courts.forEach(court => {
-      if (cellState(dateIso, court.id, slot) === 'free') free += step;
-    });
+
+  state.config.courts.forEach(court => {
+    let run = 0;
+    for (let i = 0; i <= slots.length; i++) {
+      const ok = i < slots.length && cellState(dateIso, court.id, slots[i]) === 'free';
+      if (ok) { run++; continue; }
+      if (run >= need) free += run * step;
+      run = 0;
+    }
   });
+
   return free / 60;
+}
+
+// «Всё занято» и «запись закрыта» — разные новости. В первом случае идти
+// в клуб бесполезно, во втором корт стоит пустой и его можно взять по
+// телефону. Путать их значит терять и клиента, и деньги за корт.
+function dayFreeLabel(dateIso, hours) {
+  if (hours > 0) return 'свободно ' + (Math.round(hours * 10) / 10) + ' ч';
+
+  const anyEmpty = state.data.slots.some(slot =>
+    state.config.courts.some(court => !busyAt(dateIso, court.id, slot)));
+  return anyEmpty ? 'запись закрыта' : 'всё занято';
 }
 
 function renderDays() {
@@ -1270,7 +1297,7 @@ function renderDays() {
     b.type = 'button';
     b.className = 'day' + (date === state.date ? ' active' : '');
     b.innerHTML = '<div class="d-label">' + escapeHtml(dayLabel(date, state.data.today)) + '</div>'
-      + '<div class="d-free">' + (hours > 0 ? 'свободно ' + (Math.round(hours * 10) / 10) + ' ч' : 'всё занято') + '</div>';
+      + '<div class="d-free">' + escapeHtml(dayFreeLabel(date, hours)) + '</div>';
     b.addEventListener('click', () => {
       state.date = date; state.plan = null;
       renderDays(); renderGrid(); renderPicker();
@@ -1469,6 +1496,16 @@ function renderGrid() {
         tag.textContent = st === 'openplay' ? openPlayTag(state.date, court.id, slot)
           : (st === 'regular' ? 'постоянная' : (st === 'closed' ? 'закрыт' : 'вы'));
         cell.appendChild(tag);
+      }
+
+      // Свободный корт, до которого осталось меньше запаса, выглядит так
+      // же, как уже прошедшее время, — серым и молчащим. Человеку в клубе
+      // в 23:05 это читается как «занято», хотя корт пуст: причина в
+      // правиле клуба, и сказать её надо прямо здесь.
+      if (st === 'past' && !busyAt(state.date, court.id, slot)
+          && slotTimestamp(state.date, slot) > Date.now()) {
+        cell.title = 'Запись закрывается за '
+          + hoursText(state.config.booking.minLeadMinutes) + ' до начала. Позвоните в клуб.';
       }
 
       if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx));
