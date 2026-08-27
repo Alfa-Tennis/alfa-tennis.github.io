@@ -246,6 +246,41 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .toast.show { opacity: 1; transform: translateX(-50%); }
 
 .state { padding: 40px 10px; text-align: center; color: var(--ink-soft); }
+
+/* Главная */
+.cta { background: var(--court); color: #fff; border-radius: var(--radius); padding: 18px 16px; margin-top: 18px; }
+.cta h2 { margin: 0 0 4px; font-size: 19px; }
+.cta p { margin: 0 0 14px; font-size: 14px; color: rgba(255,255,255,.82); line-height: 1.45; }
+.cta .btn { background: var(--gold); color: #3A2E06; }
+.cta .btn:hover { background: #E7BF3F; }
+.ev { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+.ev-when { flex: 0 0 auto; text-align: center; min-width: 52px; }
+.ev-when .d { font-size: 20px; font-weight: 600; line-height: 1.1; }
+.ev-when .m { font-size: 12px; color: var(--ink-soft); text-transform: uppercase; }
+.ev-what { min-width: 0; }
+.ev-what .t1 { font-weight: 600; }
+.ev-what .t2 { font-size: 14px; color: var(--ink-soft); margin-top: 3px; }
+.post { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.post:last-of-type { border-bottom: 0; }
+.post-pic { border-radius: 10px; overflow: hidden; margin-bottom: 10px; max-width: 460px; }
+.post-pic img { width: 100%; display: block; }
+.post-when { font-size: 12px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+.post-text { margin-top: 5px; font-size: 15px; line-height: 1.5; white-space: pre-line; }
+.goods-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.goods-card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+.goods-pic { aspect-ratio: 4 / 3; background: #fff; }
+.goods-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.goods-pic.no-pic { background: repeating-linear-gradient(45deg, #F2F4F5 0 8px, #E9EDEE 8px 16px); }
+.goods-body { padding: 10px 11px 12px; }
+.goods-body .t1 { font-weight: 600; font-size: 15px; line-height: 1.25; }
+.goods-body .t-price { margin-top: 4px; font-weight: 600; color: var(--court-dk); }
+.goods-body .t2 { margin-top: 5px; font-size: 13px; color: var(--ink-soft); line-height: 1.4; white-space: pre-line; }
+.goods-body .btn { margin-top: 10px; }
+.svc-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 7px 2px; border-bottom: 1px dashed var(--line); font-size: 15px; }
+.svc-row.sub { padding-left: 14px; font-size: 14px; color: var(--ink-soft); }
+.svc-row:last-child { border-bottom: 0; }
+.svc-row b { white-space: nowrap; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 footer { max-width: 920px; margin: 26px auto 0; padding: 0 16px; color: var(--ink-soft); font-size: 13px; }
 footer a { color: var(--court-dk); }
 
@@ -279,8 +314,11 @@ footer a { color: var(--court-dk); }
 <main>
   <div id="statusNotice" class="notice info" hidden></div>
 
+  <!-- Главная -->
+  <section id="viewHome" hidden></section>
+
   <!-- Бронирование -->
-  <section id="viewBook">
+  <section id="viewBook" hidden>
     <div class="section-title">Выберите день</div>
     <div class="days" id="days"></div>
 
@@ -363,7 +401,8 @@ const state = {
   duration: 60,
   courtFilter: null,
   noSwitch: false,
-  view: 'book',
+  view: 'home',
+  landing: null,       // ответ getLanding: афиша и всё, что на главной
   auth: null,          // { token, client }
   mine: null,          // ответ myBookings
   tgUnlinked: false,   // открыли из Telegram, но учётка не привязана
@@ -483,6 +522,7 @@ const ERRORS = {
   'password-too-short': 'Пароль должен быть не короче 6 символов.',
   'invalid-name': 'Укажите имя и фамилию.',
   'invalid-phone': 'Проверьте номер телефона.',
+  'item-not-found': 'Этой позиции больше нет — обновите страницу.',
   'blocked': 'Доступ закрыт. Обратитесь к администратору клуба.',
   'token-revoked': 'Нужно войти заново.',
   'unauthorized': 'Нужно войти заново.',
@@ -536,7 +576,7 @@ async function request(payload, retries) {
 // Действия, которые ничего не меняют. Их можно молча повторить: сеть
 // моргнула — клиент этого даже не заметил. Всё остальное повторять нельзя,
 // человек должен сам решить, нажимать ли второй раз.
-const SAFE_TO_REPEAT = ['getConfig', 'getAvailability', 'me', 'myBookings'];
+const SAFE_TO_REPEAT = ['getConfig', 'getAvailability', 'me', 'myBookings', 'getLanding'];
 
 async function api(action, body) {
   const payload = Object.assign({ action }, body || {});
@@ -604,9 +644,19 @@ async function refreshMe() {
 }
 
 async function load() {
-  const [cfg, av] = await Promise.all([api('getConfig'), api('getAvailability', { days: 14 })]);
+  // Афиша едет вместе с настройками и сеткой: главная — первый экран,
+  // ждать её содержимое отдельным заходом человеку негде.
+  //
+  // Упавшая афиша не должна уносить с собой сетку занятости: главное на
+  // странице — забронировать корт, объявления вторичны.
+  const [cfg, av, land] = await Promise.all([
+    api('getConfig'),
+    api('getAvailability', { days: 14 }),
+    api('getLanding').catch(() => null),
+  ]);
   state.config = cfg.config;
   state.data = av;
+  state.landing = land;
   state.date = state.data.today;
 
   // В Telegram личность подтверждена подписью — она главнее сохранённого
@@ -627,6 +677,11 @@ async function load() {
   renderDays();
   renderGrid();
   renderPicker();
+
+  // Из Telegram открывают кнопкой «Забронировать» — там главная лишний
+  // шаг: человек уже сказал, зачем пришёл. В браузере наоборот, первый
+  // экран — главная.
+  showView(telegramInitData() || /[#&]book\b/.test(location.hash) ? 'book' : 'home');
   if (state.auth) refreshMine();
 }
 
@@ -737,22 +792,352 @@ document.getElementById('whoBtn').addEventListener('click', () => {
   else openAuth();
 });
 
+// ============================================================
+// Главная
+// ============================================================
+
+function renderHome() {
+  const view = document.getElementById('viewHome');
+  const c = state.config;
+  view.innerHTML = '';
+
+  // Первым экраном — то, зачем человек пришёл. Всё остальное ниже.
+  const rules = (c.pricing.rules || []).filter(r => r.pricePerHour < c.pricing.pricePerHour);
+  const cheapest = rules.reduce((min, r) => Math.min(min, r.pricePerHour), c.pricing.pricePerHour);
+  const price = cheapest < c.pricing.pricePerHour
+    ? 'от ' + money(cheapest) + ' за час'
+    : money(c.pricing.pricePerHour) + ' за час';
+
+  const cta = el('div', 'cta');
+  cta.innerHTML = '<h2>Забронировать корт</h2>'
+    + '<p>' + escapeHtml(c.courts.length + ' крытых корта, ежедневно с '
+      + c.booking.openTime + ' до ' + c.booking.closeTime + ', ' + price
+      + '. Оплата на месте.') + '</p>';
+  cta.appendChild(btn('Выбрать время', 'btn', () => showView('book')));
+  view.appendChild(cta);
+
+  const posts = (state.landing && state.landing.news) || [];
+  if (posts.length) {
+    view.appendChild(txt('div', 'section-title', 'Новости клуба'));
+    view.appendChild(homeNews(posts, c));
+  }
+
+  view.appendChild(txt('div', 'section-title', 'Афиша турниров'));
+  view.appendChild(homeEvents());
+
+  const items = (state.landing && state.landing.catalog) || [];
+  const goods = items.filter(i => i.category !== 'service');
+  if (goods.length) {
+    view.appendChild(txt('div', 'section-title', 'Товары клуба'));
+    view.appendChild(homeGoods(goods));
+  }
+
+  view.appendChild(txt('div', 'section-title', 'Услуги и прокат'));
+  view.appendChild(homeServices(c, items.filter(i => i.category === 'service')));
+
+  view.appendChild(txt('div', 'section-title', 'Как нас найти'));
+  view.appendChild(homeContacts(c));
+}
+
+// Новости приходят из группы клуба и попадают сюда только после того,
+// как их там же и одобрили: прямая трансляция чата на витрину — вопрос
+// времени до неудобного сообщения на главной.
+function homeNews(posts, c) {
+  const card = el('div', 'card');
+
+  posts.forEach(n => {
+    const item = el('div', 'post');
+
+    if (n.photoUrl) {
+      const pic = el('div', 'post-pic');
+      const img = document.createElement('img');
+      img.src = n.photoUrl;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.addEventListener('error', () => pic.remove());
+      pic.appendChild(img);
+      item.appendChild(pic);
+    }
+
+    const when = new Date(n.postedAt);
+    item.appendChild(html('div', 'post-when', escapeHtml(
+      isNaN(when) ? '' : when.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }))));
+    if (n.text) item.appendChild(txt('div', 'post-text', n.text));
+
+    card.appendChild(item);
+  });
+
+  if (c.club.telegramGroup) {
+    const links = el('div', 'links');
+    links.appendChild(link('Все новости в группе клуба', c.club.telegramGroup));
+    card.appendChild(links);
+  }
+
+  return card;
+}
+
+function homeEvents() {
+  const card = el('div', 'card');
+  const events = state.landing ? state.landing.events : null;
+
+  // Пустая афиша и не загрузившаяся — разные вещи, и говорить о них
+  // надо разное: в первом случае турниров нет, во втором мы просто
+  // не знаем.
+  if (!events) {
+    card.appendChild(txt('div', 'empty', 'Афишу сейчас не удалось загрузить. Обновите страницу позже.'));
+    return card;
+  }
+  if (!events.length) {
+    card.appendChild(txt('div', 'empty',
+      'Ближайших турниров пока нет. Объявления появляются здесь и в группе клуба.'));
+    return card;
+  }
+
+  events.forEach(e => {
+    const row = el('div', 'ev');
+    const d = new Date(e.date + 'T00:00:00Z');
+    row.innerHTML = '<div class="ev-when"><div class="d">' + d.getUTCDate() + '</div>'
+      + '<div class="m">' + MONTHS[d.getUTCMonth()] + '</div></div>'
+      + '<div class="ev-what"><div class="t1">' + escapeHtml(e.title)
+      + ' <span class="pill wait">' + escapeHtml(e.categoryName) + '</span></div>'
+      + (e.note ? '<div class="t2">' + escapeHtml(e.note) + '</div>' : '') + '</div>';
+    card.appendChild(row);
+  });
+
+  return card;
+}
+
+// Фотографии товаров — единственное, что страница тянет ссылкой из
+// хранилища. Согласованное исключение: десяток фотографий в виде
+// data:-строк раздул бы её на мегабайты.
+function homeGoods(goods) {
+  const card = el('div', 'card');
+  const grid = el('div', 'goods-grid');
+
+  goods.forEach(item => {
+    const cell = el('div', 'goods-card');
+
+    const pic = el('div', 'goods-pic');
+    if (item.photoUrl) {
+      const img = document.createElement('img');
+      img.src = item.photoUrl;
+      img.alt = item.name;
+      img.loading = 'lazy';
+      // Не отдалась картинка — остаётся заглушка, а не рваная карточка.
+      img.addEventListener('error', () => { pic.innerHTML = ''; pic.classList.add('no-pic'); });
+      pic.appendChild(img);
+    } else {
+      pic.classList.add('no-pic');
+    }
+    cell.appendChild(pic);
+
+    const text = el('div', 'goods-body');
+    text.innerHTML = '<div class="t1">' + escapeHtml(item.name) + '</div>'
+      + '<div class="t-price">' + escapeHtml(priceLabel(item)) + '</div>'
+      + (item.description ? '<div class="t2">' + escapeHtml(item.description) + '</div>' : '');
+    text.appendChild(btn('Оставить заявку', 'btn sec sm wide', () => openRequest(item, null)));
+    cell.appendChild(text);
+
+    grid.appendChild(cell);
+  });
+
+  card.appendChild(grid);
+  card.appendChild(txt('div', 'empty', 'Про наличие и размеры спросите администратора клуба.'));
+  return card;
+}
+
+function priceLabel(item) {
+  if (item.price == null) return 'Цена по запросу';
+  return money(item.price) + (item.priceNote ? ' ' + item.priceNote : '');
+}
+
+function homeServices(c, services) {
+  const card = el('div', 'card');
+
+  services.forEach(item => {
+    // У услуги может быть несколько тарифов — перетяжка для своих, для
+    // сторонних и срочная. Это одна услуга с вариантами, а не три.
+    if (item.options && item.options.length) {
+      const head = el('div', 'svc-row');
+      head.innerHTML = '<span><b>' + escapeHtml(item.name) + '</b></span>';
+      card.appendChild(head);
+      item.options.forEach(o => {
+        const row = el('div', 'svc-row sub');
+        row.innerHTML = '<span>' + escapeHtml(o.name) + '</span>'
+          + '<b>' + (o.price == null ? 'по запросу' : money(o.price)) + '</b>';
+        card.appendChild(row);
+      });
+    } else {
+      const row = el('div', 'svc-row');
+      row.innerHTML = '<span>' + escapeHtml(item.name) + '</span>'
+        + '<b>' + escapeHtml(priceLabel(item)) + '</b>';
+      card.appendChild(row);
+    }
+    if (item.description) card.appendChild(txt('div', 'empty', item.description));
+    const ask = el('div', 'links');
+    ask.appendChild(btn('Записаться на услугу', 'btn sec sm', () => openRequest(item, null)));
+    card.appendChild(ask);
+  });
+
+  // Пока стрингер не заведён позицией каталога, показываем строку из
+  // настроек клуба — она честнее пустого раздела.
+  if (!services.length && c.club.extraService) {
+    const row = el('div', 'svc-row');
+    row.innerHTML = '<span>' + escapeHtml(c.club.extraService) + '</span>'
+      + '<b>по договорённости</b>';
+    card.appendChild(row);
+  }
+
+  (c.pricing.inventory || []).forEach(item => {
+    const row = el('div', 'svc-row');
+    row.innerHTML = '<span>' + escapeHtml(item.name) + ' напрокат</span>'
+      + '<b>' + money(item.pricePerHour) + ' / час</b>';
+    card.appendChild(row);
+  });
+
+  card.appendChild(txt('div', 'empty',
+    'Прокат добавляется при бронировании — ракетка или корзина мячей будут ждать на корте.'));
+  return card;
+}
+
+function homeContacts(c) {
+  const card = el('div', 'card');
+
+  const rows = [
+    [c.club.address, [c.club.city, c.club.address].filter(Boolean).join(', ')],
+    [c.club.phone, c.club.phone],
+  ].filter(r => r[0]);
+
+  rows.forEach(r => {
+    const row = el('div', 'svc-row');
+    row.innerHTML = '<span>' + escapeHtml(r[1]) + '</span>';
+    card.appendChild(row);
+  });
+
+  const links = el('div', 'links');
+  if (c.club.mapUrl) links.appendChild(link('Открыть карту', c.club.mapUrl));
+  if (c.club.telegramGroup) links.appendChild(link('Группа клуба в Telegram', c.club.telegramGroup));
+  if (c.club.botUsername) links.appendChild(link('Бот клуба', 'https://t.me/' + c.club.botUsername));
+  if (c.club.phone) links.appendChild(link('Позвонить', 'tel:' + c.club.phone.replace(/[^\d+]/g, '')));
+  card.appendChild(links);
+
+  return card;
+}
+
+// Заявка с витрины. Вход не спрашиваем намеренно: человек мог прийти
+// на сайт за ракеткой, а не за кортом, и требовать регистрацию ради
+// вопроса о цене — верный способ этот вопрос не получить.
+function openRequest(item, option) {
+  const client = state.auth && state.auth.client;
+
+  const body = el('div');
+  body.innerHTML = '<h3>' + escapeHtml(item.name) + '</h3>'
+    + '<div class="m-sub">Администратор перезвонит и всё расскажет — про наличие, размер и оплату.</div>';
+
+  // Услугу с тарифами спрашивают конкретную: «перетяжка» без варианта
+  // оставляет администратора гадать, срочная она или обычная.
+  let picked = option;
+  if (!option && item.options && item.options.length) {
+    const chips = el('div', 'chips');
+    chips.style.marginBottom = '14px';
+    item.options.forEach(o => {
+      const c = btn(o.name + (o.price == null ? '' : ' · ' + money(o.price)),
+        'chip' + (picked && picked.id === o.id ? ' on' : ''), () => {
+          picked = o;
+          Array.prototype.forEach.call(chips.children, n => n.classList.remove('on'));
+          c.classList.add('on');
+        });
+      chips.appendChild(c);
+    });
+    body.appendChild(chips);
+  }
+
+  let inpName = null;
+  let inpPhone = null;
+
+  if (client) {
+    body.appendChild(txt('div', 'empty', 'Перезвоним на ' + client.phone + '.'));
+  } else {
+    const fName = el('label', 'field');
+    fName.innerHTML = '<span>Как вас зовут</span>';
+    inpName = document.createElement('input');
+    inpName.placeholder = 'Иван Петров';
+    inpName.autocomplete = 'name';
+    fName.appendChild(inpName); body.appendChild(fName);
+
+    const fPhone = el('label', 'field');
+    fPhone.innerHTML = '<span>Телефон</span>';
+    inpPhone = document.createElement('input');
+    inpPhone.autocomplete = 'tel';
+    attachPhoneMask(inpPhone);
+    fPhone.appendChild(inpPhone); body.appendChild(fPhone);
+  }
+
+  const fComment = el('label', 'field');
+  fComment.innerHTML = '<span>Что уточнить — необязательно</span>';
+  const comment = document.createElement('input');
+  comment.placeholder = 'Например: нужна ручка размера 2';
+  fComment.appendChild(comment); body.appendChild(fComment);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  const send = btn('Отправить', 'btn', async () => {
+    if (!client && (!inpName.value.trim() || !inpPhone.value.trim())) {
+      toast('Оставьте имя и телефон — иначе перезвонить некуда');
+      return;
+    }
+    send.disabled = true;
+    try {
+      await api('requestItem', {
+        itemId: item.id,
+        optionId: picked ? picked.id : null,
+        name: inpName ? inpName.value : '',
+        phone: inpPhone ? inpPhone.value : '',
+        comment: comment.value,
+      });
+      closeModal();
+      toast('Заявка ушла администратору — перезвонит в рабочее время', 4000);
+    } catch (e) {
+      send.disabled = false;
+      toast(errorText(e.code), 4000);
+    }
+  });
+  acts.appendChild(send);
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => (inpName || comment).focus(), 50);
+}
+
+function link(label, href) {
+  const a = document.createElement('a');
+  a.className = 'btn sec sm';
+  a.textContent = label;
+  a.href = href;
+  a.style.textDecoration = 'none';
+  if (href.indexOf('http') === 0) { a.target = '_blank'; a.rel = 'noopener'; }
+  return a;
+}
+
 // ---------- Навигация ----------
 
+// Навигация видна всегда: с появлением главной страницы уйти с неё
+// к сетке нужно и тому, кто ещё не вошёл.
 function renderNav() {
   const nav = document.getElementById('nav');
-  if (!state.auth || !state.auth.client) { nav.hidden = true; return; }
   nav.hidden = false;
 
+  const client = state.auth && state.auth.client;
   const upcoming = state.mine ? state.mine.upcoming.length : 0;
   const inner = document.getElementById('navInner');
   inner.innerHTML = '';
 
   [
+    { id: 'home', label: 'Главная' },
     { id: 'book', label: 'Бронирование' },
-    { id: 'mine', label: 'Мои брони', count: upcoming },
-    { id: 'profile', label: 'Профиль' },
-  ].forEach(t => {
+    client ? { id: 'mine', label: 'Мои брони', count: upcoming } : null,
+    client ? { id: 'profile', label: 'Профиль' } : null,
+  ].filter(Boolean).forEach(t => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = state.view === t.id ? 'on' : '';
@@ -767,10 +1152,12 @@ function renderNav() {
 
 function showView(name) {
   state.view = name;
+  document.getElementById('viewHome').hidden = name !== 'home';
   document.getElementById('viewBook').hidden = name !== 'book';
   document.getElementById('viewMine').hidden = name !== 'mine';
   document.getElementById('viewProfile').hidden = name !== 'profile';
   document.getElementById('bar').classList.toggle('show', name === 'book' && !!state.plan);
+  if (name === 'home') renderHome();
   if (name === 'mine') renderMine();
   if (name === 'profile') renderProfile();
   renderNav();
@@ -1294,7 +1681,7 @@ function logout(silent) {
   state.auth = null;
   state.mine = null;
   store.del(TOKEN_KEY);
-  showView('book');
+  showView('home');
   renderHero(); renderNav();
   if (!silent) toast('Вы вышли');
 }

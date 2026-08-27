@@ -141,20 +141,29 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .item .t1 { font-weight: 600; }
 .item .t2 { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
 .item .acts { margin-top: 9px; display: flex; gap: 8px; flex-wrap: wrap; }
+.item.past { opacity: .68; }
+
+/* Каталог */
+.group { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--ink-soft); margin: 14px 2px 7px; }
+.goods { display: flex; gap: 12px; align-items: flex-start; }
+.goods-text { min-width: 0; }
+.thumb { flex: 0 0 auto; width: 62px; height: 62px; border-radius: 9px; border: 1px solid var(--line);
+  overflow: hidden; background: #fff; }
+.thumb.big { width: 120px; height: 120px; margin-bottom: 8px; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb.empty-thumb { background: repeating-linear-gradient(45deg, #F2F4F5 0 6px, #EAEDEE 6px 12px); }
+.field-label { font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+.opt-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.opt-row input:first-child { flex: 1; }
+.opt-row input:last-child { width: 96px; }
+.opt-row input { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
 
 .pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 12px; border: 1px solid var(--line); }
 .pill.ok { background: var(--accent-tint); border-color: #bfdccd; color: var(--accent-dark); }
 .pill.wait { background: var(--warn-tint); border-color: #ecd6b4; color: #7a5320; }
 .pill.bad { background: var(--danger-tint); border-color: #eec9c9; color: var(--danger); }
 .pill.grey { background: #f0f2f1; color: var(--ink-soft); }
-
-/* ---------- Telegram-превью ---------- */
-.tg { background: #eaf1f6; border-radius: var(--radius); padding: 14px; }
-.tg-msg { background: #fff; border-radius: 12px 12px 12px 4px; padding: 11px 13px; max-width: 380px;
-  box-shadow: 0 1px 2px rgba(0,0,0,.08); font-size: 14px; white-space: pre-line; margin-bottom: 8px; }
-.tg-btns { display: flex; gap: 6px; max-width: 380px; }
-.tg-btn { flex: 1; background: #fff; border: 0; border-radius: 8px; padding: 9px; font-size: 13px;
-  color: #2b7cb8; cursor: default; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 
 /* ---------- Статистика ---------- */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
@@ -303,6 +312,22 @@ const ERRORS = {
   'invalid-time': 'Время не по шагу сетки.',
   'not-movable': 'Такую бронь перенести нельзя.',
   'staff-reset-owner-only': 'Пароль администратору или владельцу может сбросить только владелец.',
+  'owner-only': 'Назначать и снимать администраторов может только владелец.',
+  'invalid-role': 'Такой роли нет.',
+  'own-role': 'Снять роль с самого себя нельзя — клуб останется без владельца.',
+  'owner-role-immutable': 'Роль владельца через панель не меняется.',
+  'client-not-verified': 'Сначала подтвердите клиента: администратором становится только проверенный.',
+  'invalid-date': 'Проверьте дату.',
+  'invalid-title': 'Укажите название турнира.',
+  'invalid-category': 'Выберите категорию участников.',
+  'event-not-found': 'Турнир не найден — возможно, его только что удалили.',
+  'item-not-found': 'Позиция не найдена — возможно, её только что удалили.',
+  'news-not-found': 'Новость не найдена — возможно, её только что удалили.',
+  'invalid-price': 'Проверьте цену: целое число рублей или пусто.',
+  'invalid-options': 'Проверьте варианты цены.',
+  'invalid-photo': 'Это не похоже на фотографию.',
+  'unsupported-photo-type': 'Подойдёт JPEG, PNG или WebP.',
+  'photo-too-large': 'Фотография слишком большая даже после сжатия.',
 };
 
 function errorText(code) {
@@ -455,11 +480,23 @@ function mapConfig(booking) {
 }
 
 async function loadAll() {
-  const [pub, day, clients, review] = await Promise.all([
+  // Сотрудники нужны одному экрану, поэтому и читаются только для него:
+  // пятый запрос к каждому обновлению панели ради вкладки, куда заходят
+  // раз в полгода, себя не окупает.
+  const needStaff = state.tab === 'settings';
+  const needEvents = state.tab === 'events';
+  const needCatalog = state.tab === 'catalog';
+
+  const [pub, day, clients, review, itemRequests, staff, events, catalog, posts] = await Promise.all([
     api('getConfig'),
     api('adminDay', { date: state.date }),
     api('listClients', { query: state.clientQuery }),
     api('adminReview'),
+    api('listRequests'),
+    needStaff ? api('listStaff') : Promise.resolve(null),
+    needEvents ? api('listEvents') : Promise.resolve(null),
+    needCatalog ? api('listCatalog') : Promise.resolve(null),
+    needEvents ? api('listNews') : Promise.resolve(null),
   ]);
 
   const config = mapConfig(day.config);
@@ -480,6 +517,11 @@ async function loadAll() {
     club: pub.config.club,
     courts: day.courts,
     clients: clients.clients.map(mapClient),
+    requests: itemRequests,
+    staff: staff ? staff.staff : null,
+    events: events || null,
+    catalog: catalog || null,
+    news: posts || null,
     series: day.series || [],
     exceptions: day.exceptions || [],
     bookings,
@@ -594,7 +636,10 @@ function pendingBookings() {
   return out.sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
 }
 function pendingClients() { return db.clients.filter(c => c.status === 'pending'); }
-function requestCount() { return pendingBookings().length + pendingClients().length; }
+function requestCount() {
+  const items = db.requests ? db.requests.open : 0;
+  return pendingBookings().length + pendingClients().length + items;
+}
 
 // ============================================================
 // Каркас
@@ -610,8 +655,15 @@ const TABS = [
   { id: 'requests', label: 'Заявки' },
   { id: 'clients', label: 'Клиенты' },
   { id: 'series', label: 'Постоянные' },
+  { id: 'events', label: 'Афиша и новости' },
+  { id: 'catalog', label: 'Каталог' },
   { id: 'settings', label: 'Настройки' },
 ];
+
+// Разделы, которым нужны свои данные. Читаются при первом заходе на
+// вкладку, а не при каждом обновлении панели: экраны редкие, а лишний
+// запрос платят все.
+const LAZY = { settings: 'staff', events: 'events', catalog: 'catalog' };
 
 function renderTabs() {
   const wrap = document.getElementById('tabs');
@@ -626,7 +678,16 @@ function renderTabs() {
       c.textContent = requestCount();
       b.appendChild(c);
     }
-    b.addEventListener('click', () => { state.tab = t.id; render(); });
+    b.addEventListener('click', () => {
+      state.tab = t.id;
+      render();
+      // Данные этого раздела ещё не читали — дочитываем и перерисовываем.
+      // Экран до этого показывает «Загружаем», а не пустоту, которую
+      // легко принять за «здесь ничего нет».
+      if (LAZY[t.id] && !db[LAZY[t.id]]) {
+        reload().catch(() => toast('Не удалось загрузить раздел'));
+      }
+    });
     wrap.appendChild(b);
   });
 }
@@ -645,7 +706,8 @@ function render() {
   const view = document.getElementById('view');
   view.innerHTML = '';
   ({ day: renderDay, requests: renderRequests, clients: renderClients,
-     series: renderSeries, settings: renderSettings }[state.tab])(view);
+     series: renderSeries, events: renderEvents, catalog: renderCatalog,
+     settings: renderSettings }[state.tab])(view);
 
   lastTab = state.tab;
   window.scrollTo({ top: tabChanged ? 0 : y });
@@ -1042,6 +1104,8 @@ function openException(x) {
 function renderRequests(view) {
   const bookings = pendingBookings();
   const clients = pendingClients();
+  const items = db.requests ? db.requests.requests : [];
+  const openItems = items.filter(r => r.status === 'new');
 
   const c1 = el('div', 'card');
   c1.innerHTML = '<h2>Брони на подтверждение <span class="sub">от '
@@ -1049,19 +1113,23 @@ function renderRequests(view) {
   if (!bookings.length) c1.appendChild(txt('div', 'empty', 'Ничего не ждёт решения.'));
   bookings.forEach(b => {
     const it = el('div', 'item hl');
-    it.innerHTML = '<div class="t1">' + escapeHtml(b.clientName) + ' · ' + escapeHtml(b.start + '–' + b.end) + '</div>'
+    it.innerHTML = '<div class="t1">' + escapeHtml(b.clientName) + ' · ' + escapeHtml(b.start + '–' + b.end)
+      + (b.expired ? ' <span class="pill grey">просрочена</span>' : '') + '</div>'
       + '<div class="t2">' + escapeHtml(courtName(b.courtId) + ' · ' + longDate(b.date)) + ' · '
       + hoursText(timeToMinutes(b.end) - timeToMinutes(b.start)) + ' · ' + money(b.price)
-      + ' · ' + escapeHtml(fmtPhone(b.clientPhone)) + '</div>';
+      + ' · ' + escapeHtml(fmtPhone(b.clientPhone)) + '</div>'
+      + (b.expired ? '<div class="t2">Корт уже вернулся в общий доступ — подтвердить нельзя.</div>' : '');
     const acts = el('div', 'acts');
-    acts.appendChild(btn('Подтвердить', 'btn sm', () => {
-      b.status = 'confirmed'; toast('Подтверждено, клиенту ушло уведомление'); render();
-    }));
-    acts.appendChild(btn('Отклонить', 'btn sm danger', () => {
-      cancelBooking(b, 'админ отклонил'); toast('Отклонено'); render();
-    }));
+    // Заявка могла протухнуть, пока админ смотрел на список: кнопку
+    // «Подтвердить» на отпущенный корт не показываем вовсе.
+    if (!b.expired) {
+      acts.appendChild(btn('Подтвердить', 'btn sm', () =>
+        act(() => api('adminApproveBooking', { date: b.date, bookingId: b.id }), 'Бронь подтверждена')));
+    }
+    acts.appendChild(btn('Отклонить', 'btn sm danger', () =>
+      act(() => api('adminRejectBooking', { date: b.date, bookingId: b.id }), 'Заявка отклонена')));
     acts.appendChild(btn('Открыть день', 'btn sm sec', () => {
-      state.date = b.date; state.tab = 'day'; render();
+      state.date = b.date; state.tab = 'day'; reload();
     }));
     it.appendChild(acts);
     c1.appendChild(it);
@@ -1077,36 +1145,54 @@ function renderRequests(view) {
       + '<div class="t2">' + escapeHtml(fmtPhone(cl.phone)) + ' · '
       + (cl.tg ? 'телефон подтверждён Telegram' : '<b>без Telegram</b> — напоминания не дойдут') + '</div>';
     const acts = el('div', 'acts');
-    acts.appendChild(btn('Подтвердить', 'btn sm', () => {
-      cl.status = 'verified'; toast('Клиент может бронировать'); render();
-    }));
-    acts.appendChild(btn('Отклонить', 'btn sm danger', () => {
-      cl.status = 'blocked'; toast('Заявка отклонена'); render();
-    }));
+    acts.appendChild(btn('Подтвердить', 'btn sm', () =>
+      act(() => api('verifyClient', { clientId: cl.id }), 'Клиент может бронировать')));
+    acts.appendChild(btn('Отклонить', 'btn sm danger', () =>
+      act(() => api('blockClient', { clientId: cl.id }), 'Заявка отклонена')));
     it.appendChild(acts);
     c2.appendChild(it);
   });
   view.appendChild(c2);
 
+  // Заявки с витрины. Они же приходят администраторам в Telegram, но
+  // сообщение уезжает вверх за полдня — здесь заявка лежит, пока её не
+  // закроют.
   const c3 = el('div', 'card');
-  c3.innerHTML = '<h2>Как это приходит в Telegram <span class="sub">то же самое, не открывая панель</span></h2>';
-  const tg = el('div', 'tg');
-  tg.appendChild(tgMsg('🎾 Новая бронь — нужно подтверждение\n\nКорт 1 · 15 августа, суббота\n14:00–18:00 (4 ч) · 7 200 ₽\n\n👤 Сергей Демидов\n📞 +7 918 445-21-09\n\nДольше 3 часов — решаете вы.'));
-  tg.appendChild(tgBtns(['✅ Подтвердить', '❌ Отклонить']));
-  tg.appendChild(tgMsg('👤 Новый клиент\n\nИрина Соколова\n📞 +7 918 332-14-77\nТелефон подтверждён Telegram'));
-  tg.appendChild(tgBtns(['✅ Подтвердить', '❌ Отклонить']));
-  c3.appendChild(tg);
-  c3.appendChild(txt('div', 'empty',
-    'Кнопки под уведомлением делают ровно то же, что кнопки выше. Администратор может вести клуб, не заходя на сайт.'));
+  c3.innerHTML = '<h2>Заявки с витрины <span class="sub">товары и услуги с главной страницы</span></h2>';
+  if (!db.requests) {
+    c3.appendChild(txt('div', 'empty', 'Загружаем…'));
+  } else if (!items.length) {
+    c3.appendChild(txt('div', 'empty', 'Заявок не было.'));
+  }
+
+  items.slice(0, openItems.length ? undefined : 10).forEach(r => {
+    const it = el('div', 'item' + (r.status === 'new' ? ' hl' : ''));
+    it.innerHTML = '<div class="t1">' + escapeHtml(r.itemName)
+      + (r.optionName ? ' · ' + escapeHtml(r.optionName) : '')
+      + (r.status === 'new' ? '' : ' <span class="pill grey">закрыта</span>') + '</div>'
+      + '<div class="t2">' + escapeHtml(r.name) + ' · ' + escapeHtml(fmtPhone(r.phone))
+      + ' · ' + escapeHtml(shortDateTime(r.createdAt))
+      + (r.fromClient ? '' : ' · не заходил в учётку') + '</div>'
+      + (r.comment ? '<div class="t2">«' + escapeHtml(r.comment) + '»</div>' : '');
+
+    if (r.status === 'new') {
+      const acts = el('div', 'acts');
+      acts.appendChild(btn('Ответил', 'btn sm', () =>
+        act(() => api('closeRequest', { id: r.id }), 'Заявка закрыта')));
+      it.appendChild(acts);
+    }
+
+    c3.appendChild(it);
+  });
   view.appendChild(c3);
 }
 
-function tgMsg(text) { const d = el('div', 'tg-msg'); d.textContent = text; return d; }
-function tgBtns(labels) {
-  const d = el('div', 'tg-btns');
-  labels.forEach(l => { const b = el('button', 'tg-btn'); b.type = 'button'; b.textContent = l; d.appendChild(b); });
-  const wrap = el('div'); wrap.appendChild(d); wrap.style.marginBottom = '14px';
-  return wrap;
+function shortDateTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleString('ru-RU', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow',
+  });
 }
 
 // ============================================================
@@ -1286,6 +1372,456 @@ function nextOccurrences(s, n) {
 
 
 // ============================================================
+// Вкладка: Афиша турниров
+// ============================================================
+//
+// Ведёт афишу только владелец: она говорит от имени клуба, и правку в
+// ней видит весь город. Администратору она показывается — знать, что в
+// субботу турнир, ему нужно, — но без кнопок.
+
+function renderEvents(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Афиша турниров <span class="sub">видна на главной странице сайта</span></h2>';
+  view.appendChild(card);
+
+  if (!db.events) {
+    card.appendChild(txt('div', 'empty', 'Загружаем афишу…'));
+    return;
+  }
+
+  const canEdit = !!db.events.canEdit;
+
+  if (!db.events.events.length) {
+    card.appendChild(txt('div', 'empty', canEdit
+      ? 'Турниров пока нет. Добавленный появится на главной сразу.'
+      : 'Турниров пока нет. Добавить турнир может владелец.'));
+  }
+
+  db.events.events.forEach(e => {
+    const it = el('div', 'item' + (e.past ? ' past' : ''));
+    it.innerHTML = '<div class="t1">' + escapeHtml(e.title)
+      + ' <span class="pill ' + (e.past ? 'grey' : 'wait') + '">' + escapeHtml(e.categoryName) + '</span>'
+      + (e.past ? ' <span class="pill grey">прошёл</span>' : '') + '</div>'
+      + '<div class="t2">' + escapeHtml(longDate(e.date))
+      + (e.note ? ' · ' + escapeHtml(e.note) : '') + '</div>';
+
+    if (canEdit) {
+      const acts = el('div', 'acts');
+      acts.appendChild(btn('Изменить', 'btn sm sec', () => openEventForm(e)));
+      acts.appendChild(btn('Удалить', 'btn sm danger', () => confirmDelete(
+        'Удалить турнир?', e.title + ' · ' + longDate(e.date),
+        'Объявление пропадёт с главной страницы сразу.',
+        () => act(() => api('deleteEvent', { id: e.id }), 'Турнир удалён'))));
+      it.appendChild(acts);
+    }
+
+    card.appendChild(it);
+  });
+
+  if (canEdit) {
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Добавить турнир', 'btn sm', () => openEventForm(null)));
+    card.appendChild(acts);
+  }
+
+  renderNews(view);
+}
+
+// Новости из группы клуба. Модерация здесь доступна любому
+// администратору, в отличие от афиши: текст пишет сам клуб в своей
+// группе, а здесь решается не «что написать», а «показывать ли».
+function renderNews(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Новости из группы <span class="sub">попадают сюда черновиком</span></h2>';
+  view.appendChild(card);
+
+  if (!db.news) {
+    card.appendChild(txt('div', 'empty', 'Загружаем…'));
+    return;
+  }
+
+  if (!db.news.enabled) {
+    card.appendChild(txt('div', 'empty', 'Сбор новостей выключен в настройках клуба.'));
+  }
+
+  if (!db.news.news.length) {
+    card.appendChild(txt('div', 'empty',
+      'Постов ещё не было. Бот забирает из группы только те, где есть один из хештегов: '
+      + db.news.hashtags.join(', ') + '. Всё остальное в чате он пропускает мимо.'));
+    return;
+  }
+
+  db.news.news.forEach(n => {
+    const it = el('div', 'item' + (n.status === 'draft' ? ' hl' : ''));
+
+    const row = el('div', 'goods');
+    if (n.photoUrl) {
+      const pic = el('div', 'thumb');
+      const img = document.createElement('img');
+      img.src = n.photoUrl; img.alt = '';
+      img.addEventListener('error', () => { pic.innerHTML = ''; pic.classList.add('empty-thumb'); });
+      pic.appendChild(img);
+      row.appendChild(pic);
+    }
+
+    const text = el('div', 'goods-text');
+    text.innerHTML = '<div class="t1">'
+      + (n.status === 'draft' ? '<span class="pill wait">черновик</span>'
+        : '<span class="pill ok">на сайте</span>')
+      + ' <span class="t2" style="display:inline">' + escapeHtml(shortDateTime(n.postedAt)) + '</span></div>'
+      + '<div class="t2" style="white-space:pre-line">' + escapeHtml(n.text || '(только фотография)') + '</div>';
+    row.appendChild(text);
+    it.appendChild(row);
+
+    const acts = el('div', 'acts');
+    if (n.status === 'draft') {
+      acts.appendChild(btn('Опубликовать', 'btn sm', () =>
+        act(() => api('setNewsStatus', { id: n.id, status: 'published' }), 'Новость на сайте')));
+    } else {
+      acts.appendChild(btn('Убрать с сайта', 'btn sm sec', () =>
+        act(() => api('setNewsStatus', { id: n.id, status: 'draft' }), 'Убрано с сайта')));
+    }
+    acts.appendChild(btn('Удалить', 'btn sm danger', () => confirmDelete(
+      'Удалить новость?', shortDateTime(n.postedAt),
+      'Из группы Telegram она никуда не денется, но сюда больше не вернётся.',
+      () => act(() => api('deleteNews', { id: n.id }), 'Новость удалена'))));
+    it.appendChild(acts);
+
+    card.appendChild(it);
+  });
+}
+
+// Удаление руками не отменяется, а кнопка стоит рядом с «Изменить» —
+// один вопрос дешевле восстановления объявления по памяти.
+function confirmDelete(title, subtitle, explain, onYes) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + escapeHtml(title) + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(subtitle) + '</div>'
+    + '<div class="empty">' + escapeHtml(explain) + '</div>';
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Удалить', 'btn danger', () => { closeModal(); onYes(); }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// Одна форма и на создание, и на правку: поля те же, а два разных окна
+// расходятся при первой же доработке.
+function openEventForm(existing) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + (existing ? 'Правка турнира' : 'Новый турнир') + '</h3>'
+    + '<div class="m-sub">Появится на главной странице сайта.</div>';
+
+  const date = document.createElement('input');
+  date.type = 'date';
+  date.value = existing ? existing.date : todayIso();
+  wrapField(body, 'Дата', date);
+
+  const title = document.createElement('input');
+  title.value = existing ? existing.title : '';
+  title.placeholder = 'Например: Кубок клуба «Альфа»';
+  wrapField(body, 'Название', title);
+
+  const cat = document.createElement('select');
+  Object.keys(db.events.categories).forEach(id => cat.appendChild(opt(id, db.events.categories[id])));
+  cat.value = existing ? existing.category : 'challenger';
+  wrapField(body, 'Категория участников', cat);
+
+  const note = document.createElement('textarea');
+  note.rows = 3;
+  note.value = existing ? existing.note : '';
+  note.placeholder = 'Время начала, взнос, как записаться';
+  wrapField(body, 'Подробности — необязательно', note);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn(existing ? 'Сохранить' : 'Добавить', 'btn', () => {
+    if (!date.value || title.value.trim().length < 2) { toast('Заполните дату и название'); return; }
+    const payload = {
+      date: date.value, title: title.value, category: cat.value, note: note.value,
+    };
+    if (existing) payload.id = existing.id;
+    closeModal();
+    act(() => api('saveEvent', payload), existing ? 'Турнир изменён' : 'Турнир добавлен');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => title.focus(), 50);
+}
+
+// ============================================================
+// Вкладка: Каталог
+// ============================================================
+//
+// Ведёт владелец, целиком отсюда, вместе с фотографиями. Если новую
+// позицию можно завести только через разработчика, каталог перестанет
+// обновляться на второй неделе.
+
+function renderCatalog(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Каталог <span class="sub">витрина на главной странице сайта</span></h2>';
+  view.appendChild(card);
+
+  if (!db.catalog) {
+    card.appendChild(txt('div', 'empty', 'Загружаем каталог…'));
+    return;
+  }
+
+  const canEdit = !!db.catalog.canEdit;
+
+  if (!db.catalog.items.length) {
+    card.appendChild(txt('div', 'empty', canEdit
+      ? 'Каталог пуст. Добавленная позиция появится на главной сразу.'
+      : 'Каталог пуст. Наполняет его владелец.'));
+  }
+
+  let lastCategory = null;
+  db.catalog.items.forEach(item => {
+    if (item.category !== lastCategory) {
+      card.appendChild(txt('div', 'group', item.categoryName));
+      lastCategory = item.category;
+    }
+
+    const it = el('div', 'item' + (item.available ? '' : ' past'));
+    const row = el('div', 'goods');
+
+    const pic = el('div', 'thumb');
+    if (item.photoUrl) {
+      const img = document.createElement('img');
+      img.src = item.photoUrl;
+      img.alt = '';
+      // Битая ссылка на фотографию не должна оставлять рваную карточку:
+      // бакет мог не отдать файл, а позиция всё равно должна читаться.
+      img.addEventListener('error', () => { pic.innerHTML = ''; pic.classList.add('empty-thumb'); });
+      pic.appendChild(img);
+    } else {
+      pic.classList.add('empty-thumb');
+    }
+    row.appendChild(pic);
+
+    const text = el('div', 'goods-text');
+    text.innerHTML = '<div class="t1">' + escapeHtml(item.name)
+      + (item.available ? '' : ' <span class="pill grey">снято с продажи</span>') + '</div>'
+      + '<div class="t2">' + escapeHtml(priceText(item)) + '</div>'
+      + (item.description ? '<div class="t2">' + escapeHtml(item.description.slice(0, 140)) + '</div>' : '');
+    row.appendChild(text);
+    it.appendChild(row);
+
+    if (canEdit) {
+      const acts = el('div', 'acts');
+      acts.appendChild(btn('Изменить', 'btn sm sec', () => openCatalogForm(item)));
+      acts.appendChild(btn('Удалить', 'btn sm danger', () => confirmDelete(
+        'Удалить позицию?', item.name,
+        'Она пропадёт с витрины, фотография удалится из хранилища.',
+        () => act(() => api('deleteCatalogItem', { id: item.id }), 'Позиция удалена'))));
+      it.appendChild(acts);
+    }
+
+    card.appendChild(it);
+  });
+
+  if (canEdit) {
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Добавить позицию', 'btn sm', () => openCatalogForm(null)));
+    card.appendChild(acts);
+    card.appendChild(txt('div', 'empty',
+      'Фотография ужимается прямо здесь, в браузере — можно грузить прямо с телефона.'));
+  }
+}
+
+function priceText(item) {
+  const parts = [];
+  if (item.options && item.options.length) {
+    parts.push(item.options.map(o => o.name + ' — ' + (o.price == null ? 'по запросу' : money(o.price))).join(' · '));
+  } else if (item.price == null) {
+    parts.push('Цена по запросу');
+  } else {
+    parts.push(money(item.price) + (item.priceNote ? ' ' + item.priceNote : ''));
+  }
+  return parts.join(' · ');
+}
+
+// Одна форма и на создание, и на правку.
+//
+// Фотография сохраняется вторым запросом: пока позиции нет, её и не к
+// чему прикреплять. Для человека это одно нажатие «Сохранить».
+function openCatalogForm(existing) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + (existing ? 'Правка позиции' : 'Новая позиция') + '</h3>'
+    + '<div class="m-sub">Появится на витрине главной страницы.</div>';
+
+  const cat = document.createElement('select');
+  Object.keys(db.catalog.categories).forEach(id => cat.appendChild(opt(id, db.catalog.categories[id])));
+  cat.value = existing ? existing.category : 'rackets';
+  wrapField(body, 'Раздел', cat);
+
+  const name = document.createElement('input');
+  name.value = existing ? existing.name : '';
+  name.placeholder = 'Например: Ракетка Babolat Pure Drive';
+  wrapField(body, 'Название', name);
+
+  const desc = document.createElement('textarea');
+  desc.rows = 3;
+  desc.value = existing ? existing.description : '';
+  desc.placeholder = 'Вес, размер, состояние — что важно знать покупателю';
+  wrapField(body, 'Описание — необязательно', desc);
+
+  const price = document.createElement('input');
+  price.type = 'number'; price.min = '0'; price.step = '50';
+  price.value = existing && existing.price != null ? String(existing.price) : '';
+  price.placeholder = 'Пусто — «цена по запросу»';
+  wrapField(body, 'Цена, ₽', price);
+
+  const priceNote = document.createElement('input');
+  priceNote.value = existing ? existing.priceNote : '';
+  priceNote.placeholder = 'например: за штуку, от';
+  wrapField(body, 'Приписка к цене — необязательно', priceNote);
+
+  // Варианты цены нужны стрингеру: перетяжка для своих, для сторонних и
+  // срочная — это три цены одной услуги, а не три услуги.
+  const optionsWrap = el('div');
+  optionsWrap.appendChild(txt('div', 'field-label', 'Варианты цены — для услуг с несколькими тарифами'));
+  const rows = el('div');
+  optionsWrap.appendChild(rows);
+  ((existing && existing.options.length ? existing.options : [null])).forEach(o => addOptionRow(rows, o));
+  optionsWrap.appendChild(btn('Ещё вариант', 'btn sm sec', () => addOptionRow(rows, null)));
+  body.appendChild(optionsWrap);
+
+  const available = check('В продаже', existing ? existing.available : true, () => {},
+    'Снятая позиция остаётся здесь, но с витрины пропадает.');
+  const availableBox = available.querySelector('input');
+  body.appendChild(available);
+
+  // Фотография
+  let photoData = null;
+  const photoWrap = el('div', 'field');
+  photoWrap.innerHTML = '<span>Фотография</span>';
+  const preview = el('div', 'thumb big');
+  if (existing && existing.photoUrl) {
+    const img = document.createElement('img');
+    img.src = existing.photoUrl; img.alt = '';
+    preview.appendChild(img);
+  } else {
+    preview.classList.add('empty-thumb');
+  }
+  photoWrap.appendChild(preview);
+
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/jpeg,image/png,image/webp';
+  file.addEventListener('change', async () => {
+    const chosen = file.files && file.files[0];
+    if (!chosen) return;
+    try {
+      photoData = await shrinkImage(chosen, 1200, db.catalog.photoMaxBytes);
+      preview.innerHTML = '';
+      preview.classList.remove('empty-thumb');
+      const img = document.createElement('img');
+      img.src = photoData; img.alt = '';
+      preview.appendChild(img);
+    } catch (e) {
+      photoData = null;
+      toast('Не удалось прочитать файл — нужна фотография', 3600);
+    }
+  });
+  photoWrap.appendChild(file);
+  body.appendChild(photoWrap);
+
+  if (existing && existing.photoUrl) {
+    body.appendChild(btn('Убрать фотографию', 'btn sm sec', () => {
+      closeModal();
+      act(() => api('removeCatalogPhoto', { id: existing.id }), 'Фотография убрана');
+    }));
+  }
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  const save = btn(existing ? 'Сохранить' : 'Добавить', 'btn', async () => {
+    if (name.value.trim().length < 2) { toast('Укажите название'); return; }
+    save.disabled = true;
+
+    const payload = {
+      category: cat.value,
+      name: name.value,
+      description: desc.value,
+      price: price.value === '' ? null : Number(price.value),
+      priceNote: priceNote.value,
+      options: readOptionRows(rows),
+      available: availableBox.checked,
+    };
+    if (existing) payload.id = existing.id;
+
+    closeModal();
+    await act(async () => {
+      const res = await api('saveCatalogItem', payload);
+      if (photoData) await api('setCatalogPhoto', { id: res.item.id, photo: photoData });
+      return res;
+    }, existing ? 'Позиция изменена' : 'Позиция добавлена');
+  });
+  acts.appendChild(save);
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => name.focus(), 50);
+}
+
+function addOptionRow(wrap, option) {
+  const row = el('div', 'opt-row');
+  const name = document.createElement('input');
+  name.placeholder = 'Например: для клиентов клуба';
+  name.value = option ? option.name : '';
+  const price = document.createElement('input');
+  price.type = 'number'; price.min = '0'; price.step = '50';
+  price.placeholder = '₽';
+  price.value = option && option.price != null ? String(option.price) : '';
+  row.appendChild(name); row.appendChild(price);
+  wrap.appendChild(row);
+}
+
+function readOptionRows(wrap) {
+  return Array.prototype.map.call(wrap.querySelectorAll('.opt-row'), row => {
+    const inputs = row.querySelectorAll('input');
+    return { name: inputs[0].value, price: inputs[1].value === '' ? null : Number(inputs[1].value) };
+  }).filter(o => o.name.trim());
+}
+
+// Фотографию ужимаем в браузере: в тело запроса к функции не должно
+// уезжать восемь мегабайт прямо с телефона, а витрине хватает 1200
+// пикселей по длинной стороне.
+function shrinkImage(file, maxSide, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read-failed'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('not-an-image'));
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        // Прозрачный PNG на белом: иначе прозрачность станет чёрной.
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        let quality = 0.85;
+        let out = canvas.toDataURL('image/jpeg', quality);
+        while (out.length * 0.75 > (maxBytes || 1500000) && quality > 0.4) {
+          quality -= 0.12;
+          out = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(out);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ============================================================
 // Вкладка: Настройки
 // ============================================================
 
@@ -1338,12 +1874,153 @@ function renderSettings(view) {
   c2.appendChild(txt('div', 'empty', 'Добавление и снятие закрытий подключим следом.'));
   view.appendChild(c2);
 
+  renderStaff(view);
+
   const c3 = el('div', 'card');
   c3.innerHTML = '<h2>Вы вошли как</h2>'
     + '<div class="item"><div class="t1">' + escapeHtml(me ? me.name : '')
     + '</div><div class="t2">' + escapeHtml(me ? fmtPhone(me.phone) : '')
     + ' · ' + (me && me.role === 'owner' ? 'владелец' : 'администратор') + '</div></div>';
   view.appendChild(c3);
+}
+
+// Администраторы. Назначает и снимает только владелец — иначе
+// администратор заводит себе второго, и владелец теряет контроль над
+// списком тех, кто видит телефоны всех клиентов. Администратору экран
+// показывается, но без кнопок: знать, кто ещё в панели, полезно всем.
+function renderStaff(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Администраторы <span class="sub">кто входит в панель</span></h2>';
+  view.appendChild(card);
+
+  if (!db.staff) {
+    card.appendChild(txt('div', 'empty', 'Загружаем список…'));
+    return;
+  }
+
+  const owner = !!(me && me.role === 'owner');
+
+  db.staff.forEach(s => {
+    const it = el('div', 'item');
+    const pills = ['<span class="pill ' + (s.role === 'owner' ? 'ok' : 'grey') + '">'
+      + (s.role === 'owner' ? 'владелец' : 'администратор') + '</span>'];
+    // Уведомления уходят по привязке Telegram. Администратор без неё
+    // ничего не получает, и узнать об этом лучше здесь, а не по
+    // пропущенной заявке.
+    if (!s.hasTelegram) pills.push('<span class="pill wait">без Telegram</span>');
+
+    it.innerHTML = '<div class="t1">' + escapeHtml(s.name) + ' ' + pills.join(' ') + '</div>'
+      + '<div class="t2">' + escapeHtml(fmtPhone(s.phone)) + ' · '
+      + (s.lastLoginAt
+        ? 'последний вход ' + escapeHtml(s.lastLoginAt.slice(0, 10).split('-').reverse().join('.'))
+        : 'в панель ещё не входил') + '</div>';
+
+    if (owner && s.role === 'admin') {
+      const acts = el('div', 'acts');
+      acts.appendChild(btn('Снять роль', 'btn sm danger', () => confirmDemote(s)));
+      it.appendChild(acts);
+    }
+
+    card.appendChild(it);
+  });
+
+  if (!owner) {
+    card.appendChild(txt('div', 'empty', 'Менять список может только владелец.'));
+    return;
+  }
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Назначить администратора', 'btn sm', openAddAdmin));
+  card.appendChild(acts);
+  card.appendChild(txt('div', 'empty',
+    'Администратором становится уже зарегистрированный клиент: так у него подтверждённый '
+    + 'телефон, а не запись, придуманная за него. Роль владельца через панель не выдаётся.'));
+}
+
+function confirmDemote(s) {
+  const body = el('div');
+  body.innerHTML = '<h3>Снять роль администратора?</h3>'
+    + '<div class="m-sub">' + escapeHtml(s.name + ' · ' + fmtPhone(s.phone)) + '</div>'
+    + '<div class="empty">Панель и телефоны клиентов закроются сразу. Учётная запись, '
+    + 'привязанный Telegram и история броней останутся — человек станет обычным клиентом клуба.</div>';
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Снять роль', 'btn danger', () => {
+    closeModal();
+    act(() => api('setClientRole', { clientId: s.id, role: 'client' }), 'Роль снята');
+  }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// Поиск идёт по тем же клиентам, что и вкладка «Клиенты», — сервером.
+// Своей выборки здесь нет намеренно: два разных списка одних и тех же
+// людей рано или поздно разойдутся.
+function openAddAdmin() {
+  const body = el('div');
+  body.innerHTML = '<h3>Назначить администратора</h3>'
+    + '<div class="m-sub">Найдите зарегистрированного клиента по имени или телефону.</div>';
+
+  const search = document.createElement('input');
+  search.placeholder = 'Имя или телефон';
+  search.style.cssText = 'width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px';
+  body.appendChild(search);
+
+  const results = el('div');
+  results.appendChild(txt('div', 'empty', 'Начните вводить.'));
+  body.appendChild(results);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  let timer = null;
+  search.addEventListener('input', () => {
+    const query = search.value.trim();
+    clearTimeout(timer);
+    if (query.length < 2) {
+      results.innerHTML = '';
+      results.appendChild(txt('div', 'empty', 'Начните вводить.'));
+      return;
+    }
+    timer = setTimeout(async () => {
+      let found;
+      try { found = await api('listClients', { query }); }
+      catch (e) { toast(errorText(e.code), 4000); return; }
+
+      results.innerHTML = '';
+      const list = found.clients.filter(c => (c.role || 'client') === 'client');
+      if (!list.length) {
+        results.appendChild(txt('div', 'empty', 'Никого не нашлось. Роль поднимают тому, кто уже зарегистрирован.'));
+        return;
+      }
+
+      list.slice(0, 8).forEach(c => {
+        const it = el('div', 'item');
+        it.innerHTML = '<div class="t1">' + escapeHtml(c.name) + '</div>'
+          + '<div class="t2">' + escapeHtml(fmtPhone(c.phone)) + ' · '
+          + (c.status === 'verified' ? 'проверенный'
+            : c.status === 'pending' ? 'ждёт проверки' : 'заблокирован') + '</div>';
+        const row = el('div', 'acts');
+        // Кнопка есть только у проверенных: сервер откажет остальным,
+        // и предлагать нажатие, которое заведомо не пройдёт, незачем.
+        if (c.status === 'verified') {
+          row.appendChild(btn('Назначить', 'btn sm', () => {
+            closeModal();
+            act(() => api('setClientRole', { clientId: c.id, role: 'admin' }),
+              c.name + ' — теперь администратор');
+          }));
+        } else {
+          row.appendChild(txt('div', 'empty', 'Сначала подтвердите его на вкладке «Клиенты».'));
+        }
+        it.appendChild(row);
+        results.appendChild(it);
+      });
+    }, 350);
+  });
+
+  showModal(body);
+  search.focus();
 }
 
 function check(label, value, onChange, hint) {
