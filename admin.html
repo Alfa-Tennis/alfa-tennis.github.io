@@ -346,13 +346,27 @@ const ERRORS = {
   'invalid-time': 'Время не по шагу сетки.',
   'not-movable': 'Такую бронь перенести нельзя.',
   'staff-reset-owner-only': 'Пароль администратору или владельцу может сбросить только владелец.',
-  'owner-only': 'Назначать и снимать администраторов может только владелец.',
+  'owner-only': 'Это может только владелец клуба.',
   'invalid-role': 'Такой роли нет.',
   'own-role': 'Снять роль с самого себя нельзя — клуб останется без владельца.',
   'owner-role-immutable': 'Роль владельца через панель не меняется.',
   'client-not-verified': 'Сначала подтвердите клиента: администратором становится только проверенный.',
   'invalid-date': 'Проверьте дату.',
-  'invalid-title': 'Укажите название турнира.',
+  'invalid-title': 'Укажите название — хотя бы две буквы.',
+  // Настройки, закрытия кортов и постоянные брони
+  'invalid-setting': 'Проверьте значение — оно вне допустимых пределов.',
+  'invalid-patch': 'Настройки не сохранились. Обновите страницу и попробуйте ещё раз.',
+  'hours-not-aligned': 'Длина рабочего дня должна делиться на шаг сетки — 30 минут.',
+  'hours-too-short': 'Рабочий день короче минимальной брони.',
+  'invalid-weekday': 'Выберите день недели.',
+  'invalid-court': 'Выберите корт.',
+  'invalid-reason': 'Напишите причину закрытия.',
+  'date-in-past': 'Эта дата уже прошла.',
+  'series-not-found': 'Постоянная бронь не найдена — возможно, её только что изменили.',
+  'series-clash': 'В это время на корте уже стоит другая постоянная бронь.',
+  'series-started': 'Эта бронь уже проводилась — её можно завершить, но не удалить.',
+  'not-an-occurrence': 'В этот день занятия нет.',
+  'exception-not-found': 'Закрытие не найдено — возможно, его только что сняли.',
   'invalid-category': 'Выберите категорию участников.',
   'event-not-found': 'Турнир не найден — возможно, его только что удалили.',
   'item-not-found': 'Позиция не найдена — возможно, её только что удалили.',
@@ -427,6 +441,14 @@ function isPast(dateIso, time) { return stamp(dateIso, time) < Date.now(); }
 const MONTHS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 const MON_SHORT = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
 const WD_FULL = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+// «Каждый пятница» — так писать нельзя, а склеивать род на лету дороже,
+// чем выписать семь строк один раз.
+const WD_EVERY = ['каждое воскресенье','каждый понедельник','каждый вторник','каждую среду',
+  'каждый четверг','каждую пятницу','каждую субботу'];
+function everyWeekday(i, capital) {
+  const s = WD_EVERY[i] || '';
+  return capital ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
 const WD_SHORT = ['вс','пн','вт','ср','чт','пт','сб'];
 
 function longDate(dateIso) {
@@ -530,6 +552,7 @@ function mapConfig(booking) {
     maxSwitches: booking.maxSwitches,
     packCourts: booking.packCourts,
     horizonDays: booking.horizonDays,
+    minLeadMinutes: booking.minLeadMinutes,
     pricePerHour: 0, // подставляется из getConfig ниже
   };
 }
@@ -1188,22 +1211,22 @@ function openSeriesOccurrence(b) {
 
   const info = el('div', 'item');
   info.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title) + '</div>'
-    + '<div class="t2">Постоянная бронь, каждый ' + WD_FULL[s.weekday] + '. ' + escapeHtml(fmtPhone((clientById(s.clientId) || {}).phone || '')) + '</div>';
+    + '<div class="t2">Постоянная бронь, ' + everyWeekday(s.weekday) + '. ' + escapeHtml(fmtPhone((clientById(s.clientId) || {}).phone || '')) + '</div>';
   body.appendChild(info);
 
   const acts = el('div', 'm-acts');
+  // Снятое занятие освобождает время, которого в сетке обычно не бывает.
+  // Автопоста в чат клуба пока нет — и обещать его тостом нельзя.
   acts.appendChild(btn('Снять это занятие', 'btn danger', () => {
-    s.skipDates.push(b.date);
     closeModal();
-    // Освободившийся постоянный слот — главный повод для автопоста:
-    // это время обычно недоступно, и в чате его ждут.
-    toast('Занятие снято, в чат клуба ушло сообщение о свободном времени');
-    render();
+    act(() => api('adminSkipSeries', { seriesId: s.id, date: b.date }), 'Занятие снято, время свободно');
   }));
-  acts.appendChild(btn('Записать вместо них', 'btn sec', () => {
-    s.skipDates.push(b.date);
+  acts.appendChild(btn('Записать вместо них', 'btn sec', async () => {
     closeModal();
-    openNewBooking(b.date, b.courtId, b.start);
+    const done = await act(() => api('adminSkipSeries', { seriesId: s.id, date: b.date }));
+    // Форму открываем только если занятие правда снято: иначе человек
+    // заполнил бы бронь на всё ещё занятый корт.
+    if (done) openNewBooking(b.date, b.courtId, b.start);
   }));
   acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
   body.appendChild(acts);
@@ -1217,9 +1240,10 @@ function openException(x) {
     + '<div class="item"><div class="t1">' + escapeHtml(x.reason) + '</div></div>';
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Снять закрытие', 'btn danger', () => {
-    db.exceptions = db.exceptions.filter(e => e.id !== x.id);
-    closeModal(); toast('Корт снова доступен'); render();
+    closeModal();
+    act(() => api('adminDeleteException', { id: x.id }), 'Корт снова доступен');
   }));
+  acts.appendChild(btn('Изменить', 'btn sec', () => { closeModal(); openExceptionForm(x); }));
   acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
   body.appendChild(acts);
   showModal(body);
@@ -1469,41 +1493,267 @@ function renderSeries(view) {
 
   if (!db.series.length) card.appendChild(txt('div', 'empty', 'Постоянных броней нет.'));
 
-  db.series.forEach(s => {
-    const cl = clientById(s.clientId);
-    const it = el('div', 'item');
-    it.innerHTML = '<div class="t1">' + escapeHtml(s.title)
-      + (s.active ? '' : ' <span class="pill grey">завершена</span>') + '</div>'
-      + '<div class="t2">Каждый ' + WD_FULL[s.weekday] + ', ' + escapeHtml(fmtRange(s.start, s.end))
-      + ' · ' + escapeHtml(courtName(s.courtId))
-      + ' · с ' + shortDate(s.from) + (s.to ? ' по ' + shortDate(s.to) : ', бессрочно')
-      + (cl ? ' · ' + escapeHtml(fmtPhone(cl.phone)) : '') + '</div>';
+  const today = todayIso();
 
-    const upcoming = nextOccurrences(s, 3);
-    if (upcoming.length) {
-      it.appendChild(txt('div', 't2', 'Ближайшие: ' + upcoming.map(shortDate).join(', ')));
-    }
-    if ((s.skipDates || []).length) {
-      it.appendChild(txt('div', 't2', 'Снятые занятия: ' + s.skipDates.slice(-4).map(shortDate).join(', ')));
-    }
+  db.series.slice()
+    .sort((a, b) => (a.weekday - b.weekday) || a.start.localeCompare(b.start))
+    .forEach(s => {
+      const cl = clientById(s.clientId);
+      const ended = !!(s.to && s.to < today) || s.active === false;
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(s.title)
+        + (ended ? ' <span class="pill grey">завершена</span>' : '') + '</div>'
+        + '<div class="t2">' + everyWeekday(s.weekday, true) + ', ' + escapeHtml(fmtRange(s.start, s.end))
+        + ' · ' + escapeHtml(courtName(s.courtId))
+        + ' · с ' + shortDate(s.from) + (s.to ? ' по ' + shortDate(s.to) : ', бессрочно')
+        + (cl ? ' · ' + escapeHtml(fmtPhone(cl.phone)) : '') + '</div>';
 
-    it.appendChild(colorPicker(s));
-    card.appendChild(it);
-  });
+      const upcoming = nextOccurrences(s, 3);
+      if (upcoming.length) {
+        it.appendChild(txt('div', 't2', 'Ближайшие: ' + upcoming.map(shortDate).join(', ')));
+      }
 
+      // Снятые занятия — не справка, а список того, что можно вернуть:
+      // группа отменилась на неделю, потом передумала.
+      const skips = (s.skipDates || []).filter(d => d >= today);
+      if (skips.length) {
+        const row = el('div', 'acts');
+        row.appendChild(txt('span', 't2', 'Снятые занятия:'));
+        skips.slice(0, 6).forEach(d => {
+          row.appendChild(btn(shortDate(d) + ' — вернуть', 'btn sm sec',
+            () => act(() => api('adminSkipSeries', { seriesId: s.id, date: d, skip: false }),
+              'Занятие вернулось в расписание')));
+        });
+        it.appendChild(row);
+      }
+
+      it.appendChild(colorPicker(s));
+
+      const acts = el('div', 'acts');
+      acts.appendChild(btn('Изменить', 'btn sm sec', () => openSeriesForm(s)));
+      if (!ended) acts.appendChild(btn('Завершить', 'btn sm sec', () => openEndSeries(s)));
+      // Удаление сервер разрешает только до первого занятия: стереть
+      // начавшуюся серию значило бы освободить задним числом дни, в
+      // которые корт был занят. Кнопку и не показываем.
+      if (s.from > today) {
+        acts.appendChild(btn('Удалить', 'btn sm danger', () => confirmDelete(
+          'Удалить постоянную бронь?', s.title,
+          'Она ещё ни разу не проводилась, поэтому удаляется целиком и без следа.',
+          () => act(() => api('adminDeleteSeries', { seriesId: s.id }), 'Постоянная бронь удалена'))));
+      }
+      it.appendChild(acts);
+
+      card.appendChild(it);
+    });
+
+  const add = el('div', 'acts');
+  add.appendChild(btn('Завести постоянную бронь', 'btn sm', () => openSeriesForm(null)));
+  card.appendChild(add);
   view.appendChild(card);
 
-  // Правки серий пока нет на сервере — кроме цвета. Кнопки, которые
-  // меняли бы только картинку в браузере, здесь опаснее их отсутствия:
-  // администратор «снял занятие», а корт остался занятым для клиентов.
   const note = el('div', 'card');
-  note.innerHTML = '<h2>Редактирование ещё не подключено</h2>'
-    + '<div class="empty">Пока постоянные брони заводятся на сервере. Экран показывает их так, '
-    + 'как их видит система при расчёте занятости — чтобы было с чем сверяться.<br><br>'
-    + 'Когда подключим: снятие одного занятия одной кнопкой, и время сразу уходит в лист ожидания, '
-    + 'а затем в чат клуба. Постоянные слоты обычно недоступны, поэтому именно такие сообщения '
-    + 'читают внимательнее всего.</div>';
+  note.innerHTML = '<h2>Как это считается</h2>'
+    + '<div class="empty">Постоянная бронь не разворачивается в отдельные записи: система каждый '
+    + 'раз смотрит, попадает ли день в её расписание. Поэтому снятое занятие сразу освобождает '
+    + 'корт, а завершают бронь датой — занятия до неё остаются в истории такими, какими были.'
+    + '<br><br>Сообщения об освободившемся постоянном слоте в чат клуба пока не уходят — это '
+    + 'следующий шаг, вместе с листом ожидания.</div>';
   view.appendChild(note);
+}
+
+// Одна форма и на заведение, и на правку: поля те же, а два окна
+// разойдутся при первой доработке.
+function openSeriesForm(existing) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + (existing ? 'Правка постоянной брони' : 'Новая постоянная бронь') + '</h3>'
+    + '<div class="m-sub">Повторяется каждую неделю и держит корт наравне с обычной бронью.</div>';
+
+  const title = document.createElement('input');
+  title.value = existing ? existing.title : '';
+  title.placeholder = 'Например: группа Петрова';
+  wrapField(body, 'Название', title);
+
+  const court = document.createElement('select');
+  db.courts.forEach(c => court.appendChild(opt(String(c.id), c.name)));
+  if (existing) court.value = String(existing.courtId);
+  wrapField(body, 'Корт', court);
+
+  const wd = document.createElement('select');
+  // Понедельник первым — так думает человек, а не Date.getUTCDay().
+  [1, 2, 3, 4, 5, 6, 0].forEach(i => wd.appendChild(opt(String(i), WD_FULL[i])));
+  wd.value = String(existing ? existing.weekday : weekday(todayIso()));
+  wrapField(body, 'День недели', wd);
+
+  const start = document.createElement('select');
+  startTimes().forEach(t => start.appendChild(opt(t, fmtTime(t))));
+  start.value = existing ? existing.start : '19:00';
+  wrapField(body, 'Начало', start);
+
+  const end = document.createElement('select');
+  wrapField(body, 'Окончание', end);
+  // Желаемое окончание приходит доводом, а не читается из поля: у пустого
+  // списка значение не выставляется, и правка серии молча укорачивала бы
+  // её до часа.
+  const fillEnds = (want) => {
+    const from = timeToMinutes(start.value) + db.config.slotStep;
+    const close = timeToMinutes(db.config.closeTime);
+    const keep = want || end.value;
+    end.innerHTML = '';
+    for (let m = from; m <= close; m += db.config.slotStep) {
+      end.appendChild(opt(minutesToTime(m), fmtTime(minutesToTime(m))));
+    }
+    end.value = keep && timeToMinutes(keep) >= from ? keep
+      : minutesToTime(Math.min(from + 60 - db.config.slotStep, close));
+  };
+  fillEnds(existing ? existing.end : null);
+  start.addEventListener('change', () => fillEnds());
+
+  const from = document.createElement('input');
+  from.type = 'date';
+  from.value = existing ? existing.from : todayIso();
+  wrapField(body, 'Начиная с', from);
+
+  const to = document.createElement('input');
+  to.type = 'date';
+  to.value = existing && existing.to ? existing.to : '';
+  wrapField(body, 'По — пусто значит бессрочно', to);
+
+  const picked = clientPicker(body, existing ? existing.clientId : null);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn(existing ? 'Сохранить' : 'Завести', 'btn', async () => {
+    if (title.value.trim().length < 2) { toast('Укажите название'); return; }
+    const payload = {
+      courtId: Number(court.value), weekday: Number(wd.value),
+      start: start.value, end: end.value,
+      title: title.value, from: from.value, to: to.value || null,
+      clientId: picked.id,
+    };
+    if (existing) payload.seriesId = existing.id;
+    closeModal();
+    await saveSchedule(
+      existing ? 'adminUpdateSeries' : 'adminCreateSeries', payload,
+      existing ? 'Постоянная бронь изменена' : 'Постоянная бронь заведена');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => title.focus(), 50);
+}
+
+function openEndSeries(s) {
+  const body = el('div');
+  body.innerHTML = '<h3>Завершить постоянную бронь</h3>'
+    + '<div class="m-sub">' + escapeHtml(s.title) + '</div>'
+    + '<div class="empty">Занятия до этой даты включительно остаются: и в истории, и в занятости '
+    + 'уже прошедших дней. Всё, что после, — исчезает из расписания.</div>';
+
+  const last = document.createElement('input');
+  last.type = 'date';
+  last.value = todayIso();
+  wrapField(body, 'Последнее занятие не позже', last);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Завершить', 'btn danger', () => {
+    closeModal();
+    act(() => api('adminEndSeries', { seriesId: s.id, lastDate: last.value }), 'Постоянная бронь завершена');
+  }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// Привязка к учётке необязательна: у группы её и не бывает. Но если
+// человек в клубе есть, связать полезно — тогда в карточке виден телефон.
+function clientPicker(parent, initialId) {
+  const state = { id: initialId || null };
+  const input = document.createElement('input');
+  const current = clientById(initialId);
+  input.value = current ? current.name : '';
+  input.placeholder = 'Имя или телефон — необязательно';
+  wrapField(parent, 'Клиент клуба', input);
+
+  const results = el('div');
+  parent.appendChild(results);
+
+  let timer = null;
+  input.addEventListener('input', () => {
+    // Начали править текст — прежний выбор снят: иначе к серии осталась
+    // бы привязана учётка, которую в поле уже не видно.
+    state.id = null;
+    const query = input.value.trim();
+    clearTimeout(timer);
+    results.innerHTML = '';
+    if (query.length < 2) return;
+    timer = setTimeout(async () => {
+      let found;
+      try { found = await api('listClients', { query }); } catch (e) { return; }
+      results.innerHTML = '';
+      const row = el('div', 'acts');
+      found.clients.slice(0, 5).forEach(c => {
+        row.appendChild(btn(c.name + ' · ' + fmtPhone(c.phone), 'btn sm sec', () => {
+          state.id = c.id;
+          input.value = c.name;
+          results.innerHTML = '';
+        }));
+      });
+      if (!found.clients.length) row.appendChild(txt('span', 't2', 'Никого не нашлось'));
+      results.appendChild(row);
+    }, 350);
+  });
+
+  return state;
+}
+
+// Сохранение расписания отличается от прочих действий одним: сервер
+// отказывает списком — вот эти брони мешают. Показать этот список важнее,
+// чем сказать «не получилось».
+async function saveSchedule(action, payload, okText) {
+  try {
+    await api(action, payload);
+    await reload();
+    toast(okText);
+    return true;
+  } catch (e) {
+    if (e.code === 'unauthorized' || e.code === 'token-revoked') { logout(); return false; }
+    if (e.code === 'bookings-clash' || e.code === 'outside-hours-conflict') {
+      showClashes(e.data);
+      return false;
+    }
+    toast(errorText(e.code), 4000);
+    return false;
+  }
+}
+
+function showClashes(data) {
+  const body = el('div');
+  body.innerHTML = '<h3>Мешают уже заведённые брони</h3>'
+    + '<div class="m-sub">Сначала перенесите или отмените их, потом повторите правку.</div>';
+
+  (data.bookings || []).forEach(b => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(longDate(b.date) + ', ' + b.start + '–' + b.end) + '</div>'
+      + '<div class="t2">' + escapeHtml(courtName(b.courtId) + (b.who ? ' · ' + b.who : '')) + '</div>';
+    body.appendChild(it);
+  });
+
+  (data.series || []).forEach(s => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title) + '</div>'
+      + '<div class="t2">' + escapeHtml(everyWeekday(s.weekday, true) + ', ' + s.start + '–' + s.end) + '</div>';
+    body.appendChild(it);
+  });
+
+  const shown = (data.bookings || []).length + (data.series || []).length;
+  if (data.total > shown) {
+    body.appendChild(txt('div', 'empty', 'И ещё ' + (data.total - shown) + '. Показаны первые.'));
+  }
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Понятно', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
 }
 
 // Цвет постоянной брони: групповая тренировка одним, индивидуальная
@@ -1543,7 +1793,7 @@ function nextOccurrences(s, n) {
     if (s.from && date < s.from) continue;
     if (s.to && date > s.to) break;
     if (weekday(date) !== s.weekday) continue;
-    if (s.skipDates.indexOf(date) !== -1) continue;
+    if ((s.skipDates || []).indexOf(date) !== -1) continue;
     out.push(date);
   }
   return out;
@@ -2523,55 +2773,43 @@ function shrinkImage(file, maxSide, maxBytes) {
 // Вкладка: Настройки
 // ============================================================
 
-// Настройки пока только показываются. Ручки для правки config.json на
-// сервере ещё нет, а форма, которая делает вид, что сохраняет, хуже
-// отсутствия формы: человек меняет цену, уходит довольным, и узнаёт
-// правду через неделю по выручке.
+// Часы работы клуб меняет сам и не по календарю: «до часу ночи» может
+// смениться на «до полуночи» и в октябре, и в марте. Поэтому форма, а не
+// строчка в файле на сервере.
+//
+// Правит только владелец. Администратору те же значения показываются
+// текстом: знать, как настроен клуб, ему нужно, а менять цену — нет.
 function renderSettings(view) {
   const cfg = db.config;
-
-  const c0 = el('div', 'card');
-  c0.innerHTML = '<h2>Правка настроек ещё не подключена</h2>'
-    + '<div class="empty">Пока значения меняются в файле настроек на сервере. '
-    + 'Форма появится здесь же — вместе со статистикой и скидочными часами.</div>';
-  view.appendChild(c0);
-
-  const rows = [
-    ['Цена за час', money(cfg.pricePerHour)],
-    ['Часы работы', fmtRange(cfg.openTime, cfg.closeTime)],
-    ['Шаг сетки', cfg.slotStep + ' мин'],
-    ['Минимальная бронь', hoursText(cfg.minBookingMinutes)],
-    ['Подтверждать брони от', hoursText(cfg.approvalFromMinutes)],
-    ['Отмена без потери рейтинга не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
-    ['Активных броней на клиента', String(cfg.maxActiveBookingsPerClient)],
-    ['Запись открыта на', cfg.horizonDays + ' дн.'],
-    ['Брони с переходом между кортами', cfg.allowCourtSwitch ? 'разрешены' : 'запрещены'],
-    ['Уплотнять занятость кортов', cfg.packCourts ? 'да' : 'нет'],
-  ];
+  const owner = !!(me && me.role === 'owner');
 
   const c1 = el('div', 'card');
   c1.innerHTML = '<h2>Как настроен клуб</h2>';
-  rows.forEach(([label, value]) => {
-    const it = el('div', 'item');
-    it.innerHTML = '<div class="t1">' + escapeHtml(label) + '</div>'
-      + '<div class="t2">' + escapeHtml(value) + '</div>';
-    c1.appendChild(it);
-  });
   view.appendChild(c1);
 
-  const c2 = el('div', 'card');
-  c2.innerHTML = '<h2>Закрытия кортов <span class="sub">ремонт, турниры, выходные</span></h2>';
-  if (!db.exceptions.length) c2.appendChild(txt('div', 'empty', 'Закрытий нет.'));
-  db.exceptions.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(x => {
-    const it = el('div', 'item');
-    it.innerHTML = '<div class="t1">' + escapeHtml(x.reason || 'Закрыто') + '</div>'
-      + '<div class="t2">' + escapeHtml(longDate(x.date) + ' · ' + fmtRange(x.start || cfg.openTime, x.end || cfg.closeTime)
-      + ' · ' + (x.courtId == null ? 'оба корта' : courtName(x.courtId))) + '</div>';
-    c2.appendChild(it);
-  });
-  c2.appendChild(txt('div', 'empty', 'Добавление и снятие закрытий подключим следом.'));
-  view.appendChild(c2);
+  if (owner) renderSettingsForm(c1, cfg);
+  else {
+    [
+      ['Цена за час', money(cfg.pricePerHour)],
+      ['Часы работы', fmtRange(cfg.openTime, cfg.closeTime)],
+      ['Шаг сетки', cfg.slotStep + ' мин'],
+      ['Минимальная бронь', hoursText(cfg.minBookingMinutes)],
+      ['Подтверждать брони от', hoursText(cfg.approvalFromMinutes)],
+      ['Отмена без потери рейтинга не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
+      ['Активных броней на клиента', String(cfg.maxActiveBookingsPerClient)],
+      ['Запись открыта на', cfg.horizonDays + ' дн.'],
+      ['Брони с переходом между кортами', cfg.allowCourtSwitch ? 'разрешены' : 'запрещены'],
+      ['Уплотнять занятость кортов', cfg.packCourts ? 'да' : 'нет'],
+    ].forEach(([label, value]) => {
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(label) + '</div>'
+        + '<div class="t2">' + escapeHtml(value) + '</div>';
+      c1.appendChild(it);
+    });
+    c1.appendChild(txt('div', 'empty', 'Менять настройки может только владелец.'));
+  }
 
+  renderClosures(view, cfg);
   renderStaff(view);
 
   const c3 = el('div', 'card');
@@ -2580,6 +2818,194 @@ function renderSettings(view) {
     + '</div><div class="t2">' + escapeHtml(me ? fmtPhone(me.phone) : '')
     + ' · ' + (me && me.role === 'owner' ? 'владелец' : 'администратор') + '</div></div>';
   view.appendChild(c3);
+}
+
+// Шага сетки в форме нет намеренно: все заведённые брони и постоянные
+// занятия выровнены по получасу, и смена шага разъехала бы сетку задним
+// числом. Скидочных часов тоже нет — у них будет свой редактор, когда
+// появится статистика простоя.
+function renderSettingsForm(card, cfg) {
+  const draft = { allowCourtSwitch: cfg.allowCourtSwitch, packCourts: cfg.packCourts };
+
+  const price = numField(card, 'Цена за час, ₽', cfg.pricePerHour);
+
+  // Часы — выбором из сетки, а не строкой: «до часу ночи» внутри живёт
+  // как 25:00, и вводить это руками владелец не должен.
+  const open = timeSelect(card, 'Клуб открывается', cfg.openTime, 0, 12 * 60);
+  const close = timeSelect(card, 'Клуб закрывается', cfg.closeTime, 18 * 60, 30 * 60);
+
+  const quick = el('div', 'acts');
+  quick.appendChild(txt('span', 't2', 'Обычные варианты:'));
+  quick.appendChild(btn('до полуночи', 'btn sm sec', () => { close.value = '24:00'; }));
+  quick.appendChild(btn('до часу ночи', 'btn sm sec', () => { close.value = '25:00'; }));
+  card.appendChild(quick);
+
+  const minBook = pickField(card, 'Минимальная бронь', cfg.minBookingMinutes,
+    [30, 60, 90, 120], hoursText);
+  const approval = pickField(card, 'Подтверждать администратором брони от', cfg.approvalFromMinutes,
+    [60, 90, 120, 150, 180, 240, 300], hoursText);
+
+  const cancelH = numField(card, 'Отмена без потери рейтинга не позднее чем за, ч', cfg.cancelDeadlineHours);
+  const maxActive = numField(card, 'Активных броней на клиента', cfg.maxActiveBookingsPerClient);
+  const horizon = numField(card, 'Запись открыта на, дней', cfg.horizonDays);
+  const lead = numField(card, 'Запас до начала игры, мин', cfg.minLeadMinutes);
+  const switches = numField(card, 'Переходов между кортами в одной брони', cfg.maxSwitches);
+
+  card.appendChild(check('Разрешать брони с переходом между кортами',
+    draft.allowCourtSwitch, v => { draft.allowCourtSwitch = v; },
+    'Игрок доигрывает на соседнем корте — так продаётся время, которое иначе простаивало бы.'));
+  card.appendChild(check('Уплотнять занятость кортов',
+    draft.packCourts, v => { draft.packCourts = v; },
+    'Складывать брони плотнее, оставляя второй корт цельным под длинные брони.'));
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
+    patch: {
+      booking: {
+        openTime: open.value,
+        closeTime: close.value,
+        minBookingMinutes: Number(minBook.value),
+        approvalFromMinutes: Number(approval.value),
+        cancelDeadlineHours: Number(cancelH.value),
+        maxActiveBookingsPerClient: Number(maxActive.value),
+        horizonDays: Number(horizon.value),
+        minLeadMinutes: Number(lead.value),
+        maxSwitches: Number(switches.value),
+        allowCourtSwitch: draft.allowCourtSwitch,
+        packCourts: draft.packCourts,
+      },
+      pricing: { pricePerHour: Number(price.value) },
+    },
+  }, 'Настройки сохранены')));
+  card.appendChild(acts);
+
+  card.appendChild(txt('div', 'empty',
+    'Новые настройки расходятся по серверу в течение минуты — столько живёт кэш. '
+    + 'Сокращать часы работы поверх уже заведённых броней система не даст: сначала покажет, какие мешают.'));
+}
+
+// Список получасовых меток. Заполночные подписаны словами: «01:00 ночи»
+// читается однозначно, а «01:00» в строке про закрытие — нет.
+function timeSelect(parent, label, value, fromMin, toMin) {
+  const sel = document.createElement('select');
+  const values = [];
+  for (let m = fromMin; m <= toMin; m += db.config.slotStep) values.push(m);
+  const cur = timeToMinutes(value);
+  if (values.indexOf(cur) === -1) values.push(cur);
+  values.sort((a, b) => a - b).forEach(m => {
+    const text = m === 1440 ? 'полночь' : (m > 1440 ? fmtTime(minutesToTime(m)) + ' ночи' : fmtTime(minutesToTime(m)));
+    sel.appendChild(opt(minutesToTime(m), text));
+  });
+  sel.value = minutesToTime(cur);
+  wrapField(parent, label, sel);
+  return sel;
+}
+
+function pickField(parent, label, value, options, format) {
+  const sel = document.createElement('select');
+  const list = options.indexOf(value) === -1 ? options.concat(value).sort((a, b) => a - b) : options;
+  list.forEach(v => sel.appendChild(opt(String(v), format(v))));
+  sel.value = String(value);
+  wrapField(parent, label, sel);
+  return sel;
+}
+
+// Закрытия кортов ведёт и администратор: ремонт и турнир — операционка,
+// а не деньги клуба.
+function renderClosures(view, cfg) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Закрытия кортов <span class="sub">ремонт, турниры, выходные</span></h2>';
+  view.appendChild(card);
+
+  const today = todayIso();
+  const upcoming = db.exceptions.filter(x => x.date >= today)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  if (!upcoming.length) card.appendChild(txt('div', 'empty', 'Впереди закрытий нет.'));
+
+  upcoming.forEach(x => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(x.reason || 'Закрыто') + '</div>'
+      + '<div class="t2">' + escapeHtml(longDate(x.date) + ' · '
+        + fmtRange(x.start || cfg.openTime, x.end || cfg.closeTime)
+        + ' · ' + (x.courtId == null ? 'оба корта' : courtName(x.courtId))) + '</div>';
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Изменить', 'btn sm sec', () => openExceptionForm(x)));
+    acts.appendChild(btn('Снять', 'btn sm danger',
+      () => act(() => api('adminDeleteException', { id: x.id }), 'Корт снова доступен')));
+    it.appendChild(acts);
+    card.appendChild(it);
+  });
+
+  const add = el('div', 'acts');
+  add.appendChild(btn('Закрыть корт', 'btn sm', () => openExceptionForm(null)));
+  card.appendChild(add);
+}
+
+function openExceptionForm(existing) {
+  const cfg = db.config;
+  const body = el('div');
+  body.innerHTML = '<h3>' + (existing ? 'Правка закрытия' : 'Закрыть корт') + '</h3>'
+    + '<div class="m-sub">Время исчезнет из записи — и на сайте, и в панели.</div>';
+
+  const date = document.createElement('input');
+  date.type = 'date';
+  date.value = existing ? existing.date : todayIso();
+  wrapField(body, 'Дата', date);
+
+  const court = document.createElement('select');
+  court.appendChild(opt('', 'Оба корта'));
+  db.courts.forEach(c => court.appendChild(opt(String(c.id), c.name)));
+  court.value = existing && existing.courtId != null ? String(existing.courtId) : '';
+  wrapField(body, 'Корт', court);
+
+  const wholeDay = { on: !!existing && !existing.start };
+  const times = el('div');
+
+  const start = document.createElement('select');
+  startTimes().forEach(t => start.appendChild(opt(t, fmtTime(t))));
+  start.value = existing && existing.start ? existing.start : cfg.openTime;
+  wrapField(times, 'С', start);
+
+  const end = document.createElement('select');
+  for (let m = timeToMinutes(cfg.openTime) + cfg.slotStep; m <= timeToMinutes(cfg.closeTime); m += cfg.slotStep) {
+    end.appendChild(opt(minutesToTime(m), fmtTime(minutesToTime(m))));
+  }
+  end.value = existing && existing.end ? existing.end : cfg.closeTime;
+  wrapField(times, 'По', end);
+
+  body.appendChild(check('Весь день', wholeDay.on, v => {
+    wholeDay.on = v;
+    times.hidden = v;
+  }, 'Так задаётся выходной клуба целиком.'));
+  times.hidden = wholeDay.on;
+  body.appendChild(times);
+
+  const reason = document.createElement('input');
+  reason.value = existing ? existing.reason : '';
+  reason.placeholder = 'Например: замена покрытия';
+  wrapField(body, 'Причина', reason);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn(existing ? 'Сохранить' : 'Закрыть корт', 'btn', async () => {
+    if (reason.value.trim().length < 2) { toast('Напишите причину'); return; }
+    const payload = {
+      date: date.value,
+      courtId: court.value === '' ? null : Number(court.value),
+      start: wholeDay.on ? '' : start.value,
+      end: wholeDay.on ? '' : end.value,
+      reason: reason.value,
+    };
+    if (existing) payload.id = existing.id;
+    closeModal();
+    await saveSchedule('adminSaveException', payload,
+      existing ? 'Закрытие изменено' : 'Корт закрыт');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => reason.focus(), 50);
 }
 
 // Администраторы. Назначает и снимает только владелец — иначе
