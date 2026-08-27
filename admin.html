@@ -2542,7 +2542,7 @@ function renderSettings(view) {
     ['Шаг сетки', cfg.slotStep + ' мин'],
     ['Минимальная бронь', hoursText(cfg.minBookingMinutes)],
     ['Подтверждать брони от', hoursText(cfg.approvalFromMinutes)],
-    ['Бесплатная отмена не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
+    ['Отмена без потери рейтинга не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
     ['Активных броней на клиента', String(cfg.maxActiveBookingsPerClient)],
     ['Запись открыта на', cfg.horizonDays + ' дн.'],
     ['Брони с переходом между кортами', cfg.allowCourtSwitch ? 'разрешены' : 'запрещены'],

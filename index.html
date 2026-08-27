@@ -772,9 +772,13 @@ function renderHero() {
 
   // Правила в подвале берём из настроек, а не пишем текстом: срок отмены
   // меняли уже дважды, и зашитая цифра каждый раз оставалась старой.
+  //
+  // «Бесплатная отмена» отсюда убрана намеренно: денег за отмену клуб не
+  // берёт никогда, и слово «бесплатная» обещало платную — которой нет.
+  // Поздняя отмена стоит рейтинга, так и написано.
   document.getElementById('footerRules').textContent =
     'Бронирование от ' + hoursText(c.booking.minBookingMinutes) + ', шаг '
-    + c.booking.slotStep + ' минут. Бесплатная отмена не позднее чем за '
+    + c.booking.slotStep + ' минут. Отмена без потери рейтинга — не позже чем за '
     + c.booking.cancelDeadlineHours + ' ч до начала.';
   document.getElementById('clubWhere').textContent =
     [c.club.city, c.club.address].filter(Boolean).join(' · ');
@@ -815,7 +819,6 @@ function renderHero() {
 
   const about = [];
   if (c.club.features) about.push(escapeHtml(c.club.features) + '.');
-  if (c.club.extraService) about.push('<span class="svc">' + escapeHtml(c.club.extraService) + '</span>');
   document.getElementById('clubAbout').innerHTML = about.join(' ');
 
   const who = document.getElementById('whoBtn');
@@ -2570,7 +2573,7 @@ function bookingItem(g, isPast) {
     // в лист ожидания. Но предупредить обязаны до нажатия.
     if (late) {
       acts.appendChild(txt('div', 't3',
-        'Бесплатная отмена закрыта. Отменить всё ещё можно, но это снизит ваш рейтинг.'));
+        'Срок отмены без потери рейтинга прошёл. Отменить всё ещё можно, но рейтинг снизится.'));
     }
     acts.appendChild(btn('Отменить', 'btn sm sec', () => confirmCancel(g, late)));
     it.appendChild(acts);
