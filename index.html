@@ -2487,6 +2487,21 @@ function renderMine() {
 
   const { upcoming, past, waitlist } = state.mine;
 
+  // Абонемент показываем первым: человек, у которого оплачены часы,
+  // приходит в кабинет прежде всего за этой цифрой.
+  const pass = state.mine.pass;
+  if (pass && pass.hours > 0) {
+    const cp = el('div', 'card');
+    cp.innerHTML = '<h2>Абонемент</h2>'
+      + '<div class="item"><div class="t1">Осталось ' + escapeHtml(hoursText(pass.hours * 60)) + '</div>'
+      + '<div class="t2">'
+      + (pass.expiresAt
+        ? 'Ближайшие часы сгорают ' + escapeHtml(dayLabelLong(pass.expiresAt, state.mine.today))
+        : 'Без срока действия')
+      + '. Часы списываются после игры — через двое суток, когда клуб закроет день.</div></div>';
+    view.appendChild(cp);
+  }
+
   const c1 = el('div', 'card');
   c1.innerHTML = '<h2>Предстоящие</h2>';
   if (!upcoming.length) {

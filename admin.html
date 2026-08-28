@@ -544,6 +544,8 @@ function mapClient(c) {
     notes: c.notes || '',
     createdAt: (c.createdAt || '').slice(0, 10),
     lastLoginAt: c.lastLoginAt || null,
+    pass: c.pass || { hours: 0, passes: 0, expiresAt: null },
+    passes: c.passes || [],
   };
 }
 
@@ -580,7 +582,7 @@ async function loadAll() {
   // Администратору эта ручка откажет, поэтому и не зовём.
   const needChats = state.tab === 'settings' && !!(me && me.role === 'owner');
 
-  const [pub, day, clients, review, itemRequests, health, staff, events, catalog, posts, sessions, monthly, chats] = await Promise.all([
+  const [pub, day, clients, review, itemRequests, health, staff, events, catalog, posts, sessions, monthly, chats, ledger] = await Promise.all([
     api('getConfig'),
     api('adminDay', { date: state.date }),
     api('listClients', { query: state.clientQuery }),
@@ -600,6 +602,10 @@ async function loadAll() {
     // Молчащий Telegram не должен ронять весь экран настроек: без
     // списка чатов карточка объявлений просто скажет об этом.
     needChats ? api('adminChats').catch(() => null) : Promise.resolve(null),
+    // Журнал абонементов читается вместе со статистикой: это те же
+    // деньги того же месяца, и смотрят их за один заход.
+    needStats ? api('adminLedger', state.statsMonth ? { month: state.statsMonth } : {}).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const config = mapConfig(day.config);
@@ -632,6 +638,7 @@ async function loadAll() {
     openplay: sessions || null,
     monthly: monthly || null,
     chats: chats || null,
+    ledger: ledger || null,
     waitlist: day.waitlist || [],
     series: day.series || [],
     seriesColors: day.seriesColors || [],
@@ -1489,6 +1496,7 @@ function renderClients(view) {
       + ' · ' + counters.join(' · ') + '</div>';
 
     it.appendChild(ntrpField(c));
+    it.appendChild(passField(c));
 
     const note = document.createElement('textarea');
     note.rows = 2; note.value = c.notes; note.placeholder = 'Заметка для себя';
@@ -1520,6 +1528,112 @@ function renderClients(view) {
 
     list.appendChild(it);
   });
+}
+
+// Абонемент в карточке клиента. Продаёт любой сотрудник — деньги
+// принимают на ресепшене, и ждать владельца клиенту незачем. Сжигает
+// остаток только владелец: это уже не приём денег, а их списание.
+function passField(c) {
+  const wrap = el('div');
+  const left = c.pass.hours;
+
+  const line = el('div', 't2');
+  line.style.marginTop = '6px';
+  line.innerHTML = left
+    ? 'Абонемент: <b>' + hoursNum(left) + ' ч</b>'
+      + (c.pass.expiresAt ? ' · ближайшее сгорание ' + shortDate(c.pass.expiresAt) : ' · бессрочно')
+    : 'Абонемента нет';
+  wrap.appendChild(line);
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn(left ? 'Продлить' : 'Продать абонемент', 'btn sm sec', () => openPassForm(c)));
+
+  if (me && me.role === 'owner') {
+    c.passes.filter(p => p.hoursLeft > 0).forEach(p => {
+      acts.appendChild(btn('Сжечь ' + hoursNum(p.hoursLeft) + ' ч', 'btn sm danger', () => openBurnPass(c, p)));
+    });
+  }
+  wrap.appendChild(acts);
+
+  return wrap;
+}
+
+function openPassForm(c) {
+  const body = el('div');
+  body.innerHTML = '<h3>Абонемент</h3>'
+    + '<div class="m-sub">' + escapeHtml(c.name + ' · ' + fmtPhone(c.phone)) + '</div>';
+
+  const hours = document.createElement('input');
+  hours.type = 'number'; hours.step = '0.5'; hours.min = '0.5'; hours.value = '10';
+  wrapField(body, 'Часов', hours);
+
+  const price = document.createElement('input');
+  price.type = 'number'; price.value = db.config.pricePerHour;
+  wrapField(body, 'Цена часа в этом абонементе, ₽', price);
+
+  const sum = el('div', 't2');
+  const recount = () => {
+    const total = Math.round(Number(hours.value) * Number(price.value)) || 0;
+    sum.textContent = 'К оплате: ' + money(total)
+      + (Number(price.value) < db.config.pricePerHour
+        ? ' · выгода ' + money(Math.round((db.config.pricePerHour - Number(price.value)) * Number(hours.value)))
+        : '');
+  };
+  hours.addEventListener('input', recount);
+  price.addEventListener('input', recount);
+  recount();
+  body.appendChild(sum);
+
+  const until = document.createElement('input');
+  until.type = 'date';
+  wrapField(body, 'Действует до — пусто значит бессрочно', until);
+
+  const note = document.createElement('input');
+  note.placeholder = 'Например: оплатил переводом';
+  wrapField(body, 'Заметка — необязательно', note);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Записать', 'btn', () => {
+    closeModal();
+    act(() => api('adminAddPass', {
+      clientId: c.id,
+      hours: Number(hours.value),
+      pricePerHour: Number(price.value),
+      validUntil: until.value || null,
+      note: note.value,
+    }), 'Абонемент записан');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => hours.focus(), 50);
+}
+
+function openBurnPass(c, p) {
+  const body = el('div');
+  body.innerHTML = '<h3>Сжечь остаток абонемента</h3>'
+    + '<div class="m-sub">' + escapeHtml(c.name + ' · ' + hoursNum(p.hoursLeft) + ' ч из '
+      + hoursNum(p.hours) + ' по ' + money(p.pricePerHour)) + '</div>'
+    + '<div class="empty">Часы исчезнут, но запись о покупке и причина останутся в журнале операций. '
+    + 'Вернуть их можно только новой продажей.</div>';
+
+  const reason = document.createElement('input');
+  reason.placeholder = 'Например: вышел срок, договорились с клиентом';
+  wrapField(body, 'Причина', reason);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Сжечь', 'btn danger', () => {
+    if (reason.value.trim().length < 3) { toast('Напишите причину'); return; }
+    closeModal();
+    act(() => api('adminBurnPass', { clientId: c.id, passId: p.id, reason: reason.value }),
+      'Остаток сожжён');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => reason.focus(), 50);
 }
 
 // Временный пароль показываем один раз и крупно: админ диктует его или
@@ -2998,6 +3112,51 @@ function renderStats(view) {
     'Показаны часы, в которые играют, но мало: скидка сдвигает существующий спрос, а не создаёт новый. '
     + 'Список окон и их порядок — во вкладке «Настройки».'));
   view.appendChild(idle);
+
+  renderLedger(view);
+}
+
+// Журнал абонементов: продали, списали, сожгли. Каждая строка с автором
+// и причиной — на этом и держится доверие к остатку в карточке клиента.
+function renderLedger(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Абонементы <span class="sub">журнал операций</span></h2>';
+  view.appendChild(card);
+
+  if (!db.ledger) {
+    card.appendChild(txt('div', 'empty', 'Загружаем журнал…'));
+    return;
+  }
+
+  if (!db.ledger.entries.length) {
+    card.appendChild(txt('div', 'empty', 'В этом месяце операций не было.'));
+    return;
+  }
+
+  const KIND = { purchase: 'продан', spend: 'списано за игру', burn: 'сожжён остаток' };
+
+  const table = document.createElement('table');
+  table.className = 'tbl';
+  table.innerHTML = '<tr><th>Когда</th><th>Клиент</th><th>Что</th><th>Часы</th><th>Сумма</th></tr>';
+  db.ledger.entries.slice(0, 60).forEach(e => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + escapeHtml(shortDateTime(e.at)) + '</td>'
+      + '<td>' + escapeHtml(e.clientName) + '</td>'
+      + '<td>' + escapeHtml((KIND[e.kind] || e.kind)
+        + (e.date ? ' · ' + shortDate(e.date) : '')
+        + (e.note ? ' · ' + e.note : '')) + '</td>'
+      + '<td>' + escapeHtml(hoursNum(e.hours) + ' ч') + '</td>'
+      + '<td>' + escapeHtml(money2(e.sum)) + '</td>';
+    table.appendChild(tr);
+  });
+  card.appendChild(table);
+
+  if (db.ledger.total > 60) {
+    card.appendChild(txt('div', 'empty', 'Показаны последние 60 из ' + db.ledger.total + '.'));
+  }
+  card.appendChild(txt('div', 'empty',
+    'Списание идёт по факту состоявшейся игры, через двое суток — столько есть у администратора, '
+    + 'чтобы отметить неявку. За неявку часы не списываются: она наказывается рейтингом.'));
 }
 
 function hoursNum(v) {
