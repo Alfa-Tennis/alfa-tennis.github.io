@@ -725,6 +725,14 @@ async function load() {
   state.openPlay = boot.openPlay;
   state.date = state.data.today;
 
+  // Ссылка из объявления в чате клуба: «освободилось время в субботу
+  // 19:00» → ?date=2026-09-05&start=19:00. Человек, пришедший по такой
+  // ссылке, должен увидеть тот самый день, а не сегодняшний, — иначе
+  // ему придётся искать время, о котором ему только что написали.
+  const asked = new URLSearchParams(location.search);
+  const askedDate = asked.get('date');
+  if (askedDate && state.data.days && state.data.days[askedDate]) state.date = askedDate;
+
   // В Telegram личность подтверждена подписью — она главнее сохранённого
   // токена, который мог остаться от другого человека на общем телефоне.
   await tryTelegramLogin();
@@ -746,8 +754,9 @@ async function load() {
 
   // Из Telegram открывают кнопкой «Забронировать» — там главная лишний
   // шаг: человек уже сказал, зачем пришёл. В браузере наоборот, первый
-  // экран — главная.
-  showView(telegramInitData() || /[#&]book\b/.test(location.hash) ? 'book' : 'home');
+  // экран — главная. Ссылка из объявления об освободившемся времени —
+  // тот же случай, что и Telegram: человек шёл занимать корт.
+  showView(telegramInitData() || askedDate || /[#&]book\b/.test(location.hash) ? 'book' : 'home');
   if (state.auth) refreshMine();
 }
 

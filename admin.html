@@ -367,6 +367,9 @@ const ERRORS = {
   'series-started': 'Эта бронь уже проводилась — её можно завершить, но не удалить.',
   'not-an-occurrence': 'В этот день занятия нет.',
   'exception-not-found': 'Закрытие не найдено — возможно, его только что сняли.',
+  'invalid-rule': 'Проверьте скидочное окно: часы и цену.',
+  'rule-outside-hours': 'Окно выходит за часы работы клуба.',
+  'invalid-month': 'Этот месяц ещё не наступил.',
   'invalid-category': 'Выберите категорию участников.',
   'event-not-found': 'Турнир не найден — возможно, его только что удалили.',
   'item-not-found': 'Позиция не найдена — возможно, её только что удалили.',
@@ -439,6 +442,13 @@ function stamp(dateIso, time) { return new Date(dateIso + 'T' + time + ':00' + T
 function isPast(dateIso, time) { return stamp(dateIso, time) < Date.now(); }
 
 const MONTHS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+// Родительный падеж хорош внутри даты («3 сентября»), но заголовку и
+// выбору месяца нужен именительный.
+const MONTHS_NOM = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+function monthLabel(month) {
+  const [y, m] = String(month).split('-').map(Number);
+  return (MONTHS_NOM[m - 1] || month) + ' ' + y;
+}
 const MON_SHORT = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
 const WD_FULL = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
 // «Каждый пятница» — так писать нельзя, а склеивать род на лету дороже,
@@ -565,8 +575,12 @@ async function loadAll() {
   const needEvents = state.tab === 'events';
   const needCatalog = state.tab === 'catalog';
   const needOpenPlay = state.tab === 'openplay';
+  const needStats = state.tab === 'stats';
+  // Список чатов бота — владельцу и только на вкладке настроек.
+  // Администратору эта ручка откажет, поэтому и не зовём.
+  const needChats = state.tab === 'settings' && !!(me && me.role === 'owner');
 
-  const [pub, day, clients, review, itemRequests, health, staff, events, catalog, posts, sessions] = await Promise.all([
+  const [pub, day, clients, review, itemRequests, health, staff, events, catalog, posts, sessions, monthly, chats] = await Promise.all([
     api('getConfig'),
     api('adminDay', { date: state.date }),
     api('listClients', { query: state.clientQuery }),
@@ -580,10 +594,19 @@ async function loadAll() {
     // Тренировки читаются на три недели вперёд: организатор смотрит не
     // на день, а на «что собрано на выходные».
     needOpenPlay ? api('adminOpenPlayWeek', { from: todayIso(), days: 21 }) : Promise.resolve(null),
+    // Месяц считается из файлов дней — это единственный запрос панели,
+    // который заметно дольше остальных. Поэтому только на своей вкладке.
+    needStats ? api('adminStats', state.statsMonth ? { month: state.statsMonth } : {}) : Promise.resolve(null),
+    // Молчащий Telegram не должен ронять весь экран настроек: без
+    // списка чатов карточка объявлений просто скажет об этом.
+    needChats ? api('adminChats').catch(() => null) : Promise.resolve(null),
   ]);
 
   const config = mapConfig(day.config);
   config.pricePerHour = pub.config.pricing.pricePerHour;
+  // Скидочные окна редактируются на вкладке настроек и показываются в
+  // статистике — берём их из публичных настроек, других тарифов нет.
+  config.rules = pub.config.pricing.rules || [];
 
   const bookings = {};
   bookings[day.date] = day.items.map(b => Object.assign({}, b, { date: day.date }));
@@ -607,6 +630,9 @@ async function loadAll() {
     catalog: catalog || null,
     news: posts || null,
     openplay: sessions || null,
+    monthly: monthly || null,
+    chats: chats || null,
+    waitlist: day.waitlist || [],
     series: day.series || [],
     seriesColors: day.seriesColors || [],
     exceptions: day.exceptions || [],
@@ -746,9 +772,9 @@ function requestCount() {
 
 const state = { tab: 'day', date: todayIso(), clientQuery: '' };
 
-// Статистики пока нет: она считается по месячным итогам, которых сервер
-// ещё не собирает. Показывать цифры, посчитанные по одному загруженному
-// дню, — хуже, чем не показывать их вовсе.
+// Статистика — вкладка владельца: это деньги клуба, а не рабочий
+// инструмент смены. Администратору она не показывается вовсе, а не
+// показывается пустой.
 const TABS = [
   { id: 'day', label: 'День' },
   { id: 'openplay', label: 'Тренировки' },
@@ -757,13 +783,19 @@ const TABS = [
   { id: 'series', label: 'Постоянные' },
   { id: 'events', label: 'Афиша и новости' },
   { id: 'catalog', label: 'Каталог' },
+  { id: 'stats', label: 'Статистика', ownerOnly: true },
   { id: 'settings', label: 'Настройки' },
 ];
+
+function visibleTabs() {
+  const owner = !!(me && me.role === 'owner');
+  return TABS.filter(t => !t.ownerOnly || owner);
+}
 
 // Разделы, которым нужны свои данные. Читаются при первом заходе на
 // вкладку, а не при каждом обновлении панели: экраны редкие, а лишний
 // запрос платят все.
-const LAZY = { settings: 'staff', events: 'events', catalog: 'catalog', openplay: 'openplay' };
+const LAZY = { settings: 'staff', events: 'events', catalog: 'catalog', openplay: 'openplay', stats: 'monthly' };
 
 // Высоту вкладок меряем, а не записываем числом: под ними паркуется
 // шапка сетки дня.
@@ -777,7 +809,7 @@ window.addEventListener('resize', syncNavHeight);
 function renderTabs() {
   const wrap = document.getElementById('tabs');
   wrap.innerHTML = '';
-  TABS.forEach(t => {
+  visibleTabs().forEach(t => {
     const b = document.createElement('button');
     b.className = 'tab' + (state.tab === t.id ? ' on' : '');
     b.textContent = t.label;
@@ -818,7 +850,7 @@ function render() {
   renderHealthNotice(view);
   ({ day: renderDay, openplay: renderOpenPlay, requests: renderRequests,
      clients: renderClients, series: renderSeries, events: renderEvents,
-     catalog: renderCatalog, settings: renderSettings }[state.tab])(view);
+     catalog: renderCatalog, stats: renderStats, settings: renderSettings }[state.tab])(view);
 
   lastTab = state.tab;
   window.scrollTo({ top: tabChanged ? 0 : y });
@@ -896,6 +928,38 @@ function renderDay(view) {
   const hint = el('div', 'empty');
   hint.textContent = 'Нажмите на свободную клетку, чтобы записать клиента, или на бронь — чтобы изменить её.';
   view.appendChild(hint);
+
+  renderWaiting(view, date);
+}
+
+// Кто ждёт время в этот день. Бот напишет им сам, когда что-то
+// освободится, но администратор с телефоном в руке всё равно быстрее —
+// и человеку приятнее услышать голос, чем получить рассылку.
+function renderWaiting(view, date) {
+  const list = db.waitlist || [];
+  if (!list.length) return;
+
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Ждут это время <span class="sub">лист ожидания</span></h2>';
+
+  list.slice()
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .forEach(w => {
+      const it = el('div', 'item');
+      const need = hoursText(w.durationMinutes);
+      it.innerHTML = '<div class="t1">' + escapeHtml(w.clientName)
+        + (w.notifiedAt ? ' <span class="pill grey">уже предлагали</span>' : '')
+        + (w.hasTelegram ? '' : ' <span class="pill wait">без Telegram</span>') + '</div>'
+        + '<div class="t2">' + escapeHtml(need + ' в промежутке ' + fmtRange(w.start, w.end)
+          + ' · ' + (w.courtId == null ? 'любой корт' : courtName(w.courtId))
+          + (w.clientPhone ? ' · ' + fmtPhone(w.clientPhone) : '')) + '</div>';
+      card.appendChild(it);
+    });
+
+  card.appendChild(txt('div', 'empty',
+    'Когда время освобождается, бот пишет им первым — и только через четверть часа объявление '
+    + 'уходит в чат клуба.'));
+  view.appendChild(card);
 }
 
 function buildDayGrid(date, blocks) {
@@ -2770,6 +2834,180 @@ function shrinkImage(file, maxSide, maxBytes) {
 }
 
 // ============================================================
+// Вкладка: Статистика
+// ============================================================
+//
+// Считается сервером из файлов дней. Здесь только показ — и одна
+// важная оговорка, которая написана прямо на экране: это начисленная
+// стоимость броней, а не касса. Наличные и переводы система не видит
+// и видеть не может, онлайн-кассы у клуба нет.
+
+const state_stats = { kind: 'weekday' };
+
+function renderStats(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Статистика <span class="sub">итоги месяца</span></h2>';
+  view.appendChild(card);
+
+  if (!db.monthly) {
+    card.appendChild(txt('div', 'empty', 'Считаем месяц по дням — это дольше остальных экранов…'));
+    return;
+  }
+
+  const s = db.monthly.stats;
+
+  const head = el('div', 'acts');
+  const sel = document.createElement('select');
+  db.monthly.months.forEach(m => sel.appendChild(opt(m, monthLabel(m))));
+  sel.value = s.month;
+  sel.addEventListener('change', () => {
+    state.statsMonth = sel.value;
+    db.monthly = null;
+    render();
+    reload().catch(() => toast('Не удалось посчитать месяц'));
+  });
+  head.appendChild(sel);
+  head.appendChild(btn('Пересчитать', 'btn sm sec', async () => {
+    try {
+      db.monthly = await api('adminStats', { month: s.month, refresh: true });
+      render();
+      toast('Пересчитано');
+    } catch (e) { toast(errorText(e.code), 4000); }
+  }));
+  card.appendChild(head);
+
+  const dayWord = s.days === s.daysInMonth ? 'месяц целиком' : 'по ' + s.days + ' дн. из ' + s.daysInMonth;
+  card.appendChild(txt('div', 't2', monthLabel(s.month) + ' · ' + dayWord
+    + (db.monthly.stored ? ' · итог закрыт и сохранён' : ' · считается заново при каждом заходе')));
+
+  // ---------- деньги ----------
+  const money = el('div', 'card');
+  money.innerHTML = '<h2>Деньги</h2>';
+  const kpis = el('div', 'kpis');
+  [
+    [money2(s.money.revenue), 'начислено за месяц'],
+    [money2(s.money.courts), 'корты'],
+    [money2(s.money.extras), 'прокат'],
+    [money2(s.money.lost), 'потеряно на неявках'],
+  ].forEach(([v, l]) => {
+    const k = el('div', 'kpi');
+    k.innerHTML = '<div class="v">' + escapeHtml(v) + '</div><div class="l">' + escapeHtml(l) + '</div>';
+    kpis.appendChild(k);
+  });
+  money.appendChild(kpis);
+  money.appendChild(txt('div', 'empty',
+    'Это начисленная стоимость броней, а не касса: наличные и переводы система не видит. '
+    + 'Отменённое в сумму не входит — за месяц отменено на ' + money2(s.money.cancelled) + '.'));
+  view.appendChild(money);
+
+  // ---------- игры ----------
+  const games = el('div', 'card');
+  games.innerHTML = '<h2>Игры и клиенты</h2>';
+  const kpis2 = el('div', 'kpis');
+  [
+    [String(s.games.played), 'игр состоялось'],
+    [String(hoursNum(s.hours.total)), 'часов занято'],
+    [Math.round(s.load.overall * 100) + '%', 'загрузка кортов'],
+    [String(s.games.noShow), 'неявок'],
+    [s.games.cancelled + ' / ' + s.games.lateCancelled, 'отмен / поздних'],
+    [String(s.clients.newClients), 'новых клиентов'],
+  ].forEach(([v, l]) => {
+    const k = el('div', 'kpi');
+    k.innerHTML = '<div class="v">' + escapeHtml(v) + '</div><div class="l">' + escapeHtml(l) + '</div>';
+    kpis2.appendChild(k);
+  });
+  games.appendChild(kpis2);
+
+  const rows = [
+    ['Обычные брони', hoursNum(s.hours.bookings) + ' ч'],
+    ['Постоянные брони', hoursNum(s.hours.series) + ' ч'],
+    ['Открытые тренировки', hoursNum(s.hours.openPlay) + ' ч'
+      + (s.openPlay.sessions ? ' · ' + s.openPlay.sessions + ' окон, мест занято '
+        + s.openPlay.filled + ' из ' + s.openPlay.seats : '')],
+    ['Корт был закрыт', hoursNum(s.hours.closed) + ' ч'],
+    ['Играли разные люди', String(s.clients.active)],
+  ];
+  if (s.games.pendingExpired) {
+    rows.push(['Заявок сгорело без ответа', String(s.games.pendingExpired)]);
+  }
+  rows.forEach(([label, value]) => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(label) + '</div>'
+      + '<div class="t2">' + escapeHtml(value) + '</div>';
+    games.appendChild(it);
+  });
+  view.appendChild(games);
+
+  // ---------- загрузка по часам ----------
+  const load = el('div', 'card');
+  load.innerHTML = '<h2>Загрузка по часам <span class="sub">доля занятых кортов</span></h2>';
+
+  const switcher = el('div', 'acts');
+  [['weekday', 'Будни'], ['weekend', 'Выходные']].forEach(([id, label]) => {
+    switcher.appendChild(btn(label, 'btn sm' + (state_stats.kind === id ? '' : ' sec'), () => {
+      state_stats.kind = id;
+      render();
+    }));
+  });
+  load.appendChild(switcher);
+
+  const list = s.load[state_stats.kind] || [];
+  const bars = el('div', 'bars');
+  list.forEach(h => {
+    const col = el('div', 'bar-col');
+    const bar = el('div', 'bar' + (h.load < 0.2 ? ' low' : ''));
+    bar.style.height = Math.max(2, Math.round(h.load * 100)) + '%';
+    bar.title = h.label + ' — ' + Math.round(h.load * 100) + '%';
+    col.appendChild(bar);
+    // Подписываем каждый второй час: иначе на телефоне цифры сливаются.
+    col.appendChild(txt('div', 'bar-lb', h.hour % 2 === 0 ? h.label.slice(0, 2) : ''));
+    bars.appendChild(col);
+  });
+  load.appendChild(bars);
+  if (!list.some(h => h.cells)) {
+    load.appendChild(txt('div', 'empty', 'В этом месяце таких дней ещё не было.'));
+  }
+  view.appendChild(load);
+
+  // ---------- пустые часы ----------
+  const idle = el('div', 'card');
+  idle.innerHTML = '<h2>Самые пустые часы <span class="sub">будни</span></h2>';
+  if (!s.idle.length) {
+    idle.appendChild(txt('div', 'empty',
+      'Пока не из чего выбирать: за месяц слишком мало игр в будни.'));
+  }
+
+  s.idle.forEach(h => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(h.label) + ' — '
+      + Math.round(h.load * 100) + '% загрузки</div>';
+    const acts = el('div', 'acts');
+    // Готовое предложение, а не просто цифра: ради этого владелец сюда
+    // и заходит. Окно предлагаем на два часа от пустого — час скидки
+    // редко кого сдвигает с места.
+    acts.appendChild(btn('Сделать скидочным', 'btn sm sec', () => openRuleForm(null, {
+      from: minutesToTime(h.hour * 60),
+      to: minutesToTime(Math.min(h.hour * 60 + 120, timeToMinutes(db.config.closeTime))),
+      days: [1, 2, 3, 4, 5],
+      pricePerHour: Math.round(db.config.pricePerHour * 0.8 / 100) * 100,
+    })));
+    it.appendChild(acts);
+    idle.appendChild(it);
+  });
+  idle.appendChild(txt('div', 'empty',
+    'Показаны часы, в которые играют, но мало: скидка сдвигает существующий спрос, а не создаёт новый. '
+    + 'Список окон и их порядок — во вкладке «Настройки».'));
+  view.appendChild(idle);
+}
+
+function hoursNum(v) {
+  return String(Math.round(Number(v) * 10) / 10).replace('.', ',');
+}
+function money2(v) {
+  return Math.round(Number(v) || 0).toLocaleString('ru-RU') + ' ₽';
+}
+
+// ============================================================
 // Вкладка: Настройки
 // ============================================================
 
@@ -2809,6 +3047,8 @@ function renderSettings(view) {
     c1.appendChild(txt('div', 'empty', 'Менять настройки может только владелец.'));
   }
 
+  renderPriceRules(view, cfg, owner);
+  if (owner) renderAnnounceChat(view);
   renderClosures(view, cfg);
   renderStaff(view);
 
@@ -2908,6 +3148,194 @@ function pickField(parent, label, value, options, format) {
   sel.value = String(value);
   wrapField(parent, label, sel);
   return sel;
+}
+
+// Куда бот пишет объявления об освободившемся времени и откуда берёт
+// новости. Список чатов бот набирает сам — из тех групп, где он состоит
+// и что-то видел: числовой id группы владельцу взять неоткуда.
+function renderAnnounceChat(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Чат клуба <span class="sub">объявления и новости</span></h2>';
+  view.appendChild(card);
+
+  if (!db.chats) {
+    card.appendChild(txt('div', 'empty', 'Загружаем список чатов…'));
+    return;
+  }
+
+  if (!db.chats.chats.length) {
+    card.appendChild(txt('div', 'empty',
+      'Бот пока не видел ни одной группы. Добавьте его в чат клуба администратором и '
+      + 'напишите там что-нибудь — группа появится в этом списке в течение минуты.'));
+    return;
+  }
+
+  const announceSel = document.createElement('select');
+  announceSel.appendChild(opt('', 'Не публиковать'));
+  db.chats.chats.forEach(c => announceSel.appendChild(opt(String(c.id), c.title)));
+  announceSel.value = db.chats.groupChatId || '';
+  wrapField(card, 'Объявления об освободившемся времени', announceSel);
+
+  const newsSel = document.createElement('select');
+  newsSel.appendChild(opt('', 'Из любой группы, где стоит бот'));
+  db.chats.chats.forEach(c => newsSel.appendChild(opt(String(c.id), c.title)));
+  newsSel.value = db.chats.newsChatId || '';
+  wrapField(card, 'Новости на главную брать из', newsSel);
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
+    patch: {
+      announce: { groupChatId: announceSel.value },
+      news: { chatId: newsSel.value },
+    },
+  }, 'Чат сохранён')));
+  card.appendChild(acts);
+
+  card.appendChild(txt('div', 'empty',
+    'Объявление уходит, когда освобождается постоянное время или отменяют бронь ближе чем за '
+    + db.chats.freeSlotHours + ' ч до игры. Первые ' + db.chats.priorityMinutes
+    + ' минут время предлагается только тем, кто стоит в очереди ожидания, — и лишь потом '
+    + 'попадает в чат. Несколько отмен подряд склеиваются в одно сообщение.'
+    + (db.chats.lastPostAt ? ' Последнее объявление: ' + shortDateTime(db.chats.lastPostAt) + '.' : '')));
+}
+
+// Скидочные окна: «с 10 до 16 по будням корт 1500». Механизм расчёта в
+// сервере с первого дня, здесь появился ввод.
+//
+// Порядок важен: побеждает первое подходящее правило, поэтому частное
+// правило ставится выше общего. Отсюда кнопки «выше/ниже», а не
+// сортировка по времени — сортировка молча меняла бы цены.
+function renderPriceRules(view, cfg, owner) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Скидочные часы <span class="sub">цена в выбранные часы</span></h2>';
+  view.appendChild(card);
+
+  const rules = (db.config.rules || []).slice();
+  if (!rules.length) card.appendChild(txt('div', 'empty', 'Окон нет — везде базовая цена ' + money(cfg.pricePerHour) + '.'));
+
+  rules.forEach((rule, i) => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(rule.label || 'Скидочное окно') + ' — '
+      + escapeHtml(money(rule.pricePerHour))
+      + (rule.showOnHome ? ' <span class="pill ok">на главной</span>' : '') + '</div>'
+      + '<div class="t2">' + escapeHtml(fmtRange(rule.from, rule.to) + ' · ' + daysText(rule.days)) + '</div>';
+
+    if (owner) {
+      const acts = el('div', 'acts');
+      if (i > 0) acts.appendChild(btn('Выше', 'btn sm sec', () => saveRules(moveRule(rules, i, -1))));
+      if (i < rules.length - 1) acts.appendChild(btn('Ниже', 'btn sm sec', () => saveRules(moveRule(rules, i, 1))));
+      acts.appendChild(btn('Изменить', 'btn sm sec', () => openRuleForm(rule)));
+      acts.appendChild(btn('Удалить', 'btn sm danger', () => confirmDelete(
+        'Удалить скидочное окно?', rule.label || fmtRange(rule.from, rule.to),
+        'Цена в эти часы вернётся к базовой. Уже заведённые брони не подорожают — цена в них записана.',
+        () => saveRules(rules.filter(x => x.id !== rule.id)))));
+      it.appendChild(acts);
+    }
+
+    card.appendChild(it);
+  });
+
+  if (!owner) {
+    card.appendChild(txt('div', 'empty', 'Менять тарифы может только владелец.'));
+    return;
+  }
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Добавить окно', 'btn sm', () => openRuleForm(null)));
+  card.appendChild(acts);
+
+  if (rules.length > 1) {
+    card.appendChild(txt('div', 'empty',
+      'Побеждает первое подходящее окно сверху. Частное правило («вторник до 16:00») держите выше общего.'));
+  }
+}
+
+function moveRule(rules, i, delta) {
+  const next = rules.slice();
+  const j = i + delta;
+  const t = next[i]; next[i] = next[j]; next[j] = t;
+  return next;
+}
+
+function saveRules(rules) {
+  return saveSchedule('adminUpdateConfig', { patch: { pricing: { rules } } }, 'Тарифы сохранены');
+}
+
+function daysText(days) {
+  if (!days || !days.length) return 'все дни';
+  return [1, 2, 3, 4, 5, 6, 0].filter(d => days.indexOf(d) !== -1).map(d => WD_SHORT[d]).join(', ');
+}
+
+// preset приходит со вкладки статистики: «этот час пустует, сделать его
+// скидочным» — форма открывается уже заполненной.
+function openRuleForm(existing, preset) {
+  const cfg = db.config;
+  const source = existing || preset || {};
+  const body = el('div');
+  body.innerHTML = '<h3>' + (existing ? 'Правка скидочного окна' : 'Новое скидочное окно') + '</h3>'
+    + '<div class="m-sub">Базовая цена клуба — ' + escapeHtml(money(cfg.pricePerHour)) + ' за час.</div>';
+
+  const label = document.createElement('input');
+  label.value = source.label || '';
+  label.placeholder = 'Например: дневной тариф';
+  wrapField(body, 'Подпись', label);
+
+  const price = document.createElement('input');
+  price.type = 'number';
+  price.value = source.pricePerHour != null ? source.pricePerHour : Math.round(cfg.pricePerHour * 0.8);
+  wrapField(body, 'Цена за час в эти часы, ₽', price);
+
+  const from = document.createElement('select');
+  startTimes().forEach(t => from.appendChild(opt(t, fmtTime(t))));
+  from.value = source.from || '10:00';
+  wrapField(body, 'С', from);
+
+  const to = document.createElement('select');
+  for (let m = timeToMinutes(cfg.openTime) + cfg.slotStep; m <= timeToMinutes(cfg.closeTime); m += cfg.slotStep) {
+    to.appendChild(opt(minutesToTime(m), fmtTime(minutesToTime(m))));
+  }
+  to.value = source.to || '16:00';
+  wrapField(body, 'По', to);
+
+  // Пустой список дней означает «все дни» — так же, как в файле.
+  const picked = new Set(source.days || []);
+  const daysRow = el('div', 'acts');
+  [1, 2, 3, 4, 5, 6, 0].forEach(d => {
+    const b = btn(WD_SHORT[d], 'btn sm' + (picked.has(d) ? '' : ' sec'), () => {
+      if (picked.has(d)) picked.delete(d); else picked.add(d);
+      b.className = 'btn sm' + (picked.has(d) ? '' : ' sec');
+    });
+    daysRow.appendChild(b);
+  });
+  wrapField(body, 'Дни недели — ничего не выбрано значит все', daysRow);
+
+  const home = { on: !!source.showOnHome };
+  body.appendChild(check('Показывать на главной странице', home.on, v => { home.on = v; },
+    'Скидка станет видна всем посетителям сайта, а не только тем, кто дошёл до выбора времени.'));
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn(existing ? 'Сохранить' : 'Добавить', 'btn', () => {
+    const rule = {
+      id: existing ? existing.id : 'r' + Date.now().toString(36),
+      days: [...picked].sort(),
+      from: from.value,
+      to: to.value,
+      pricePerHour: Number(price.value),
+      label: label.value,
+      showOnHome: home.on,
+    };
+    if (timeToMinutes(rule.to) <= timeToMinutes(rule.from)) { toast('Окончание раньше начала'); return; }
+    const rules = (db.config.rules || []).slice();
+    const idx = rules.findIndex(x => x.id === rule.id);
+    if (idx === -1) rules.push(rule); else rules[idx] = rule;
+    closeModal();
+    saveRules(rules);
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => label.focus(), 50);
 }
 
 // Закрытия кортов ведёт и администратор: ремонт и турнир — операционка,
