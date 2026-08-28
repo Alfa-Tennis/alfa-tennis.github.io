@@ -213,7 +213,13 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 /* Белая черта в месте перехода на соседний корт: видно, что бронь одна,
    но играть её придётся на двух кортах. */
 .cell.sel.seg-break, .cell.mine.seg-break { box-shadow: inset 0 3px 0 #fff; }
-.cell .tag { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #8B979C; pointer-events: none; white-space: nowrap; }
+/* Две тренировки подряд без разделителя читаются как одно окно на пять
+   часов. Левая полоса при этом остаётся — она метит саму тренировку. */
+.cell.openplay.seg-break { box-shadow: inset 3px 0 0 var(--ball), inset 0 2px 0 #fff; }
+/* Название тренировки бывает длиннее колонки — на телефоне она ýже
+   половины экрана. Обрезаем многоточием, иначе подпись выезжает на
+   соседний корт. */
+.cell .tag { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #8B979C; pointer-events: none; white-space: nowrap; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
 .cell.mine .tag { color: #fff; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 4px 0; font-size: 13px; color: var(--ink-soft); }
@@ -1607,10 +1613,20 @@ function renderGrid() {
         if (m && m.index > 0 && timeToMinutes(m.seg.start) === timeToMinutes(slot)) cell.className += ' seg-break';
       }
 
+      // Тренировки идут вплотную одна за другой, и «предыдущая клетка
+      // того же вида» для них не значит «то же самое окно»: у второй
+      // пропадала подпись, и два окна выглядели одним на пять часов.
+      if (st === 'openplay' && cellState(state.date, court.id, slots[idx - 1] || '') === 'openplay'
+          && !sameSessionAsPrev(state.date, court.id, slots, idx)) {
+        cell.className += ' seg-break';
+      }
+
       // Подпись только у первой клетки отрезка, иначе она повторялась бы
       // в каждой получасовой ячейке подряд.
-      if ((st === 'regular' || st === 'closed' || st === 'mine' || st === 'openplay')
-          && cellState(state.date, court.id, slots[idx - 1] || '') !== st) {
+      const startsHere = st === 'openplay'
+        ? !sameSessionAsPrev(state.date, court.id, slots, idx)
+        : cellState(state.date, court.id, slots[idx - 1] || '') !== st;
+      if ((st === 'regular' || st === 'closed' || st === 'mine' || st === 'openplay') && startsHere) {
         const tag = el('span', 'tag');
         tag.textContent = st === 'openplay' ? openPlayTag(state.date, court.id, slot)
           : (st === 'regular' ? 'постоянная' : (st === 'closed' ? 'закрыт' : 'вы'));
@@ -2262,13 +2278,29 @@ function sessionAt(dateIso, courtId, slot) {
       && min >= timeToMinutes(seg.start) && min < timeToMinutes(seg.end))) || null;
 }
 
+// В подписи стоит название, а не слово «тренировка»: «Парный микст» и
+// «Мужская одиночка» — разные события, и человек выбирает между ними.
+// Слово остаётся запасным ответом, когда состав ещё не приехал.
 function openPlayTag(dateIso, courtId, slot) {
   const s = sessionAt(dateIso, courtId, slot);
   if (!s) return 'тренировка';
   const op = s.openPlay;
-  if (op.mine) return 'тренировка · вы записаны';
-  if (op.full) return 'тренировка · мест нет';
-  return 'тренировка · ' + seatsText(op.left);
+  if (op.mine) return op.title + ' · вы записаны';
+  if (op.full) return op.title + ' · мест нет';
+  return op.title + ' · ' + seatsText(op.left);
+}
+
+// Тренировки стоят вплотную: конец одной — начало другой. Отличать их
+// надо по самому окну, а не по виду клетки, иначе соседние сливаются.
+function sameSessionAsPrev(dateIso, courtId, slots, idx) {
+  if (idx === 0) return false;
+  const here = sessionAt(dateIso, courtId, slots[idx]);
+  const prev = sessionAt(dateIso, courtId, slots[idx - 1]);
+  // Состав едет отдельным запросом и может не приехать вовсе. Тогда
+  // отличить соседние окна нечем — считаем отрезок одним, как раньше:
+  // одна подпись лучше, чем «тренировка» в каждой получасовой клетке.
+  if (!here || !prev) return cellState(dateIso, courtId, slots[idx - 1]) === 'openplay';
+  return here.id === prev.id;
 }
 
 function seatsText(n) {
