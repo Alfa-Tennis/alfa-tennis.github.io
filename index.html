@@ -325,6 +325,16 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .goods-body .t-price { margin-top: 4px; font-weight: 600; color: var(--court-dk); }
 .goods-body .t2 { margin-top: 5px; font-size: 13px; color: var(--ink-soft); line-height: 1.4; white-space: pre-line; }
 .goods-body .btn { margin-top: 10px; }
+/* Услуга со снимком: фотография слева, тарифы справа. Место под неё
+   берётся у пустоты между названием тарифа и ценой — её там с избытком.
+   Без фотографии раскладка прежняя, в одну колонку. */
+.svc-item { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: start; padding-bottom: 4px; }
+.svc-item.no-photo { grid-template-columns: minmax(0, 1fr); }
+.svc-photo { width: 112px; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; cursor: zoom-in; }
+@media (max-width: 560px) {
+  .svc-item { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
+  .svc-photo { width: 76px; }
+}
 .svc-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 7px 2px; border-bottom: 1px dashed var(--line); font-size: 15px; }
 .svc-row.sub { padding-left: 14px; font-size: 14px; color: var(--ink-soft); }
 .svc-row:last-child { border-bottom: 0; }
@@ -1134,28 +1144,54 @@ function homeServices(c, services) {
   const card = el('div', 'card');
 
   services.forEach(item => {
+    const block = el('div', 'svc-item' + (item.photoUrl ? '' : ' no-photo'));
+
+    if (item.photoUrl) {
+      // Ссылкой на сам файл, а не окном с увеличением: снимок станка
+      // рассматривают один раз, и своего просмотрщика это не стоит.
+      const link = document.createElement('a');
+      link.href = item.photoUrl;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      const img = document.createElement('img');
+      img.className = 'svc-photo';
+      img.src = item.photoUrl;
+      img.alt = item.name;
+      img.loading = 'lazy';
+      // Не отдалась картинка — раскладка возвращается к одной колонке,
+      // а не оставляет дыру слева.
+      img.addEventListener('error', () => { link.remove(); block.classList.add('no-photo'); });
+      link.appendChild(img);
+      block.appendChild(link);
+    }
+
+    const body = el('div');
+
     // У услуги может быть несколько тарифов — перетяжка для своих, для
     // сторонних и срочная. Это одна услуга с вариантами, а не три.
     if (item.options && item.options.length) {
       const head = el('div', 'svc-row');
       head.innerHTML = '<span><b>' + escapeHtml(item.name) + '</b></span>';
-      card.appendChild(head);
+      body.appendChild(head);
       item.options.forEach(o => {
         const row = el('div', 'svc-row sub');
         row.innerHTML = '<span>' + escapeHtml(o.name) + '</span>'
           + '<b>' + (o.price == null ? 'по запросу' : money(o.price)) + '</b>';
-        card.appendChild(row);
+        body.appendChild(row);
       });
     } else {
       const row = el('div', 'svc-row');
       row.innerHTML = '<span>' + escapeHtml(item.name) + '</span>'
         + '<b>' + escapeHtml(priceLabel(item)) + '</b>';
-      card.appendChild(row);
+      body.appendChild(row);
     }
-    if (item.description) card.appendChild(txt('div', 'empty', item.description));
+    if (item.description) body.appendChild(txt('div', 'empty', item.description));
     const ask = el('div', 'links');
     ask.appendChild(btn('Записаться на услугу', 'btn sec sm', () => openRequest(item, null)));
-    card.appendChild(ask);
+    body.appendChild(ask);
+
+    block.appendChild(body);
+    card.appendChild(block);
   });
 
   // Пока стрингер не заведён позицией каталога, показываем строку из
