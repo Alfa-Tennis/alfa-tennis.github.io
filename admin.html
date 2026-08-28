@@ -370,6 +370,11 @@ const ERRORS = {
   'invalid-rule': 'Проверьте скидочное окно: часы и цену.',
   'rule-outside-hours': 'Окно выходит за часы работы клуба.',
   'invalid-month': 'Этот месяц ещё не наступил.',
+  'reminders-order': 'Второе напоминание должно приходить позже первого.',
+  'court-not-found': 'Корт не найден — обновите страницу.',
+  'invalid-hours': 'Часы — только получасами: 0,5, 1, 1,5 и так далее.',
+  'pass-not-found': 'Абонемент не найден — возможно, его только что изменили.',
+  'pass-empty': 'На этом абонементе уже ничего не осталось.',
   'invalid-category': 'Выберите категорию участников.',
   'event-not-found': 'Турнир не найден — возможно, его только что удалили.',
   'item-not-found': 'Позиция не найдена — возможно, её только что удалили.',
@@ -601,7 +606,7 @@ async function loadAll() {
     needStats ? api('adminStats', state.statsMonth ? { month: state.statsMonth } : {}) : Promise.resolve(null),
     // Молчащий Telegram не должен ронять весь экран настроек: без
     // списка чатов карточка объявлений просто скажет об этом.
-    needChats ? api('adminChats').catch(() => null) : Promise.resolve(null),
+    needChats ? api('adminSettings').catch(() => null) : Promise.resolve(null),
     // Журнал абонементов читается вместе со статистикой: это те же
     // деньги того же месяца, и смотрят их за один заход.
     needStats ? api('adminLedger', state.statsMonth ? { month: state.statsMonth } : {}).catch(() => null)
@@ -628,6 +633,7 @@ async function loadAll() {
     config,
     club: pub.config.club,
     courts: day.courts,
+    allCourts: day.allCourts || day.courts,
     clients: clients.clients.map(mapClient),
     requests: itemRequests,
     health,
@@ -3207,6 +3213,8 @@ function renderSettings(view) {
   }
 
   renderPriceRules(view, cfg, owner);
+  if (owner) renderCourts(view);
+  if (owner) renderReminders(view);
   if (owner) renderAnnounceChat(view);
   renderClosures(view, cfg);
   renderStaff(view);
@@ -3309,6 +3317,127 @@ function pickField(parent, label, value, options, format) {
   return sel;
 }
 
+// Корты. Удаления нет: на корт ссылаются прошлые брони, и стёртый
+// справочник превратил бы историю в «Корт undefined». Вместо удаления —
+// выключение, и то лишь когда на корте нет будущих броней.
+function renderCourts(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Корты <span class="sub">названия и покрытие</span></h2>';
+  view.appendChild(card);
+
+  (db.allCourts || []).forEach(c => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(c.name)
+      + (c.active === false ? ' <span class="pill grey">выключен</span>' : '') + '</div>'
+      + '<div class="t2">' + escapeHtml([c.surface || 'покрытие не указано',
+        c.indoor === false ? 'открытый' : 'крытый'].join(' · ')) + '</div>';
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Изменить', 'btn sm sec', () => openCourtForm(c)));
+    it.appendChild(acts);
+    card.appendChild(it);
+  });
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Добавить корт', 'btn sm sec', () => openCourtForm(null)));
+  card.appendChild(acts);
+  card.appendChild(txt('div', 'empty',
+    'Выключенный корт исчезает из сетки и с сайта, но остаётся в истории прошлых броней. '
+    + 'Выключить корт с будущими бронями система не даст — сначала перенесите их.'));
+}
+
+function openCourtForm(existing) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + (existing ? 'Правка корта' : 'Новый корт') + '</h3>'
+    + '<div class="m-sub">Название видно клиентам в сетке и в письмах бота.</div>';
+
+  const name = document.createElement('input');
+  name.value = existing ? existing.name : '';
+  name.placeholder = 'Например: Корт 3';
+  wrapField(body, 'Название', name);
+
+  const surface = document.createElement('input');
+  surface.value = existing ? (existing.surface || '') : 'хард';
+  surface.placeholder = 'хард, грунт, ковёр';
+  wrapField(body, 'Покрытие', surface);
+
+  const flags = { indoor: existing ? existing.indoor !== false : true,
+    active: existing ? existing.active !== false : true };
+  body.appendChild(check('Крытый', flags.indoor, v => { flags.indoor = v; }));
+  body.appendChild(check('Работает', flags.active, v => { flags.active = v; },
+    'Выключенный корт не показывается ни в панели, ни на сайте.'));
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn(existing ? 'Сохранить' : 'Добавить', 'btn', async () => {
+    if (name.value.trim().length < 2) { toast('Укажите название'); return; }
+    const payload = {
+      name: name.value, surface: surface.value, indoor: flags.indoor, active: flags.active,
+    };
+    if (existing) payload.id = existing.id;
+    closeModal();
+    await saveSchedule('adminSaveCourt', payload, existing ? 'Корт изменён' : 'Корт добавлен');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => name.focus(), 50);
+}
+
+// Напоминания клиентам. Текст про сменную обувь — голос клуба, а не наш,
+// поэтому правится здесь, а не в коде.
+function renderReminders(view) {
+  const r = db.chats && db.chats.reminders;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Напоминания <span class="sub">что и когда пишет бот</span></h2>';
+  view.appendChild(card);
+
+  if (!r) {
+    card.appendChild(txt('div', 'empty', 'Загружаем настройки…'));
+    return;
+  }
+
+  const first = numField(card, 'Первое напоминание — за сколько часов', r.firstHours);
+  const second = numField(card, 'Второе напоминание — за сколько часов', r.secondHours);
+
+  const quietFrom = document.createElement('input');
+  quietFrom.type = 'time'; quietFrom.value = r.quietFrom;
+  wrapField(card, 'Тихие часы с', quietFrom);
+
+  const quietTo = document.createElement('input');
+  quietTo.type = 'time'; quietTo.value = r.quietTo;
+  wrapField(card, 'Тихие часы до', quietTo);
+
+  const evening = document.createElement('input');
+  evening.type = 'time'; evening.value = r.eveningAt;
+  wrapField(card, 'Если напоминание попало в тихие часы — слать вечером в', evening);
+
+  const nudge = numField(card, 'Напомнить администратору о висящей заявке через, ч', r.nudgeAdminAfterHours);
+
+  const shoes = document.createElement('input');
+  shoes.value = r.shoesNote;
+  wrapField(card, 'Приписка к напоминанию за пару часов', shoes);
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
+    patch: {
+      reminders: {
+        firstHours: Number(first.value),
+        secondHours: Number(second.value),
+        quietFrom: quietFrom.value,
+        quietTo: quietTo.value,
+        eveningAt: evening.value,
+        nudgeAdminAfterHours: Number(nudge.value),
+        shoesNote: shoes.value,
+      },
+    },
+  }, 'Напоминания сохранены')));
+  card.appendChild(acts);
+
+  card.appendChild(txt('div', 'empty',
+    'Ночью бот молчит: напоминание, попавшее в тихие часы, сдвигается на утро, а если к утру '
+    + 'бесплатная отмена уже закроется — на вечер накануне.'));
+}
+
 // Куда бот пишет объявления об освободившемся времени и откуда берёт
 // новости. Список чатов бот набирает сам — из тех групп, где он состоит
 // и что-то видел: числовой id группы владельцу взять неоткуда.
@@ -3335,6 +3464,24 @@ function renderAnnounceChat(view) {
   announceSel.value = db.chats.groupChatId || '';
   wrapField(card, 'Объявления об освободившемся времени', announceSel);
 
+  // Тема форума. В группе с темами сообщение без неё падает в «General»,
+  // где его никто не ждёт. Названия тем бот узнаёт не всегда — тогда
+  // тема подписана номером, и выбрать её всё равно можно.
+  const threadSel = document.createElement('select');
+  const fillThreads = () => {
+    const chat = db.chats.chats.find(c => String(c.id) === announceSel.value);
+    const topics = (chat && chat.topics) || [];
+    const keep = threadSel.value;
+    threadSel.innerHTML = '';
+    threadSel.appendChild(opt('', topics.length ? 'Без темы — в общую ленту' : 'Тем в этом чате не видно'));
+    topics.forEach(t => threadSel.appendChild(opt(String(t.id), t.title || ('тема №' + t.id))));
+    threadSel.value = keep || db.chats.groupThreadId || '';
+    threadSel.disabled = !topics.length;
+  };
+  fillThreads();
+  announceSel.addEventListener('change', fillThreads);
+  wrapField(card, 'Тема для объявлений', threadSel);
+
   const newsSel = document.createElement('select');
   newsSel.appendChild(opt('', 'Из любой группы, где стоит бот'));
   db.chats.chats.forEach(c => newsSel.appendChild(opt(String(c.id), c.title)));
@@ -3344,7 +3491,7 @@ function renderAnnounceChat(view) {
   const acts = el('div', 'acts');
   acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
     patch: {
-      announce: { groupChatId: announceSel.value },
+      announce: { groupChatId: announceSel.value, groupThreadId: threadSel.value },
       news: { chatId: newsSel.value },
     },
   }, 'Чат сохранён')));

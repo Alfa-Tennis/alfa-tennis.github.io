@@ -283,7 +283,11 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 /* Главная */
 .cta { background: var(--court); color: #fff; border-radius: var(--radius); padding: 18px 16px; margin-top: 18px; }
 .cta h2 { margin: 0 0 4px; font-size: 19px; }
-.cta p { margin: 0 0 14px; font-size: 14px; color: rgba(255,255,255,.82); line-height: 1.45; }
+/* Цена и часы стоят здесь, у самой кнопки, теми же чипами, что и в
+   шапке: там они были вторым экземпляром той же строки. */
+.cta .facts { margin: 12px 0 0; }
+.cta .fact.accent { font-size: 15px; padding: 7px 14px; }
+.cta p { margin: 12px 0 14px; font-size: 14px; color: rgba(255,255,255,.82); line-height: 1.45; }
 .cta .btn { background: var(--ball); color: #2C3A08; }
 .cta .btn:hover { background: #93C400; }
 .ev { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
@@ -440,6 +444,7 @@ const state = {
   openPlay: null,      // ответ openPlayList: открытые тренировки
   auth: null,          // { token, client }
   mine: null,          // ответ myBookings
+  passHistory: null,   // операции по абонементу; читаются по кнопке
   tgUnlinked: false,   // открыли из Telegram, но учётка не привязана
   pendingAfterLogin: false,
 };
@@ -823,32 +828,28 @@ function renderHero() {
       + (c.club.ratingCount ? ' · ' + c.club.ratingCount + ' оценки ' + mapsLink : '')
     : '';
 
-  const close = c.booking.closeTime;
-  // Если есть тариф дешевле базового, показываем «от», а не одну цену:
-  // иначе человек видит 1800 и не узнаёт, что днём корт стоит меньше.
-  const rules = (c.pricing.rules || []).filter(r => r.pricePerHour < c.pricing.pricePerHour);
-  const cheapest = rules.reduce((min, r) => Math.min(min, r.pricePerHour), c.pricing.pricePerHour);
-  const priceFact = cheapest < c.pricing.pricePerHour
-    ? 'от <b>' + money(cheapest) + '</b> / час'
-    : '<b>' + money(c.pricing.pricePerHour) + '</b> / час';
+  // Цену, часы и число кортов шапка не повторяет намеренно: ровно то же
+  // самое стоит ниже, в блоке «Забронировать корт», и там оно к месту —
+  // рядом с кнопкой, по которой человек и пойдёт. Наверху — то, чем клуб
+  // отличается от соседнего: покрытие, кондиционеры, пушки.
+  // В настройках это одна строка через запятую — здесь она разбирается
+  // на отдельные чипы, и каждый начинается с большой буквы: «Быстрое
+  // покрытие», «Кондиционеры», а не хвост перечисления.
+  const facts = String(c.club.features || '')
+    .split(/\s*,\s*/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => '<span class="fact">' + escapeHtml(s.charAt(0).toUpperCase() + s.slice(1)) + '</span>');
 
-  const facts = [
-    '<span class="fact accent">' + priceFact + '</span>',
-    '<span class="fact"><b>' + escapeHtml(fmtRange(c.booking.openTime, close)) + '</b> ежедневно</span>',
-    '<span class="fact">' + c.courts.length + ' крытых корта</span>',
-  ];
-  // Подписи скидочных окон — то, ради чего владелец их и заводит.
-  (c.pricing.rules || []).filter(r => r.showOnHome && r.label).forEach(r => {
-    facts.push('<span class="fact">' + escapeHtml(r.label) + ' <b>' + money(r.pricePerHour)
-      + '</b> · ' + escapeHtml(r.from) + '–' + escapeHtml(r.to) + '</span>');
-  });
   if (c.club.phone) facts.push('<span class="fact"><a href="tel:' + escapeHtml(c.club.phone.replace(/[^\d+]/g, '')) + '">' + escapeHtml(c.club.phone) + '</a></span>');
   if (c.club.mapUrl) facts.push('<span class="fact"><a href="' + escapeHtml(c.club.mapUrl) + '" target="_blank" rel="noopener">Как проехать</a></span>');
   document.getElementById('facts').innerHTML = facts.join('');
 
-  const about = [];
-  if (c.club.features) about.push(escapeHtml(c.club.features) + '.');
-  document.getElementById('clubAbout').innerHTML = about.join(' ');
+  // Строка под чипами осталась для услуги, которой нет отдельной
+  // карточки: натяжка струн живёт позицией каталога, но человеку про
+  // неё полезно узнать сразу.
+  document.getElementById('clubAbout').innerHTML = c.club.extraService
+    ? escapeHtml(c.club.extraService) + '.' : '';
 
   const who = document.getElementById('whoBtn');
   who.textContent = state.auth && state.auth.client
@@ -898,18 +899,33 @@ function renderHome() {
   const c = state.config;
   view.innerHTML = '';
 
-  // Первым экраном — то, зачем человек пришёл. Всё остальное ниже.
+  // Первым экраном — то, зачем человек пришёл. Цена и часы стоят здесь,
+  // а не в шапке: рядом с кнопкой они работают, а наверху были вторым
+  // экземпляром той же строки.
+  //
+  // Если есть тариф дешевле базового, показываем «от», а не одну цену:
+  // иначе человек видит 1800 и не узнаёт, что днём корт стоит меньше.
   const rules = (c.pricing.rules || []).filter(r => r.pricePerHour < c.pricing.pricePerHour);
   const cheapest = rules.reduce((min, r) => Math.min(min, r.pricePerHour), c.pricing.pricePerHour);
-  const price = cheapest < c.pricing.pricePerHour
-    ? 'от ' + money(cheapest) + ' за час'
-    : money(c.pricing.pricePerHour) + ' за час';
+  const priceFact = cheapest < c.pricing.pricePerHour
+    ? 'от <b>' + money(cheapest) + '</b> / час'
+    : '<b>' + money(c.pricing.pricePerHour) + '</b> / час';
+
+  const chips = [
+    '<span class="fact accent">' + priceFact + '</span>',
+    '<span class="fact"><b>' + escapeHtml(fmtRange(c.booking.openTime, c.booking.closeTime)) + '</b> ежедневно</span>',
+    '<span class="fact">' + c.courts.length + ' крытых корта</span>',
+  ];
+  // Подписи скидочных окон — то, ради чего владелец их и заводит.
+  (c.pricing.rules || []).filter(r => r.showOnHome && r.label).forEach(r => {
+    chips.push('<span class="fact">' + escapeHtml(r.label) + ' <b>' + money(r.pricePerHour)
+      + '</b> · ' + escapeHtml(fmtRange(r.from, r.to)) + '</span>');
+  });
 
   const cta = el('div', 'cta');
   cta.innerHTML = '<h2>Забронировать корт</h2>'
-    + '<p>' + escapeHtml(c.courts.length + ' крытых корта, ежедневно с '
-      + fmtTime(c.booking.openTime) + ' до ' + fmtTime(c.booking.closeTime) + ', ' + price
-      + '. Оплата на месте.') + '</p>';
+    + '<div class="facts">' + chips.join('') + '</div>'
+    + '<p>Оплата на месте — наличными или переводом.</p>';
   cta.appendChild(btn('Выбрать время', 'btn', () => showView('book')));
   view.appendChild(cta);
 
@@ -1121,6 +1137,9 @@ function homeContacts(c) {
   const links = el('div', 'links');
   if (c.club.mapUrl) links.appendChild(link('Открыть карту', c.club.mapUrl));
   if (c.club.telegramGroup) links.appendChild(link('Группа клуба в Telegram', c.club.telegramGroup));
+  // Трансляции с кортов клуб ведёт во ВКонтакте — своей трансляции у нас
+  // нет, поэтому ссылка туда, а не встроенный плеер.
+  if (c.club.vkUrl) links.appendChild(link('Трансляции с кортов во ВКонтакте', c.club.vkUrl));
   if (c.club.botUsername) links.appendChild(link('Бот клуба', 'https://t.me/' + c.club.botUsername));
   if (c.club.phone) links.appendChild(link('Позвонить', 'tel:' + c.club.phone.replace(/[^\d+]/g, '')));
   card.appendChild(links);
@@ -2499,6 +2518,39 @@ function renderMine() {
         ? 'Ближайшие часы сгорают ' + escapeHtml(dayLabelLong(pass.expiresAt, state.mine.today))
         : 'Без срока действия')
       + '. Часы списываются после игры — через двое суток, когда клуб закроет день.</div></div>';
+
+    // История — не «на всякий случай», а чтобы у человека не осталось
+    // вопросов: он видит каждую игру и каждое списание, и спрашивать на
+    // ресепшене «а куда делись часы» не приходится.
+    const acts = el('div', 'acts');
+    acts.appendChild(btn(state.passHistory ? 'Скрыть историю' : 'История списаний', 'btn sm sec',
+      async () => {
+        if (state.passHistory) { state.passHistory = null; renderMine(); return; }
+        try {
+          const res = await api('myPassHistory');
+          state.passHistory = res.entries;
+          renderMine();
+        } catch (e) { toast('Не удалось загрузить историю'); }
+      }));
+    cp.appendChild(acts);
+
+    if (state.passHistory) {
+      if (!state.passHistory.length) {
+        cp.appendChild(txt('div', 'empty', 'Пока ни одной операции.'));
+      }
+      const KIND = { purchase: 'куплен абонемент', spend: 'списано за игру', burn: 'часы сгорели' };
+      state.passHistory.forEach(e => {
+        const it = el('div', 'item');
+        it.innerHTML = '<div class="t1">' + escapeHtml((KIND[e.kind] || e.kind) + ' · '
+            + (e.hours > 0 ? '+' : '') + hoursText(e.hours * 60)) + '</div>'
+          + '<div class="t2">' + escapeHtml(
+            (e.date ? 'игра ' + dayLabelLong(e.date, state.mine.today) + ' · ' : '')
+            + 'записано ' + e.at.slice(8, 10) + '.' + e.at.slice(5, 7) + '.' + e.at.slice(0, 4)
+            + (e.note ? ' · ' + e.note : '')) + '</div>';
+        cp.appendChild(it);
+      });
+    }
+
     view.appendChild(cp);
   }
 
