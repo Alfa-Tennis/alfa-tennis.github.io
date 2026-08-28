@@ -138,6 +138,9 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .blk:hover { filter: brightness(.97); }
 .blk .b-t { font-weight: 600; }
 .blk .b-n { color: var(--ink-soft); }
+/* Состав тренировки прямо в клетке: ради «кто записан» не должно
+   приходиться открывать вкладку и искать окно в списке. */
+.blk .b-x { color: var(--ink-soft); font-size: 12px; line-height: 1.35; margin-top: 2px; }
 .blk.pending { border-left-color: var(--warn); background: var(--warn-tint); }
 .blk.series { border-left-color: var(--grass); background: var(--grass-tint); }
 /* Открытая тренировка — не чужая бронь: на неё ещё идёт набор, и
@@ -167,6 +170,9 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 /* ---------- Списки ---------- */
 .item { border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; margin-bottom: 8px; }
 .item.hl { border-color: var(--warn-line); background: var(--warn-tint); }
+/* Куда именно перешли из сетки: без пометки на длинном списке дня
+   приходится искать глазами то самое окно. */
+.item.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
 .item .t1 { font-weight: 600; }
 .item .t2 { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
 .item .acts { margin-top: 9px; display: flex; gap: 8px; flex-wrap: wrap; }
@@ -634,6 +640,10 @@ async function loadAll() {
   db = {
     config,
     club: pub.config.club,
+    // Какой день реально прочитан: в слепок броней попадают и чужие дни
+    // (заявки со вкладки «Заявки»), и по одному наличию ключа судить о
+    // том, что день загружен, нельзя.
+    dayDate: day.date,
     courts: day.courts,
     allCourts: day.allCourts || day.courts,
     clients: clients.clients.map(mapClient),
@@ -658,8 +668,31 @@ async function loadAll() {
 
 async function reload() {
   await loadAll();
+  state.loadedAt = Date.now();
   render();
 }
+
+// Панель читает день один раз за заход, а открытой её держат весь день.
+// За это время сетка расходится с тем, что видят клиенты: бронь пришла
+// с сайта, а на экране пусто. Возврат к вкладке — повод перечитать.
+//
+// Не чаще раза в минуту и не поверх открытой карточки: у функции один
+// запрос на экземпляр, а перерисовка под руками закрыла бы форму,
+// которую администратор уже заполняет.
+const STALE_MS = 60000;
+let refreshing = false;
+
+async function refreshIfStale() {
+  if (!db || refreshing) return;
+  if (Date.now() - state.loadedAt < STALE_MS) return;
+  if (document.getElementById('backdrop').classList.contains('show')) return;
+  refreshing = true;
+  try { await reload(); } catch (e) { /* молча: это фон, а не действие человека */ }
+  finally { refreshing = false; }
+}
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfStale(); });
+window.addEventListener('focus', refreshIfStale);
 
 // ---------- Вход и выход ----------
 
@@ -735,6 +768,19 @@ function seriesColorOf(seriesId) {
   return s && s.color ? s.color : null;
 }
 
+// Сетка получает сырой блок брони, а не карточку из вкладки
+// «Тренировки»: та читается только на своей вкладке и здесь её нет.
+// Поэтому места и имена считаем сами, из signups.
+function seatsTakenRaw(op) {
+  return ((op && op.signups) || []).reduce((n, s) => n + (Number(s.seats) || 1), 0);
+}
+
+function signupNames(op) {
+  return ((op && op.signups) || [])
+    .map(s => s.name + (s.partnerName ? ' + ' + s.partnerName : ''))
+    .join(', ');
+}
+
 function dayBlocks(dateIso) {
   const items = (db.bookings[dateIso] || []).filter(b => b.status !== 'cancelled');
   const out = items.map(b => Object.assign({
@@ -785,7 +831,7 @@ function requestCount() {
 // Каркас
 // ============================================================
 
-const state = { tab: 'day', date: todayIso(), clientQuery: '' };
+const state = { tab: 'day', date: todayIso(), clientQuery: '', loadedAt: 0, focusSession: null };
 
 // Статистика — вкладка владельца: это деньги клуба, а не рабочий
 // инструмент смены. Администратору она не показывается вовсе, а не
@@ -869,6 +915,9 @@ function render() {
 
   lastTab = state.tab;
   window.scrollTo({ top: tabChanged ? 0 : y });
+  // Переход из сетки к конкретному окну прокручивает сам — и делает это
+  // после общей прокрутки, иначе она увезла бы экран обратно наверх.
+  focusSessionRow();
 }
 
 // Тревога о молчащем боте. Показывается на всех вкладках, потому что
@@ -910,12 +959,26 @@ function minutesText(m) {
 function renderDay(view) {
   const date = state.date;
 
+  // Соседний день надо прочитать, а не только перерисовать: брони лежат
+  // в файле своего дня, и в слепке их нет. Раньше листание меняло дату и
+  // рисовало сетку из того, что случайно оказалось загружено — заявок из
+  // других дней и серий. Занятый корт при этом выглядел свободным.
+  const goto = (iso) => { state.date = iso; render(); reload().catch(() => toast('Не удалось загрузить день')); };
+
   const nav = el('div', 'daynav');
-  nav.appendChild(btn('‹', 'nav-btn', () => { state.date = addDays(date, -1); render(); }));
-  nav.appendChild(btn('›', 'nav-btn', () => { state.date = addDays(date, 1); render(); }));
+  nav.appendChild(btn('‹', 'nav-btn', () => goto(addDays(date, -1))));
+  nav.appendChild(btn('›', 'nav-btn', () => goto(addDays(date, 1))));
   const d = el('div', 'date'); d.textContent = longDate(date); nav.appendChild(d);
-  if (date !== todayIso()) nav.appendChild(btn('Сегодня', 'btn sec sm', () => { state.date = todayIso(); render(); }));
+  if (date !== todayIso()) nav.appendChild(btn('Сегодня', 'btn sec sm', () => goto(todayIso())));
   view.appendChild(nav);
+
+  // Пока день не прочитан, сетку не показываем вовсе: пустой корт,
+  // который на самом деле занят, — худшее, что панель может сказать
+  // администратору, стоящему у стойки с телефоном в руке.
+  if (db.dayDate !== date) {
+    view.appendChild(txt('div', 'empty', 'Загружаем день…'));
+    return;
+  }
 
   const blocks = dayBlocks(date);
   const sold = blocks.filter(b => b.kind !== 'closed')
@@ -1020,7 +1083,14 @@ function buildDayGrid(date, blocks) {
     const label = b.kind === 'closed' ? '🔒 '
       : (b.kind === 'series' ? '↻ ' : (b.kind === 'pending' ? '⏳ ' : (b.kind === 'openplay' ? '👥 ' : '')));
     div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end)) + '</div>'
-      + '<div class="b-n">' + label + escapeHtml(b.clientName) + (b.groupId ? ' ⇄' : '') + '</div>';
+      + '<div class="b-n">' + label + escapeHtml(b.clientName) + (b.groupId ? ' ⇄' : '')
+      + (b.kind === 'openplay' && b.openPlay
+        ? ' · ' + seatsTakenRaw(b.openPlay) + '/' + b.openPlay.seats : '')
+      + '</div>'
+      // Имена — только когда окно занимает от полутора часов: в клетке
+      // на две строки они вытесняют время и название.
+      + (b.kind === 'openplay' && b.openPlay && (to - from) >= 3 && signupNames(b.openPlay)
+        ? '<div class="b-x">' + escapeHtml(signupNames(b.openPlay)) + '</div>' : '');
     div.addEventListener('click', () => openBlock(b));
     grid.appendChild(div);
   });
@@ -1519,10 +1589,13 @@ function renderClients(view) {
       acts.appendChild(btn('Подтвердить', 'btn sm', () =>
         act(() => api('verifyClient', { clientId: c.id }), 'Клиент подтверждён')));
     }
+    // Владельца заблокировать нельзя — сервер откажет (shared-ops.js), и
+    // кнопки у его карточки быть не должно вовсе: одно случайное нажатие
+    // на своей же строке выглядит как «сейчас закрою себе вход».
     if (c.status === 'blocked') {
       acts.appendChild(btn('Разблокировать', 'btn sm sec', () =>
         act(() => api('unblockClient', { clientId: c.id }), 'Разблокирован')));
-    } else {
+    } else if (c.role !== 'owner') {
       acts.appendChild(btn('Заблокировать', 'btn sm danger', () =>
         act(() => api('blockClient', { clientId: c.id }), 'Заблокирован')));
     }
@@ -1742,8 +1815,9 @@ function renderSeries(view) {
     + '<div class="empty">Постоянная бронь не разворачивается в отдельные записи: система каждый '
     + 'раз смотрит, попадает ли день в её расписание. Поэтому снятое занятие сразу освобождает '
     + 'корт, а завершают бронь датой — занятия до неё остаются в истории такими, какими были.'
-    + '<br><br>Сообщения об освободившемся постоянном слоте в чат клуба пока не уходят — это '
-    + 'следующий шаг, вместе с листом ожидания.</div>';
+    + '<br><br>Снятое занятие уходит объявлением: сначала молча тем, кто ждёт это время, '
+    + 'через четверть часа — постом в чат клуба. Чат выбирается во вкладке «Настройки»; '
+    + 'пока он не выбран, объявления не уходят никуда.</div>';
   view.appendChild(note);
 }
 
@@ -2170,6 +2244,7 @@ function renderOpenPlay(view) {
 function sessionRow(s) {
   const op = s.openPlay;
   const it = el('div', 'item' + (op.taken < db.openplay.minPlayers ? ' hl' : ''));
+  it.dataset.sid = s.id;
 
   const courts = s.segments.map(x => courtName(x.courtId));
   const uniqueCourts = courts.filter((c, i) => courts.indexOf(c) === i).join(' → ');
@@ -2499,10 +2574,25 @@ function openMergeSession(s) {
 // он приходит только с adminOpenPlayWeek, — поэтому отсюда честно
 // отправляем на вкладку, где всё есть, а не показываем полупустую
 // карточку с «загружаем».
+// Из сетки переходим не просто на вкладку, а к самому окну: в дне их
+// бывает четыре, и «ищите нужное сами» — ровно та работа, ради которой
+// состав и вынесен в клетку.
 function openSessionFromGrid(b) {
   state.tab = 'openplay';
+  state.focusSession = b.id;
   closeModal();
-  reload().then(() => toast('Открыта вкладка «Тренировки»'));
+  reload().catch(() => toast('Не удалось открыть тренировку'));
+}
+
+// Подсветка живёт до следующей перерисовки: панель перечитывает себя
+// целиком, и снимать её отдельно было бы нечем.
+function focusSessionRow() {
+  if (!state.focusSession) return;
+  const row = document.querySelector('[data-sid="' + state.focusSession + '"]');
+  state.focusSession = null;
+  if (!row) return;
+  row.classList.add('flash');
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 // ============================================================

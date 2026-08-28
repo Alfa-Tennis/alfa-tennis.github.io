@@ -440,6 +440,7 @@ const API_URL = 'https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt';
 const state = {
   config: null,
   data: null,          // ответ getAvailability
+  dataAt: 0,           // когда занятость читали в последний раз
   date: null,
   plan: null,          // { fromIdx, toIdx, switches, segments }
   duration: 60,
@@ -738,6 +739,7 @@ async function load() {
   const boot = await api('bootstrap', { days: 14 });
   state.config = boot.config;
   state.data = boot.availability;
+  state.dataAt = Date.now();
   state.landing = boot.landing;
   state.openPlay = boot.openPlay;
   state.date = state.data.today;
@@ -780,11 +782,45 @@ async function load() {
 async function refreshAvailability() {
   if (!API_URL) return;
   state.data = await api('getAvailability', { days: 14 });
+  state.dataAt = Date.now();
   // Состав тренировок обновляем тем же заходом: набор меняется чаще
   // самой сетки, и показывать «2 места» там, где мест уже нет, —
   // ровно тот случай, когда человек жмёт кнопку и получает отказ.
-  try { state.openPlay = await api('openPlayList', { days: 14 }); } catch (e) { /* сетка важнее */ }
+  try {
+    state.openPlay = await api('openPlayList', { days: 14 });
+    // Общий список приходит без пометок «вы записаны» — они живут в
+    // кабинете. Без переноса свои тренировки после каждого обновления
+    // выглядели бы чужими.
+    markMySessions();
+  } catch (e) { /* сетка важнее */ }
 }
+
+// Занятость читалась ровно один раз, при открытии страницы. Вкладка,
+// оставленная открытой, показывала сетку такой, какой она была час
+// назад: администратор успел завести тренировку, а человек видит
+// свободный корт и получает отказ на кнопке. Возврат к вкладке — повод
+// перечитать, но не чаще раза в минуту: у функции один запрос на
+// экземпляр, и частый опрос будит холодные контейнеры вместо тёплого.
+const STALE_MS = 60000;
+let refreshing = false;
+
+async function refreshIfStale() {
+  if (!state.data || refreshing) return;
+  if (Date.now() - state.dataAt < STALE_MS) return;
+  refreshing = true;
+  try {
+    await refreshAvailability();
+    // День мог уехать за горизонт, пока вкладка лежала открытой: за
+    // полночь «сегодня» уже другое, и выбранной даты в ответе нет.
+    if (!state.data.days[state.date]) { state.date = state.data.today; state.plan = null; }
+    renderDays(); renderGrid(); renderPicker();
+    if (state.view === 'home') renderHome();
+  } catch (e) { /* молча: человек ничего не нажимал */ }
+  finally { refreshing = false; }
+}
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfStale(); });
+window.addEventListener('focus', refreshIfStale);
 
 async function refreshMine() {
   if (!state.auth) { state.mine = null; return; }
@@ -1381,6 +1417,9 @@ function renderDays() {
     b.addEventListener('click', () => {
       state.date = date; state.plan = null;
       renderDays(); renderGrid(); renderPicker();
+      // Выбор дня — тот момент, когда устаревшая занятость обходится
+      // дороже всего: дальше человек жмёт по клетке.
+      refreshIfStale();
     });
     wrap.appendChild(b);
   });
