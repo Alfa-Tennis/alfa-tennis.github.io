@@ -163,6 +163,10 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .chip { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 14px; cursor: pointer; }
 .chip:hover { border-color: var(--court); }
 .chip.on { background: var(--court); border-color: var(--court); color: #fff; }
+/* Незаполненная обязательная группа выбора: подпись краснеет ровно там,
+   где нечего выбрано, а не общим сообщением поверх всей формы. */
+.field.need > span { color: var(--danger); }
+.field.need .chip { border-color: var(--danger); }
 .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ink-soft); cursor: pointer; }
 
 /* Вариантов бывает три десятка — без ограничения высоты они отодвигают
@@ -602,6 +606,8 @@ const ERRORS = {
   'invalid-name': 'Укажите имя и фамилию.',
   'invalid-phone': 'Проверьте номер телефона.',
   'item-not-found': 'Этой позиции больше нет — обновите страницу.',
+  'option-required': 'Выберите тариф — без него администратор не поймёт, о чём заявка.',
+  'answer-required': 'Ответьте на вопрос под тарифом — иначе заявку не принять.',
   'blocked': 'Доступ закрыт. Обратитесь к администратору клуба.',
   'token-revoked': 'Нужно войти заново.',
   'unauthorized': 'Нужно войти заново.',
@@ -877,7 +883,11 @@ function renderHero() {
   document.getElementById('footerRules').textContent =
     'Бронирование от ' + hoursText(c.booking.minBookingMinutes) + ', шаг '
     + c.booking.slotStep + ' минут. Отмена без потери рейтинга — не позже чем за '
-    + c.booking.cancelDeadlineHours + ' ч до начала.';
+    + c.booking.cancelDeadlineHours + ' ч до начала'
+    // Про окно «передумал сразу» сказано здесь же: человек, взявший корт
+    // на сегодняшний вечер, иначе решит, что отменить без штрафа нельзя.
+    + (c.booking.cancelGraceMinutes
+      ? ' и всегда в первые ' + c.booking.cancelGraceMinutes + ' минут после брони.' : '.');
   document.getElementById('clubWhere').textContent =
     [c.club.city, c.club.address].filter(Boolean).join(' · ');
 
@@ -1242,9 +1252,39 @@ function homeContacts(c) {
   return card;
 }
 
+// Группа обязательного выбора: подпись и ряд чипов. Возвращает поле и
+// умеет сказать, выбрано ли в нём хоть что-то, — форма заявки спрашивает
+// об этом при отправке.
+function chipGroup(label, choices, currentId, onPick) {
+  const field = el('label', 'field');
+  field.innerHTML = '<span>' + escapeHtml(label) + '</span>';
+  const chips = el('div', 'chips');
+
+  let chosen = currentId;
+  choices.forEach(ch => {
+    const c = btn(ch.label, 'chip' + (chosen === ch.id ? ' on' : ''), () => {
+      chosen = ch.id;
+      field.classList.remove('need');
+      Array.prototype.forEach.call(chips.children, n => n.classList.remove('on'));
+      c.classList.add('on');
+      onPick(ch.id);
+    });
+    chips.appendChild(c);
+  });
+
+  field.appendChild(chips);
+  field.isEmpty = () => chosen == null || chosen === '';
+  return field;
+}
+
 // Заявка с витрины. Вход не спрашиваем намеренно: человек мог прийти
 // на сайт за ракеткой, а не за кортом, и требовать регистрацию ради
 // вопроса о цене — верный способ этот вопрос не получить.
+//
+// Но выбор тарифа и ответ на вопрос позиции — обязательны. Раньше форма
+// пропускала заявку вообще без них: человек «записался на натяжку», не
+// указав ни срочности, ни чьи струны, и узнавал об этом только по
+// звонку администратора.
 function openRequest(item, option) {
   const client = state.auth && state.auth.client;
 
@@ -1252,22 +1292,29 @@ function openRequest(item, option) {
   body.innerHTML = '<h3>' + escapeHtml(item.name) + '</h3>'
     + '<div class="m-sub">Администратор перезвонит и всё расскажет — про наличие, размер и оплату.</div>';
 
-  // Услугу с тарифами спрашивают конкретную: «перетяжка» без варианта
-  // оставляет администратора гадать, срочная она или обычная.
+  // Обязательные группы собираем списком: при отправке достаточно
+  // пройти по нему, а не помнить про каждую по отдельности.
+  const required = [];
+
   let picked = option;
   if (!option && item.options && item.options.length) {
-    const chips = el('div', 'chips');
-    chips.style.marginBottom = '14px';
-    item.options.forEach(o => {
-      const c = btn(o.name + (o.price == null ? '' : ' · ' + money(o.price)),
-        'chip' + (picked && picked.id === o.id ? ' on' : ''), () => {
-          picked = o;
-          Array.prototype.forEach.call(chips.children, n => n.classList.remove('on'));
-          c.classList.add('on');
-        });
-      chips.appendChild(c);
-    });
-    body.appendChild(chips);
+    const group = chipGroup('Тариф', item.options.map(o => ({
+      id: o.id,
+      label: o.name + (o.price == null ? '' : ' · ' + money(o.price)),
+    })), picked ? picked.id : null, id => { picked = item.options.find(o => o.id === id); });
+    required.push(group);
+    body.appendChild(group);
+  }
+
+  // Вопрос позиции задаёт владелец из панели: у натяжки это «Струны —
+  // свои или клубные», у другой услуги будет своё.
+  let answer = '';
+  const question = item.question;
+  if (question && question.answers && question.answers.length) {
+    const group = chipGroup(question.name, question.answers.map(a => ({ id: a, label: a })),
+      null, v => { answer = v; });
+    required.push(group);
+    body.appendChild(group);
   }
 
   let inpName = null;
@@ -1300,6 +1347,13 @@ function openRequest(item, option) {
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   const send = btn('Отправить', 'btn', async () => {
+    const empty = required.filter(g => g.isEmpty());
+    if (empty.length) {
+      empty.forEach(g => g.classList.add('need'));
+      toast(empty.length > 1 ? 'Отметьте выделенное — без этого заявку не принять'
+        : 'Отметьте ' + empty[0].querySelector('span').textContent.toLowerCase());
+      return;
+    }
     if (!client && (!inpName.value.trim() || !inpPhone.value.trim())) {
       toast('Оставьте имя и телефон — иначе перезвонить некуда');
       return;
@@ -1309,6 +1363,7 @@ function openRequest(item, option) {
       await api('requestItem', {
         itemId: item.id,
         optionId: picked ? picked.id : null,
+        answer,
         name: inpName ? inpName.value : '',
         phone: inpPhone ? inpPhone.value : '',
         comment: comment.value,
@@ -2045,6 +2100,13 @@ function openAuth(mode) {
     inpPass.placeholder = tab === 'register' ? 'не короче 6 символов' : '';
     fPass.appendChild(inpPass); body.appendChild(fPass);
 
+    // Забытый пароль. Сброса по SMS у нас нет и не будет — рассылка стоит
+    // денег и требует оператора, — поэтому единственный честный ответ:
+    // администратор сбросит вручную. В профиле такая подсказка была
+    // давно, а снаружи её не было вовсе: чтобы её прочитать, надо было
+    // сперва войти.
+    if (tab === 'login') body.appendChild(forgotPassword());
+
     const submit = async () => {
       try {
         const res = tab === 'login'
@@ -2101,6 +2163,31 @@ function openAuth(mode) {
   }
 
   draw();
+}
+
+// Телефон клуба в виде, годном для ссылки: только цифры и плюс.
+function phoneDigits(raw) {
+  const s = String(raw == null ? '' : raw).replace(/[^\d+]/g, '');
+  return /^\+?\d{10,15}$/.test(s) ? s : '';
+}
+
+function forgotPassword() {
+  const box = el('div', 'empty');
+  box.style.marginTop = '-4px';
+  box.style.marginBottom = '12px';
+  box.textContent = 'Не помните пароль — администратор сбросит его в клубе.';
+
+  const phone = phoneDigits(state.config && state.config.club && state.config.club.phone);
+  if (!phone) return box;
+
+  const links = el('div', 'links');
+  links.style.marginTop = '8px';
+  links.appendChild(link('Позвонить', 'tel:' + phone));
+  // Чат заводится по номеру клуба, а не через бота: пароль сбрасывает
+  // живой администратор, и писать надо ему.
+  links.appendChild(link('Написать в Telegram', 'https://t.me/' + (phone[0] === '+' ? phone : '+' + phone)));
+  box.appendChild(links);
+  return box;
 }
 
 function logout(silent) {
@@ -2796,9 +2883,12 @@ function bookingItem(g, isPast) {
     it.appendChild(txt('div', 't3',
       'Администратор не ответил вовремя — время вернулось в общий доступ. Выберите заново, если оно ещё свободно.'));
   } else if (!isPast) {
-    const deadline = slotTimestamp(g.date, g.start)
-      - (state.mine.cancelDeadlineHours || 10) * 3600 * 1000;
-    const late = Date.now() >= deadline;
+    // Срок бесплатной отмены считает сервер и присылает готовым: кроме
+    // дедлайна до игры в него входит окно «передумал сразу» от момента
+    // самой брони, а его страница со своей стороны не знает.
+    const deadline = Date.parse(g.freeCancelUntil || '');
+    const late = Date.now() >= (Number.isFinite(deadline) ? deadline
+      : slotTimestamp(g.date, g.start) - (state.mine.cancelDeadlineHours || 10) * 3600 * 1000);
     const acts = el('div', 'acts');
     // Поздняя отмена больше не запрещена — она стоит рейтинга. Кнопку
     // оставляем: запрет держал бы корт пустым, а так он успевает уйти

@@ -355,6 +355,8 @@ const ERRORS = {
   'not-movable': 'Такую бронь перенести нельзя.',
   'staff-reset-owner-only': 'Пароль администратору или владельцу может сбросить только владелец.',
   'owner-only': 'Это может только владелец клуба.',
+  'reason-required': 'Напишите причину — она останется в карточке клиента.',
+  'invalid-rating': 'Рейтинг — от 0 до 5 с шагом в половину балла.',
   'invalid-role': 'Такой роли нет.',
   'own-role': 'Снять роль с самого себя нельзя — клуб останется без владельца.',
   'owner-role-immutable': 'Роль владельца через панель не меняется.',
@@ -389,6 +391,7 @@ const ERRORS = {
   'news-not-found': 'Новость не найдена — возможно, её только что удалили.',
   'invalid-price': 'Проверьте цену: целое число рублей или пусто.',
   'invalid-options': 'Проверьте варианты цены.',
+  'invalid-question': 'В уточняющем вопросе не больше четырёх ответов.',
   'invalid-photo': 'Это не похоже на фотографию.',
   'unsupported-photo-type': 'Подойдёт JPEG, PNG или WebP.',
   'photo-too-large': 'Фотография слишком большая даже после сжатия.',
@@ -554,6 +557,7 @@ function mapClient(c) {
     // Игровой уровень из «Корзин игроков». Это НЕ рейтинг: рейтинг у нас
     // про дисциплину, а NTRP — про то, с кем человеку интересно играть.
     ntrp: c.ntrp == null ? null : c.ntrp,
+    ratingEdits: c.ratingEdits || [],
     notes: c.notes || '',
     createdAt: (c.createdAt || '').slice(0, 10),
     lastLoginAt: c.lastLoginAt || null,
@@ -572,6 +576,7 @@ function mapConfig(booking) {
     minBookingMinutes: booking.minBookingMinutes,
     approvalFromMinutes: booking.approvalFromMinutes,
     cancelDeadlineHours: booking.cancelDeadlineHours,
+    cancelGraceMinutes: booking.cancelGraceMinutes,
     maxActiveBookingsPerClient: booking.maxActiveBookingsPerClient,
     allowCourtSwitch: booking.allowCourtSwitch,
     maxSwitches: booking.maxSwitches,
@@ -1470,6 +1475,7 @@ function renderRequests(view) {
     const it = el('div', 'item' + (r.status === 'new' ? ' hl' : ''));
     it.innerHTML = '<div class="t1">' + escapeHtml(r.itemName)
       + (r.optionName ? ' · ' + escapeHtml(r.optionName) : '')
+      + (r.answer ? ' · ' + escapeHtml(r.questionName + ': ' + r.answer) : '')
       + (r.status === 'new' ? '' : ' <span class="pill grey">закрыта</span>') + '</div>'
       + '<div class="t2">' + escapeHtml(r.name) + ' · ' + escapeHtml(fmtPhone(r.phone))
       + ' · ' + escapeHtml(shortDateTime(r.createdAt))
@@ -1573,6 +1579,16 @@ function renderClients(view) {
       + ' · рейтинг <b>' + String(c.rating).replace('.', ',') + '</b>'
       + ' · ' + counters.join(' · ') + '</div>';
 
+    // Откуда взялось число, если его правили руками. Без этой строки у
+    // стойки не объяснить пятёрку у человека с двумя неявками.
+    const lastEdit = c.ratingEdits[c.ratingEdits.length - 1];
+    if (lastEdit) {
+      // shortDate ждёт «ГГГГ-ММ-ДД», а здесь полная метка времени.
+      it.appendChild(txt('div', 't3', 'Рейтинг правил владелец '
+        + shortDateTime(lastEdit.at) + ': ' + ratingText(lastEdit.from) + ' → ' + ratingText(lastEdit.to)
+        + (lastEdit.reason ? ' · ' + lastEdit.reason : '')));
+    }
+
     it.appendChild(ntrpField(c));
     it.appendChild(passField(c));
 
@@ -1604,6 +1620,12 @@ function renderClients(view) {
     // карточек кнопки нет: сервер всё равно откажет.
     if (c.role === 'client' || (me && me.role === 'owner')) {
       acts.appendChild(btn('Сбросить пароль', 'btn sm sec', () => resetPassword(c)));
+    }
+    // Рейтинг правит только владелец: это чужая репутация, а не рабочая
+    // мелочь ресепшена. Сервер откажет и администратору, но кнопки у
+    // него быть не должно вовсе.
+    if (me && me.role === 'owner') {
+      acts.appendChild(btn('Поправить рейтинг', 'btn sm sec', () => openRatingForm(c)));
     }
     it.appendChild(acts);
 
@@ -1775,6 +1797,56 @@ function openBurnPass(c, p) {
     closeModal();
     act(() => api('adminBurnPass', { clientId: c.id, passId: p.id, reason: reason.value }),
       'Остаток сожжён');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => reason.focus(), 50);
+}
+
+// Правка рейтинга. Форс-мажор система распознать не умеет: перелом за
+// час до игры стоит тех же −0,5, что и «передумал». Разбирает человек.
+//
+// Значение выбирается, а не только «вернуть 5»: прощают и частично —
+// снять одну отмену, оставив две неявки. Счётчики штрафов остаются как
+// были, их эта кнопка не трогает.
+function openRatingForm(c) {
+  const body = el('div');
+  body.innerHTML = '<h3>Поправить рейтинг</h3>'
+    + '<div class="m-sub">' + escapeHtml(c.name + ' · сейчас ' + ratingText(c.rating)) + '</div>'
+    + '<div class="empty">Счётчики неявок и поздних отмен останутся как есть — '
+    + 'они история, а не наказание. Правка и причина сохранятся в карточке.</div>';
+
+  const max = 5;
+  let picked = max;
+
+  const field = el('label', 'field');
+  field.innerHTML = '<span>Новое значение</span>';
+  const chips = el('div', 'chips');
+  for (let v = max; v >= 0; v -= 0.5) {
+    const value = v;
+    const c1 = btn(ratingText(value) + (value === max ? ' · чисто' : ''),
+      'chip' + (value === picked ? ' on' : ''), () => {
+        picked = value;
+        Array.prototype.forEach.call(chips.children, n => n.classList.remove('on'));
+        c1.classList.add('on');
+      });
+    chips.appendChild(c1);
+  }
+  field.appendChild(chips);
+  body.appendChild(field);
+
+  const reason = document.createElement('input');
+  reason.placeholder = 'Например: сломал руку, отменил честно';
+  wrapField(body, 'Причина', reason);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Сохранить', 'btn', () => {
+    if (reason.value.trim().length < 3) { toast('Напишите причину'); return; }
+    closeModal();
+    act(() => api('adminSetRating', { clientId: c.id, rating: picked, reason: reason.value }),
+      'Рейтинг изменён');
   }));
   body.appendChild(acts);
 
@@ -2981,6 +3053,24 @@ function openCatalogForm(existing) {
   optionsWrap.appendChild(btn('Ещё вариант', 'btn sm sec', () => addOptionRow(rows, null)));
   body.appendChild(optionsWrap);
 
+  // Уточняющий вопрос. У натяжки это «Струны — свои или клубные»: без
+  // ответа заявка приходила пустой, и администратор выяснял это звонком.
+  // Заводится здесь, а не в коде: у следующей услуги вопрос будет свой.
+  const q = (existing && existing.question) || null;
+  const qWrap = el('div');
+  qWrap.appendChild(txt('div', 'field-label', 'Уточняющий вопрос — задаётся в форме заявки'));
+  const qName = document.createElement('input');
+  qName.value = q ? q.name : '';
+  qName.placeholder = 'Например: Струны';
+  wrapField(qWrap, 'Вопрос', qName);
+  const qAnswers = document.createElement('input');
+  qAnswers.value = q ? q.answers.join(', ') : '';
+  qAnswers.placeholder = 'Свои, Клубные';
+  wrapField(qWrap, 'Ответы через запятую — от двух до четырёх', qAnswers);
+  qWrap.appendChild(txt('div', 'empty',
+    'Пусто — вопроса не будет. Если вопрос задан, заявку без ответа система не примет.'));
+  body.appendChild(qWrap);
+
   const available = check('В продаже', existing ? existing.available : true, () => {},
     'Снятая позиция остаётся здесь, но с витрины пропадает.');
   const availableBox = available.querySelector('input');
@@ -3041,6 +3131,10 @@ function openCatalogForm(existing) {
       price: price.value === '' ? null : Number(price.value),
       priceNote: priceNote.value,
       options: readOptionRows(rows),
+      question: {
+        name: qName.value,
+        answers: qAnswers.value.split(',').map(s => s.trim()).filter(Boolean),
+      },
       available: availableBox.checked,
     };
     if (existing) payload.id = existing.id;
@@ -3327,6 +3421,9 @@ function renderLedger(view) {
 function hoursNum(v) {
   return String(Math.round(Number(v) * 10) / 10).replace('.', ',');
 }
+function ratingText(v) {
+  return String(Number(v)).replace('.', ',');
+}
 function money2(v) {
   return Math.round(Number(v) || 0).toLocaleString('ru-RU') + ' ₽';
 }
@@ -3358,6 +3455,7 @@ function renderSettings(view) {
       ['Минимальная бронь', hoursText(cfg.minBookingMinutes)],
       ['Подтверждать брони от', hoursText(cfg.approvalFromMinutes)],
       ['Отмена без потери рейтинга не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
+      ['…и всегда в первые', (cfg.cancelGraceMinutes || 0) + ' мин после брони'],
       ['Активных броней на клиента', String(cfg.maxActiveBookingsPerClient)],
       ['Запись открыта на', cfg.horizonDays + ' дн.'],
       ['Брони с переходом между кортами', cfg.allowCourtSwitch ? 'разрешены' : 'запрещены'],
@@ -3411,7 +3509,13 @@ function renderSettingsForm(card, cfg) {
   const approval = pickField(card, 'Подтверждать администратором брони от', cfg.approvalFromMinutes,
     [60, 90, 120, 150, 180, 240, 300], hoursText);
 
-  const cancelH = numField(card, 'Отмена без потери рейтинга не позднее чем за, ч', cfg.cancelDeadlineHours);
+  // Два поля рядом читаются как «от и до»: передумал в первые полчаса —
+  // штрафа нет, дальше рейтинг бережёт только заблаговременность. Без
+  // первого поля вечернюю бронь, заведённую уже за дедлайном, нельзя
+  // было снять без потери рейтинга даже через минуту.
+  const cancelM = numField(card, 'Отмена без потери рейтинга в первые, мин после брони',
+    cfg.cancelGraceMinutes == null ? 30 : cfg.cancelGraceMinutes);
+  const cancelH = numField(card, '…и не позднее чем за, ч до игры', cfg.cancelDeadlineHours);
   const maxActive = numField(card, 'Активных броней на клиента', cfg.maxActiveBookingsPerClient);
   const horizon = numField(card, 'Запись открыта на, дней', cfg.horizonDays);
   const lead = numField(card, 'Запас до начала игры, мин', cfg.minLeadMinutes);
@@ -3433,6 +3537,7 @@ function renderSettingsForm(card, cfg) {
         minBookingMinutes: Number(minBook.value),
         approvalFromMinutes: Number(approval.value),
         cancelDeadlineHours: Number(cancelH.value),
+        cancelGraceMinutes: Number(cancelM.value),
         maxActiveBookingsPerClient: Number(maxActive.value),
         horizonDays: Number(horizon.value),
         minLeadMinutes: Number(lead.value),
