@@ -17,6 +17,11 @@ on:
     # запускает расписание с задержкой до четверти часа.
     - cron: '*/10 * * * *'
   workflow_dispatch:        # кнопка «Run workflow» на вкладке Actions
+    inputs:
+      test:
+        description: Прислать пробное сообщение — проверка, что канал живой
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,10 +46,26 @@ jobs:
           API: https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt
           BOT: ${{ secrets.WATCH_BOT_TOKEN }}
           CHAT: ${{ secrets.WATCH_CHAT_ID }}
+          TEST: ${{ github.event.inputs.test }}
         run: |
           set -u
+          # Без секретов шаг раньше просто выходил с нулём, и снаружи
+          # «всё хорошо» было не отличить от «сторож не настроен». Теперь
+          # это видно по коду выхода.
           if [ -z "${BOT}" ] || [ -z "${CHAT}" ]; then
-            echo "Секреты WATCH_BOT_TOKEN и WATCH_CHAT_ID не заданы — сторож молчит."
+            echo "Не заданы секреты WATCH_BOT_TOKEN и WATCH_CHAT_ID — сторожить нечем."
+            exit 1
+          fi
+
+          # Проверка связи по требованию. Настоящая тревога приходит
+          # редко, а убедиться, что канал живой, надо уметь в любой день.
+          if [ "${TEST:-false}" = "true" ]; then
+            printf '%b' '🔔 Проверка связи со сторожем.\n\nКанал работает: если бот клуба замолчит, сообщение придёт сюда.' > msg.txt
+            curl -sS --fail --max-time 25 -X POST "https://api.telegram.org/bot${BOT}/sendMessage" \
+              --data-urlencode "chat_id=${CHAT}" \
+              --data-urlencode "text@msg.txt" \
+              -o /dev/null -w 'пробное сообщение отправлено, код %{http_code}\n' \
+              || { echo "не дошло: проверьте WATCH_BOT_TOKEN и WATCH_CHAT_ID"; exit 1; }
             exit 0
           fi
 
@@ -68,12 +89,17 @@ jobs:
           done
 
           echo "было: $PREV, стало: $NOW"
-          printf '%s' "$NOW" > state/last
+
+          # Состояние запоминается только после того, как о нём удалось
+          # сообщить. Иначе сорванная отправка теряла бы тревогу
+          # навсегда: следующий запуск считал бы, что уже написал.
+          remember() { printf '%s' "$NOW" > state/last; }
 
           # Пишем только на переходе. Иначе при суточной поломке
           # прилетело бы полторы сотни одинаковых сообщений, и читать
           # их перестали бы на третьем.
           if [ "$NOW" = "$PREV" ]; then
+            remember
             echo "состояние не менялось — молчим"
             exit 0
           fi
@@ -85,6 +111,7 @@ jobs:
           case "$NOW" in
             up)
               if [ "$PREV" = "unknown" ]; then
+                remember
                 echo "первый запуск и всё в порядке — молчим"
                 exit 0
               fi
@@ -102,7 +129,12 @@ jobs:
           # через переменную зависит от локали, и Telegram отвечает
           # «strings must be encoded in UTF-8».
           printf '%b' "$MSG" > msg.txt
-          curl -sS --max-time 25 -X POST "https://api.telegram.org/bot${BOT}/sendMessage" \
-            --data-urlencode "chat_id=${CHAT}" \
-            --data-urlencode "text@msg.txt" \
-            -o /dev/null -w 'отправлено, код %{http_code}\n'
+          if curl -sS --fail --max-time 25 -X POST "https://api.telegram.org/bot${BOT}/sendMessage" \
+               --data-urlencode "chat_id=${CHAT}" \
+               --data-urlencode "text@msg.txt" \
+               -o /dev/null -w 'отправлено, код %{http_code}\n'; then
+            remember
+          else
+            echo "отправить не удалось — состояние не запоминаем, повторим на следующем запуске"
+            exit 1
+          fi
