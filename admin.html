@@ -1629,7 +1629,12 @@ function passField(c) {
   const acts = el('div', 'acts');
   acts.appendChild(btn(left ? 'Продлить' : 'Продать абонемент', 'btn sm sec', () => openPassForm(c)));
 
+  // Журнал по одному человеку. Сервер умел отдавать его с самого начала,
+  // но в панели посмотреть «когда куплен и что списано» можно было только
+  // общим списком за месяц на вкладке статистики — а спрашивают об этом
+  // у стойки, глядя в карточку.
   if (me && me.role === 'owner') {
+    acts.appendChild(btn('История', 'btn sm sec', () => openPassHistory(c, null)));
     c.passes.filter(p => p.hoursLeft > 0).forEach(p => {
       acts.appendChild(btn('Сжечь ' + hoursNum(p.hoursLeft) + ' ч', 'btn sm danger', () => openBurnPass(c, p)));
     });
@@ -1637,6 +1642,66 @@ function passField(c) {
   wrap.appendChild(acts);
 
   return wrap;
+}
+
+// Что за операция — одними словами и в журнале месяца, и в карточке.
+const PASS_KIND = { purchase: 'продан', spend: 'списано за игру', burn: 'сожжён остаток' };
+
+function openPassHistory(c, month) {
+  const body = el('div');
+  body.innerHTML = '<h3>Абонемент: история</h3>'
+    + '<div class="m-sub">' + escapeHtml(c.name + ' · ' + fmtPhone(c.phone)
+      + ' · ' + (c.pass.hours ? 'остаток ' + hoursNum(c.pass.hours) + ' ч' : 'остатка нет')) + '</div>';
+
+  const list = el('div');
+  list.appendChild(txt('div', 'empty', 'Загружаем журнал…'));
+  body.appendChild(list);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+
+  api('adminLedger', month ? { clientId: c.id, month } : { clientId: c.id })
+    .then(r => {
+      list.innerHTML = '';
+
+      // Месяцы переключаются прямо в окне: абонемент покупают в одном
+      // месяце, а спрашивают о нём в другом.
+      if ((r.months || []).length > 1) {
+        const sel = document.createElement('select');
+        r.months.forEach(m => sel.appendChild(opt(m, monthLabel(m))));
+        sel.value = r.month;
+        sel.addEventListener('change', () => openPassHistory(c, sel.value));
+        const f = el('label', 'field'); f.innerHTML = '<span>Месяц</span>';
+        f.appendChild(sel);
+        list.appendChild(f);
+      }
+
+      if (!r.entries.length) {
+        list.appendChild(txt('div', 'empty', 'В этом месяце операций по абонементу не было.'));
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.className = 'tbl';
+      table.innerHTML = '<tr><th>Когда</th><th>Что</th><th>Часы</th><th>Сумма</th></tr>';
+      r.entries.forEach(e => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + escapeHtml(shortDateTime(e.at)) + '</td>'
+          + '<td>' + escapeHtml((PASS_KIND[e.kind] || e.kind)
+            + (e.date ? ' · игра ' + shortDate(e.date) : '')
+            + (e.note ? ' · ' + e.note : '')) + '</td>'
+          + '<td>' + escapeHtml(hoursNum(e.hours) + ' ч') + '</td>'
+          + '<td>' + escapeHtml(money2(e.sum)) + '</td>';
+        table.appendChild(tr);
+      });
+      list.appendChild(table);
+    })
+    .catch(() => {
+      list.innerHTML = '';
+      list.appendChild(txt('div', 'empty', 'Не удалось прочитать журнал.'));
+    });
 }
 
 function openPassForm(c) {
@@ -3231,8 +3296,6 @@ function renderLedger(view) {
     return;
   }
 
-  const KIND = { purchase: 'продан', spend: 'списано за игру', burn: 'сожжён остаток' };
-
   const table = document.createElement('table');
   table.className = 'tbl';
   table.innerHTML = '<tr><th>Когда</th><th>Клиент</th><th>Что</th><th>Часы</th><th>Сумма</th></tr>';
@@ -3240,7 +3303,7 @@ function renderLedger(view) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td>' + escapeHtml(shortDateTime(e.at)) + '</td>'
       + '<td>' + escapeHtml(e.clientName) + '</td>'
-      + '<td>' + escapeHtml((KIND[e.kind] || e.kind)
+      + '<td>' + escapeHtml((PASS_KIND[e.kind] || e.kind)
         + (e.date ? ' · ' + shortDate(e.date) : '')
         + (e.note ? ' · ' + e.note : '')) + '</td>'
       + '<td>' + escapeHtml(hoursNum(e.hours) + ' ч') + '</td>'
