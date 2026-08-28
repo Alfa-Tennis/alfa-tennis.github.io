@@ -587,44 +587,28 @@ function mapConfig(booking) {
   };
 }
 
+// Всё для текущей вкладки — одним запросом.
+//
+// Раньше здесь стоял Promise.all из четырнадцати вызовов, и это было
+// прямой причиной того, что вкладка «Афиша и новости» открывалась по
+// три-четыре секунды: у функции один запрос на экземпляр, прогрев
+// держит тёплым один контейнер, а восемь параллельных запросов
+// поднимают восемь. Что нужно этой вкладке, решает сервер — он же
+// зовёт те же самые действия, копий обработчиков не появилось.
 async function loadAll() {
-  // Сотрудники нужны одному экрану, поэтому и читаются только для него:
-  // пятый запрос к каждому обновлению панели ради вкладки, куда заходят
-  // раз в полгода, себя не окупает.
-  const needStaff = state.tab === 'settings';
-  const needEvents = state.tab === 'events';
-  const needCatalog = state.tab === 'catalog';
-  const needOpenPlay = state.tab === 'openplay';
-  const needStats = state.tab === 'stats';
-  // Список чатов бота — владельцу и только на вкладке настроек.
-  // Администратору эта ручка откажет, поэтому и не зовём.
-  const needChats = state.tab === 'settings' && !!(me && me.role === 'owner');
+  const b = await api('adminBootstrap', {
+    tab: state.tab,
+    date: state.date,
+    query: state.clientQuery,
+    month: state.statsMonth || undefined,
+  });
 
-  const [pub, day, clients, review, itemRequests, health, staff, events, catalog, posts, sessions, monthly, chats, ledger] = await Promise.all([
-    api('getConfig'),
-    api('adminDay', { date: state.date }),
-    api('listClients', { query: state.clientQuery }),
-    api('adminReview'),
-    api('listRequests'),
-    api('health'),
-    needStaff ? api('listStaff') : Promise.resolve(null),
-    needEvents ? api('listEvents') : Promise.resolve(null),
-    needCatalog ? api('listCatalog') : Promise.resolve(null),
-    needEvents ? api('listNews') : Promise.resolve(null),
-    // Тренировки читаются на три недели вперёд: организатор смотрит не
-    // на день, а на «что собрано на выходные».
-    needOpenPlay ? api('adminOpenPlayWeek', { from: todayIso(), days: 21 }) : Promise.resolve(null),
-    // Месяц считается из файлов дней — это единственный запрос панели,
-    // который заметно дольше остальных. Поэтому только на своей вкладке.
-    needStats ? api('adminStats', state.statsMonth ? { month: state.statsMonth } : {}) : Promise.resolve(null),
-    // Молчащий Telegram не должен ронять весь экран настроек: без
-    // списка чатов карточка объявлений просто скажет об этом.
-    needChats ? api('adminSettings').catch(() => null) : Promise.resolve(null),
-    // Журнал абонементов читается вместе со статистикой: это те же
-    // деньги того же месяца, и смотрят их за один заход.
-    needStats ? api('adminLedger', state.statsMonth ? { month: state.statsMonth } : {}).catch(() => null)
-      : Promise.resolve(null),
-  ]);
+  // Имена оставлены прежними: ниже полторы сотни строк, которые ими
+  // пользуются, и переименование ради переименования их бы переписало.
+  const pub = b.config, day = b.day, clients = b.clients, review = b.review;
+  const itemRequests = b.requests, health = b.health, staff = b.staff;
+  const events = b.events, catalog = b.catalog, posts = b.news;
+  const sessions = b.openplay, monthly = b.stats, chats = b.settings, ledger = b.ledger;
 
   const config = mapConfig(day.config);
   config.pricePerHour = pub.config.pricing.pricePerHour;
