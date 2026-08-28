@@ -2376,9 +2376,13 @@ function signupRow(s, p, num, inQueue) {
 }
 
 // Последний день, где окна уже заводили: он и предлагается как образец.
+// Ничего не копится — смотрим то же окно в три недели вперёд, что и
+// список; прошедшие дни сюда не попадают вовсе. Отменённые окна тоже:
+// день, где всё отменили, — не образец.
 function lastFilledDay() {
   const byDate = {};
-  openPlaySessions().forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
+  openPlaySessions().filter(s => s.status !== 'cancelled')
+    .forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
   const dates = Object.keys(byDate).sort();
   return dates.length ? { date: dates[dates.length - 1], sessions: byDate[dates[dates.length - 1]] } : null;
 }
