@@ -576,7 +576,12 @@ const ERRORS = {
   'temp-password-expired': 'Временный пароль просрочен. Обратитесь к администратору.',
   'bad-credentials': 'Неверный телефон или пароль.',
   'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
+  // Потолок регистраций за сутки. Человек здесь ни при чём, поэтому
+  // не «попробуйте позже», а живой путь дальше — позвонить в клуб.
+  'too-many-signups': 'Регистрация с сайта сейчас недоступна. Позвоните в клуб — вас заведут по телефону.',
   'password-too-short': 'Пароль должен быть не короче 6 символов.',
+  'password-too-simple': 'Такой пароль подбирается сразу. Не подряд идущие символы и не одна буква.',
+  'password-is-phone': 'Пароль не может быть вашим номером телефона.',
   'invalid-name': 'Укажите имя и фамилию.',
   'invalid-phone': 'Проверьте номер телефона.',
   'item-not-found': 'Этой позиции больше нет — обновите страницу.',
@@ -587,6 +592,7 @@ const ERRORS = {
   'not-linked': 'Telegram не привязан к учётке. Откройте бота клуба и поделитесь номером.',
   'bad-init-data': 'Telegram не подтвердил вход. Откройте страницу заново.',
   'declined': 'Вход отклонён в Telegram.',
+  'wrong-code': 'В боте нажата кнопка с другим кодом — вход отменён. Начните заново.',
   'bad-code': 'Ссылка для входа устарела. Начните заново.',
   'telegram-not-configured': 'Привязка Telegram пока недоступна. Позвоните в клуб.',
   'server-unavailable': 'Сервер не отвечает. Попробуйте через минуту.',
@@ -826,8 +832,11 @@ function renderHero() {
   const rating = document.getElementById('clubRating');
   // «на Яндекс.Картах» — ссылка на карточку: оттуда и рейтинг, человеку
   // логично хотеть посмотреть отзывы целиком.
-  const mapsLink = c.club.mapUrl
-    ? '<a href="' + escapeHtml(c.club.mapUrl) + '" target="_blank" rel="noopener">на Яндекс.Картах</a>'
+  // mapUrl правится руками в бакете, мимо белого списка настроек, —
+  // тем более проверяем схему здесь.
+  const mapUrl = safeUrl(c.club.mapUrl);
+  const mapsLink = mapUrl
+    ? '<a href="' + escapeHtml(mapUrl) + '" target="_blank" rel="noopener">на Яндекс.Картах</a>'
     : 'на Яндекс.Картах';
   rating.innerHTML = c.club.rating
     ? '<span class="star">★</span> ' + escapeHtml(c.club.rating)
@@ -848,7 +857,7 @@ function renderHero() {
     .map(s => '<span class="fact">' + escapeHtml(s.charAt(0).toUpperCase() + s.slice(1)) + '</span>');
 
   if (c.club.phone) facts.push('<span class="fact"><a href="tel:' + escapeHtml(c.club.phone.replace(/[^\d+]/g, '')) + '">' + escapeHtml(c.club.phone) + '</a></span>');
-  if (c.club.mapUrl) facts.push('<span class="fact"><a href="' + escapeHtml(c.club.mapUrl) + '" target="_blank" rel="noopener">Как проехать</a></span>');
+  if (mapUrl) facts.push('<span class="fact"><a href="' + escapeHtml(mapUrl) + '" target="_blank" rel="noopener">Как проехать</a></span>');
   document.getElementById('facts').innerHTML = facts.join('');
 
   // Строка про дополнительную услугу — только когда её нет в каталоге.
@@ -1240,13 +1249,25 @@ function openRequest(item, option) {
   setTimeout(() => (inpName || comment).focus(), 50);
 }
 
+// Схему проверяем и здесь, хотя сервер уже проверил при сохранении:
+// в бакете лежат и значения, попавшие туда до этой проверки, и правки
+// руками. «javascript:…» в href — это скрипт на главной у каждого
+// посетителя, и стоит он одной строки в настройках.
+function safeUrl(href) {
+  const s = String(href == null ? '' : href).trim();
+  return /^https?:\/\//i.test(s) || /^(tel|mailto):/i.test(s) ? s : '';
+}
+
 function link(label, href) {
-  const a = document.createElement('a');
+  const url = safeUrl(href);
+  const a = document.createElement(url ? 'a' : 'span');
   a.className = 'btn sec sm';
   a.textContent = label;
-  a.href = href;
   a.style.textDecoration = 'none';
-  if (href.indexOf('http') === 0) { a.target = '_blank'; a.rel = 'noopener'; }
+  if (url) {
+    a.href = url;
+    if (url.indexOf('http') === 0) { a.target = '_blank'; a.rel = 'noopener'; }
+  }
   return a;
 }
 
@@ -1828,7 +1849,7 @@ function openAuth(mode) {
   function showTgWaiting(popupBlocked) {
     const body = el('div');
     body.innerHTML = '<h3>Подтвердите вход в Telegram</h3>'
-      + '<div class="m-sub">Бот прислал сообщение с кодом. Сверьте его с этим и нажмите «Это я».</div>'
+      + '<div class="m-sub">Бот прислал три кнопки с кодами. Нажмите ту, где этот код:</div>'
       + '<div class="tg-code">' + escapeHtml(tgStart.confirmCode) + '</div>';
 
     if (popupBlocked) {
