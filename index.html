@@ -194,26 +194,6 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
    области прокрутки не создаёт. */
 .grid-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: clip; }
 
-/* Неделя целиком в одну сетку не влезает даже на большом экране, поэтому
-   лента прокручивается вбок внутри карточки. Прокрутка своя, а не у
-   страницы: только так липкая шапка с днями и колонка времени остаются
-   на виду при движении в обе стороны. Высота ограничена, иначе sticky
-   внутри контейнера, равного содержимому, липнуть не к чему. */
-.grid-card.week { overflow: auto; max-height: 74vh; }
-.grid-card.week .g-head { top: 0; }
-.span-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 4px 8px; }
-.span-hint { font-size: 13px; color: var(--ink-soft); }
-/* Заголовок дня стоит над обоими кортами этого дня и липнет вместе с
-   ними — иначе, уехав вбок, человек видит «Корт 1» и не знает, чей. */
-.g-day { position: sticky; top: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line);
-  padding: 8px 6px 6px; font-size: 13px; font-weight: 600; text-align: center; white-space: nowrap; }
-.g-day.today { color: var(--court-dk); }
-.g-day.picked { background: var(--court-tint); }
-.grid-card.week .g-head { top: 33px; }
-.grid-card.week .g-head.corner, .grid-card.week .g-day.corner { z-index: 5; left: 0; position: sticky; }
-/* Граница между днями: без неё четырнадцать колонок читаются как один
-   бесконечный день. */
-.grid-card.week .cell.day-edge, .grid-card.week .g-head.day-edge { border-left: 2px solid var(--line); }
 .grid { display: grid; }
 .g-head { position: sticky; top: var(--nav-h, 53px); z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 6px; font-size: 14px; font-weight: 600; text-align: center; }
 .g-head.corner { z-index: 4; }
@@ -439,11 +419,6 @@ footer a { color: var(--court-dk); }
       <div class="picker-foot" id="pickerFoot"></div>
     </div>
 
-    <div class="span-row">
-      <span class="chips" id="spanChips"></span>
-      <span class="span-hint" id="spanHint"></span>
-    </div>
-
     <div class="grid-card" id="gridCard">
       <div class="grid" id="grid"><div class="state">Загружаем сетку…</div></div>
     </div>
@@ -522,10 +497,6 @@ const state = {
 };
 
 const TOKEN_KEY = 'alfa_token';
-// Как человек смотрел сетку в прошлый раз. Запоминаем: тому, кто выбрал
-// неделю, показывать её заново по одному дню — значит заставлять
-// переключать при каждом заходе.
-const SPAN_KEY = 'alfa_span';
 
 // Обращение к localStorage может выбросить исключение: приватный режим,
 // отключённое хранилище, открытие файла по data:-адресу. Без обёртки
@@ -836,12 +807,9 @@ async function load() {
     } catch (e) { state.auth = null; }
   }
 
-  if (store.get(SPAN_KEY) === 'week') state.span = 'week';
-
   renderHero();
   renderNav();
   renderDays();
-  renderSpan();
   renderGrid();
   renderPicker();
 
@@ -903,6 +871,12 @@ async function refreshMine() {
     markMySessions();
   } catch (e) { state.mine = null; }
   renderNav();
+  // Сетку перерисовываем обязательно: «моя бронь» определяется
+  // сопоставлением с кабинетом, а он приезжает уже после первой
+  // отрисовки. Без этого своя бронь оставалась серой — и человек,
+  // открывший страницу из Telegram, видел собственный корт как чужой и
+  // мог встать в очередь на самого себя.
+  if (state.data) renderGrid();
   if (state.view === 'mine') renderMine();
 }
 
@@ -1578,7 +1552,7 @@ function renderDays() {
       + '<div class="d-free">' + escapeHtml(dayFreeLabel(date, hours)) + '</div>';
     b.addEventListener('click', () => {
       state.date = date; state.plan = null;
-      renderDays(); renderSpan(); renderGrid(); renderPicker();
+      renderDays(); renderGrid(); renderPicker();
       // Выбор дня — тот момент, когда устаревшая занятость обходится
       // дороже всего: дальше человек жмёт по клетке.
       refreshIfStale();
@@ -1733,61 +1707,18 @@ function findOptions(dateIso, durationMinutes, opts) {
 
 // ---------- Сетка ----------
 
-// Сколько дней показывает лента. Неделя — тот горизонт, которым человек
-// планирует игру: «когда на этой неделе есть корт» — вопрос, ради
-// которого раньше приходилось щёлкать по дням по одному.
-const WEEK_DAYS = 7;
-
-// Лента начинается с выбранного дня, а не с сегодняшнего: человек,
-// перешедший на субботу, хочет видеть субботу и то, что за ней.
-function spanDates() {
-  if (state.span !== 'week') return [state.date];
-  const all = state.data.dates;
-  const from = Math.max(0, all.indexOf(state.date));
-  return all.slice(from, from + WEEK_DAYS);
-}
-
-function renderSpan() {
-  const wrap = document.getElementById('spanChips');
-  wrap.innerHTML = '';
-  [['day', 'День'], ['week', 'Неделя']].forEach(([id, label]) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'chip' + (state.span === id ? ' on' : '');
-    b.textContent = label;
-    b.addEventListener('click', () => {
-      if (state.span === id) return;
-      state.span = id;
-      store.set(SPAN_KEY, id);
-      renderSpan(); renderGrid();
-    });
-    wrap.appendChild(b);
-  });
-
-  const dates = spanDates();
-  document.getElementById('spanHint').textContent = state.span === 'week' && dates.length > 1
-    ? 'Листается вбок: ' + dayLabel(dates[0], state.data.today)
-      + ' — ' + dayLabel(dates[dates.length - 1], state.data.today)
-    : '';
-}
-
-// Клетка одна и та же в обоих режимах — разница только в том, сколько
-// дней стоит рядом. Поэтому построение вынесено из цикла: две копии
-// разошлись бы на первой же правке.
-function buildCell(date, court, slot, idx, edge) {
+// Построение клетки вынесено из цикла отрисовки: в нём слишком много
+// частных случаев — переход между кортами, соседние тренировки, подписи
+// только у первой клетки отрезка.
+function buildCell(date, court, slot, idx) {
   const slots = state.data.slots;
   const isHour = timeToMinutes(slot) % 60 === 0;
   const st = cellState(date, court.id, slot);
-  const cell = el('div', 'cell ' + st + (isHour && idx > 0 ? ' hour-line' : '') + (edge ? ' day-edge' : ''));
+  const cell = el('div', 'cell ' + st + (isHour && idx > 0 ? ' hour-line' : ''));
 
-  // Выбор живёт в одном дне — том, который сейчас выбран. В соседних
-  // днях ленты подсветки нет, иначе одно и то же время выглядело бы
-  // занятым вашей бронью во всю неделю.
-  if (date === state.date) {
-    if (isSelected(court.id, idx)) {
-      cell.className += ' sel';
-      if (isSegmentBreak(court.id, idx)) cell.className += ' seg-break';
-    }
+  if (isSelected(court.id, idx)) {
+    cell.className += ' sel';
+    if (isSegmentBreak(court.id, idx)) cell.className += ' seg-break';
   }
   if (st === 'mine') {
     const m = myBookingAt(date, court.id, slot);
@@ -1828,7 +1759,7 @@ function buildCell(date, court, slot, idx, edge) {
       + hoursText(state.config.booking.minLeadMinutes) + ' до начала. Позвоните в центр.';
   }
 
-  if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx, date));
+  if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx));
   else if (st === 'openplay') {
     // Тренировка — единственное «занято», куда можно попасть:
     // не очередь на чужую бронь, а запись в состав.
@@ -1836,7 +1767,7 @@ function buildCell(date, court, slot, idx, edge) {
     cell.addEventListener('click', () => onOpenPlayClick(date, court.id, slot));
   } else if (st === 'busy' || st === 'regular') {
     cell.title = 'Занято — нажмите, чтобы встать в очередь';
-    cell.addEventListener('click', () => onBusyClick(court.id, slot, date));
+    cell.addEventListener('click', () => onBusyClick(court.id, slot));
   }
 
   return cell;
@@ -1844,38 +1775,18 @@ function buildCell(date, court, slot, idx, edge) {
 
 function renderGrid() {
   const grid = document.getElementById('grid');
-  const card = document.getElementById('gridCard');
   const courts = state.config.courts;
   const slots = state.data.slots;
-  const dates = spanDates();
-  const week = state.span === 'week' && dates.length > 1;
 
   grid.innerHTML = '';
-  card.classList.toggle('week', week);
-  // В ленте колонка не ýже 76 пикселей: иначе на телефоне четырнадцать
-  // столбцов сжимаются в нечитаемые полоски, и листать нечего.
-  grid.style.gridTemplateColumns = '64px repeat(' + dates.length * courts.length + ', '
-    + (week ? 'minmax(76px, 1fr)' : 'minmax(0, 1fr)') + ')';
-
-  if (week) {
-    grid.appendChild(el('div', 'g-day corner'));
-    dates.forEach(date => {
-      const d = el('div', 'g-day' + (date === state.data.today ? ' today' : '')
-        + (date === state.date ? ' picked' : ''));
-      d.style.gridColumn = 'span ' + courts.length;
-      d.textContent = dayLabel(date, state.data.today);
-      grid.appendChild(d);
-    });
-  }
+  grid.style.gridTemplateColumns = '64px repeat(' + courts.length + ', minmax(0, 1fr))';
 
   grid.appendChild(el('div', 'g-head corner'));
-  dates.forEach((date, di) => {
-    courts.forEach((court, ci) => {
-      const h = el('div', 'g-head' + (week && di > 0 && ci === 0 ? ' day-edge' : ''));
-      h.innerHTML = escapeHtml(court.name)
-        + (court.surface ? '<span class="g-sub">' + escapeHtml(court.surface) + '</span>' : '');
-      grid.appendChild(h);
-    });
+  courts.forEach(court => {
+    const h = el('div', 'g-head');
+    h.innerHTML = escapeHtml(court.name)
+      + (court.surface ? '<span class="g-sub">' + escapeHtml(court.surface) + '</span>' : '');
+    grid.appendChild(h);
   });
 
   slots.forEach((slot, idx) => {
@@ -1884,11 +1795,7 @@ function renderGrid() {
     t.textContent = isHour ? fmtTime(slot) : '';
     grid.appendChild(t);
 
-    dates.forEach((date, di) => {
-      courts.forEach((court, ci) => {
-        grid.appendChild(buildCell(date, court, slot, idx, week && di > 0 && ci === 0));
-      });
-    });
+    courts.forEach(court => grid.appendChild(buildCell(state.date, court, slot, idx)));
   });
 
   renderBar();
@@ -1921,7 +1828,7 @@ function onCellClick(courtId, idx, date) {
     // Сетку перерисовываем сразу, не дожидаясь плана: подсветка дня в
     // шапке ленты обязана переехать даже тогда, когда бронь не сложилась
     // и человек увидит отказ.
-    renderDays(); renderSpan(); renderGrid(); renderPicker();
+    renderDays(); renderGrid(); renderPicker();
   }
 
   const p = state.plan;
@@ -2752,7 +2659,7 @@ function onBusyClick(courtId, slot, date) {
   if (day !== state.date) {
     state.date = day;
     state.plan = null;
-    renderDays(); renderSpan(); renderGrid(); renderPicker();
+    renderDays(); renderGrid(); renderPicker();
   }
   openWaitlist({ from: block.start, to: block.end });
 }

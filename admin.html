@@ -122,6 +122,28 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .daypick:hover { border-color: var(--accent); }
 .daypick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 .daypick-icon { font-size: 16px; line-height: 1; pointer-events: none; }
+.span-toggle { display: inline-flex; gap: 4px; margin-left: auto; }
+.span-toggle .nav-btn { width: auto; padding: 0 12px; font-size: 14px; }
+.span-toggle .nav-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+/* Неделя: прокрутка внутри карточки, иначе липкая шапка считает отступ
+   от окна и уезжает вместе с лентой. Высота ограничена по той же
+   причине — sticky нужен контейнер выше содержимого. */
+.week-card { padding: 0; overflow: auto; max-height: 76vh; }
+.grid.week .g-head { top: 30px; }
+.grid.week .g-day { position: sticky; top: 0; z-index: 6; background: var(--surface);
+  border-bottom: 1px solid var(--line); padding: 6px 4px; font-size: 13px; font-weight: 600;
+  text-align: center; white-space: nowrap; }
+.grid.week .g-day.today { color: var(--accent); }
+.grid.week .g-time { position: sticky; left: 0; z-index: 4; background: var(--surface); }
+.grid.week .g-head.corner, .grid.week .g-day.corner { left: 0; z-index: 7; }
+/* Граница между днями: без неё четырнадцать колонок читаются как один
+   бесконечный день. */
+.grid.week .day-edge { border-left: 2px solid var(--line); }
+/* В недельной клетке строки ниже, а шрифт мельче: иначе семь дней не
+   помещаются даже на большом экране. */
+.grid.week .blk { font-size: 11px; padding: 2px 5px; margin: 1px 2px; }
+.grid.week .blk .b-n { font-size: 11px; }
 .nav-btn { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 9px;
   width: 36px; height: 36px; cursor: pointer; }
 .nav-btn:hover { border-color: var(--accent); }
@@ -499,6 +521,14 @@ function shortDate(dateIso) {
   const d = new Date(dateIso + 'T00:00:00Z');
   return d.getUTCDate() + ' ' + MON_SHORT[d.getUTCMonth()];
 }
+// Подпись колонки дня в ленте: «пн, 1 сен». Сегодня и завтра называем
+// словами — в потоке из семи одинаковых колонок глаз ищет именно их.
+function shortDayLabel(dateIso) {
+  if (dateIso === todayIso()) return 'Сегодня';
+  if (dateIso === addDays(todayIso(), 1)) return 'Завтра';
+  const d = new Date(dateIso + 'T00:00:00Z');
+  return WD_SHORT[d.getUTCDay()] + ', ' + shortDate(dateIso);
+}
 function money(v) { return Math.round(v).toLocaleString('ru-RU') + ' ₽'; }
 function hoursText(min) { return (Math.round(min / 60 * 10) / 10).toString().replace('.', ',') + ' ч'; }
 function escapeHtml(s) {
@@ -612,6 +642,7 @@ async function loadAll() {
     date: state.date,
     query: state.clientQuery,
     month: state.statsMonth || undefined,
+    span: state.tab === 'day' ? state.span : undefined,
   });
 
   // Имена оставлены прежними: ниже полторы сотни строк, которые ими
@@ -630,6 +661,13 @@ async function loadAll() {
   const bookings = {};
   bookings[day.date] = day.items.map(b => Object.assign({}, b, { date: day.date }));
 
+  // Недельная лента кладёт брони соседних дней в тот же слепок: постоянные
+  // брони и закрытия к дню не привязаны и уже приехали, поэтому dayBlocks
+  // рисует любой из этих дней без дополнительных чтений.
+  if (b.week && b.week.days) {
+    Object.keys(b.week.days).forEach(date => { bookings[date] = b.week.days[date]; });
+  }
+
   // Заявки и незакрытые дни лежат в других днях — их брони тоже кладём
   // в слепок, иначе вкладка «Заявки» не покажет ни времени, ни корта.
   [].concat(review.pending, review.played).forEach(b => {
@@ -640,6 +678,9 @@ async function loadAll() {
   db = {
     config,
     club: pub.config.club,
+    // С какого дня прочитана неделя. Отдельно от dayDate: лента может
+    // остаться от прошлого дня, и рисовать её как свежую нельзя.
+    weekFrom: b.week ? b.week.from : null,
     // Какой день реально прочитан: в слепок броней попадают и чужие дни
     // (заявки со вкладки «Заявки»), и по одному наличию ключа судить о
     // том, что день загружен, нельзя.
@@ -831,7 +872,24 @@ function requestCount() {
 // Каркас
 // ============================================================
 
-const state = { tab: 'day', date: todayIso(), clientQuery: '', loadedAt: 0, focusSession: null };
+// Сколько дней в ленте. Семь — рабочая неделя клуба целиком: на звонок
+// «когда есть корт» отвечают именно в этих пределах.
+const WEEK_DAYS = 7;
+const SPAN_KEY = 'alfa_admin_span';
+
+let savedSpan = null;
+try { savedSpan = localStorage.getItem(SPAN_KEY); } catch (e) { savedSpan = null; }
+
+const state = {
+  tab: 'day', date: todayIso(), clientQuery: '', loadedAt: 0, focusSession: null,
+  // День или неделя в сетке. Запоминаем: у стойки режим выбирают один
+  // раз и работают в нём всю смену.
+  span: savedSpan === 'week' ? 'week' : 'day',
+};
+
+const store = {
+  set(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* переживём одну смену */ } },
+};
 
 // Статистика — вкладка владельца: это деньги клуба, а не рабочий
 // инструмент смены. Администратору она не показывается вовсе, а не
@@ -993,19 +1051,60 @@ function renderDay(view) {
   // других дней и серий. Занятый корт при этом выглядел свободным.
   const goto = (iso) => { state.date = iso; render(); reload().catch(() => toast('Не удалось загрузить день')); };
 
+  const week = state.span === 'week';
+  const step = week ? WEEK_DAYS : 1;
+
   const nav = el('div', 'daynav');
-  nav.appendChild(btn('‹', 'nav-btn', () => goto(addDays(date, -1))));
-  nav.appendChild(btn('›', 'nav-btn', () => goto(addDays(date, 1))));
+  nav.appendChild(btn('‹', 'nav-btn', () => goto(addDays(date, -step))));
+  nav.appendChild(btn('›', 'nav-btn', () => goto(addDays(date, step))));
   nav.appendChild(datePicker(date, goto));
-  const d = el('div', 'date'); d.textContent = longDate(date); nav.appendChild(d);
+  const d = el('div', 'date');
+  // В неделе — коротко и без «· сегодня»: в заголовке диапазона такая
+  // приписка читается как часть второй даты.
+  d.textContent = week
+    ? shortDate(date) + ' — ' + shortDate(addDays(date, WEEK_DAYS - 1))
+    : longDate(date);
+  nav.appendChild(d);
   if (date !== todayIso()) nav.appendChild(btn('Сегодня', 'btn sec sm', () => goto(todayIso())));
+
+  // Переключатель дня и недели. Неделя нужна ровно в одном сценарии, зато
+  // ежедневном: звонят и спрашивают, когда есть корт, — и листать по дню
+  // с чтением каждого с сервера дольше, чем говорит человек в трубке.
+  const spanBox = el('div', 'span-toggle');
+  [['day', 'День'], ['week', 'Неделя']].forEach(([id, label]) => {
+    const b = btn(label, 'nav-btn' + (state.span === id ? ' on' : ''), () => {
+      if (state.span === id) return;
+      state.span = id;
+      store.set(SPAN_KEY, id);
+      render();
+      reload().catch(() => toast('Не удалось загрузить'));
+    });
+    spanBox.appendChild(b);
+  });
+  nav.appendChild(spanBox);
   view.appendChild(nav);
 
   // Пока день не прочитан, сетку не показываем вовсе: пустой корт,
   // который на самом деле занят, — худшее, что панель может сказать
   // администратору, стоящему у стойки с телефоном в руке.
-  if (db.dayDate !== date) {
-    view.appendChild(txt('div', 'empty', 'Загружаем день…'));
+  if (db.dayDate !== date || (week && db.weekFrom !== date)) {
+    view.appendChild(txt('div', 'empty', week ? 'Загружаем неделю…' : 'Загружаем день…'));
+    return;
+  }
+
+  if (week) {
+    const dates = [];
+    for (let i = 0; i < WEEK_DAYS; i++) dates.push(addDays(date, i));
+
+    const card = el('div', 'card');
+    card.style.padding = '0';
+    card.className = 'card week-card';
+    card.appendChild(buildWeekGrid(dates));
+    view.appendChild(card);
+
+    view.appendChild(txt('div', 'empty',
+      'Лента листается вбок. Клетка и бронь работают так же, как в дне; '
+      + 'лист ожидания и итоги показываются в режиме дня.'));
     return;
   }
 
@@ -1067,6 +1166,87 @@ function renderWaiting(view, date) {
     'Когда время освобождается, бот пишет им первым — и только через полчаса объявление '
     + 'уходит в чат центра.'));
   view.appendChild(card);
+}
+
+// Неделя целиком: колонки — день × корт, прокрутка вбок внутри карточки.
+// Своя прокрутка, а не страничная, нужна ради липких шапки и колонки
+// времени: без них, уехав на четверг, администратор видит «Корт 1» и не
+// знает, чей это четверг.
+function buildWeekGrid(dates) {
+  const cfg = db.config;
+  const step = cfg.slotStep;
+  const open = timeToMinutes(cfg.openTime);
+  const close = timeToMinutes(cfg.closeTime);
+  const rows = (close - open) / step;
+  const courts = db.courts;
+
+  const grid = el('div', 'grid week');
+  grid.style.gridTemplateColumns = '52px repeat(' + dates.length * courts.length + ', minmax(74px, 1fr))';
+  grid.style.gridTemplateRows = 'auto auto repeat(' + rows + ', 26px)';
+
+  const corner = el('div', 'g-day corner'); corner.style.gridArea = '1 / 1'; grid.appendChild(corner);
+  const corner2 = el('div', 'g-head corner'); corner2.style.gridArea = '2 / 1'; grid.appendChild(corner2);
+
+  dates.forEach((date, di) => {
+    const head = el('div', 'g-day' + (date === todayIso() ? ' today' : ''));
+    head.style.gridArea = '1 / ' + (2 + di * courts.length) + ' / span 1 / span ' + courts.length;
+    head.textContent = shortDayLabel(date);
+    grid.appendChild(head);
+
+    courts.forEach((c, ci) => {
+      const h = el('div', 'g-head' + (di > 0 && ci === 0 ? ' day-edge' : ''));
+      h.style.gridArea = '2 / ' + (2 + di * courts.length + ci);
+      h.textContent = c.name;
+      grid.appendChild(h);
+    });
+  });
+
+  for (let r = 0; r < rows; r++) {
+    const min = open + r * step;
+    const t = el('div', 'g-time' + (min % 60 === 0 ? ' hour' : ''));
+    t.style.gridArea = (r + 3) + ' / 1';
+    t.textContent = min % 60 === 0 ? fmtTime(minutesToTime(min)) : '';
+    grid.appendChild(t);
+  }
+
+  dates.forEach((date, di) => {
+    const blocks = dayBlocks(date);
+    const taken = {};
+    courts.forEach(c => { taken[c.id] = new Array(rows).fill(false); });
+
+    blocks.forEach(b => {
+      const from = Math.max(0, (timeToMinutes(b.start) - open) / step);
+      const to = Math.min(rows, (timeToMinutes(b.end) - open) / step);
+      const colIdx = courts.findIndex(c => c.id === b.courtId);
+      if (colIdx === -1 || to <= from) return;
+      for (let r = from; r < to; r++) taken[b.courtId][r] = true;
+
+      const div = el('div', 'blk ' + b.kind + (b.kind === 'series' && b.color ? ' c-' + b.color : '')
+        + (di > 0 && colIdx === 0 ? ' day-edge' : ''));
+      div.style.gridArea = (from + 3) + ' / ' + (2 + di * courts.length + colIdx) + ' / span ' + (to - from);
+      // В недельной клетке помещается одна строка: время занимает её
+      // целиком, а имя дописывается только у окон от полутора часов.
+      div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end)) + '</div>'
+        + ((to - from) >= 3 ? '<div class="b-n">' + escapeHtml(b.clientName) + '</div>' : '');
+      div.title = fmtRange(b.start, b.end) + ' · ' + b.clientName;
+      div.addEventListener('click', () => openBlock(b));
+      grid.appendChild(div);
+    });
+
+    courts.forEach((c, colIdx) => {
+      for (let r = 0; r < rows; r++) {
+        if (taken[c.id][r]) continue;
+        const min = open + r * step;
+        const past = isPast(date, minutesToTime(min));
+        const cell = el('div', 'g-free' + (past ? ' past' : '') + (di > 0 && colIdx === 0 ? ' day-edge' : ''));
+        cell.style.gridArea = (r + 3) + ' / ' + (2 + di * courts.length + colIdx);
+        if (!past) cell.addEventListener('click', () => openNewBooking(date, c.id, minutesToTime(min)));
+        grid.appendChild(cell);
+      }
+    });
+  });
+
+  return grid;
 }
 
 function buildDayGrid(date, blocks) {
