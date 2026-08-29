@@ -114,6 +114,14 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 /* ---------- Навигация по дням ---------- */
 .daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .daynav .date { font-weight: 600; font-size: 17px; min-width: 190px; }
+/* Кнопка календаря. Сам input лежит под иконкой прозрачным: так у
+   браузеров, где showPicker недоступен, клик всё равно открывает их
+   собственный календарь. */
+.daypick { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 9px; background: #fff; cursor: pointer; }
+.daypick:hover { border-color: var(--accent); }
+.daypick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.daypick-icon { font-size: 16px; line-height: 1; pointer-events: none; }
 .nav-btn { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 9px;
   width: 36px; height: 36px; cursor: pointer; }
 .nav-btn:hover { border-color: var(--accent); }
@@ -948,6 +956,34 @@ function minutesText(m) {
 // Вкладка: День
 // ============================================================
 
+// Прыжок на далёкий день. Стрелками до позапрошлой недели идти двадцать
+// нажатий, и каждое читает день с сервера — а вопрос обычно один:
+// «что было в ту субботу».
+//
+// Календарь взят браузерный, а не нарисованный: свой пришлось бы учить
+// месяцам, високосным годам и клавиатуре, а этот у человека уже знаком
+// по всем остальным сайтам. `showPicker` есть не везде, поэтому input
+// остаётся кликабельным и сам по себе.
+function datePicker(date, goto) {
+  const wrap = el('label', 'daypick');
+  wrap.title = 'Выбрать день в календаре';
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.value = date;
+  // Год назад и год вперёд: дальше в прошлом данных нет вовсе, а дальше
+  // в будущем нет и броней — горизонт записи короче.
+  input.min = addDays(todayIso(), -365);
+  input.max = addDays(todayIso(), 365);
+  input.addEventListener('change', () => { if (input.value) goto(input.value); });
+  wrap.appendChild(input);
+  wrap.appendChild(txt('span', 'daypick-icon', '📅'));
+  wrap.addEventListener('click', (e) => {
+    if (e.target === input) return;
+    if (typeof input.showPicker === 'function') { e.preventDefault(); input.showPicker(); }
+  });
+  return wrap;
+}
+
 function renderDay(view) {
   const date = state.date;
 
@@ -960,6 +996,7 @@ function renderDay(view) {
   const nav = el('div', 'daynav');
   nav.appendChild(btn('‹', 'nav-btn', () => goto(addDays(date, -1))));
   nav.appendChild(btn('›', 'nav-btn', () => goto(addDays(date, 1))));
+  nav.appendChild(datePicker(date, goto));
   const d = el('div', 'date'); d.textContent = longDate(date); nav.appendChild(d);
   if (date !== todayIso()) nav.appendChild(btn('Сегодня', 'btn sec sm', () => goto(todayIso())));
   view.appendChild(nav);
@@ -3466,6 +3503,7 @@ function renderSettings(view) {
     c1.appendChild(txt('div', 'empty', 'Менять настройки может только владелец.'));
   }
 
+  if (owner) renderClubInfo(view);
   renderPriceRules(view, cfg, owner);
   if (owner) renderCourts(view);
   if (owner) renderReminders(view);
@@ -3479,6 +3517,56 @@ function renderSettings(view) {
     + '</div><div class="t2">' + escapeHtml(me ? fmtPhone(me.phone) : '')
     + ' · ' + (me && me.role === 'owner' ? 'владелец' : 'администратор') + '</div></div>';
   view.appendChild(c3);
+}
+
+// Витрина главной: телефон, адрес, чипы под шапкой и ссылки. Всё это
+// лежит в настройках и раньше правилось только руками в бакете — то
+// есть через разработчика. Для строки «кондиционер/отопление» это
+// слишком дорогой путь, поэтому форма.
+//
+// Названия центра и рейтинга Яндекс.Карт здесь нет намеренно: первое
+// меняется раз в жизни, второе приходит не от нас.
+function renderClubInfo(view) {
+  const club = db.club || {};
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>О центре <span class="sub">что видно на главной</span></h2>';
+
+  const phone = textField(card, 'Телефон', club.phone || '');
+  const address = textField(card, 'Адрес', club.address || '');
+
+  const features = textField(card, 'Чем центр хорош — через запятую', club.features || '');
+  features.placeholder = 'покрытие хард, кондиционер/отопление';
+  card.appendChild(txt('div', 'empty',
+    'Каждое слово встанет отдельной плашкой под названием центра, с большой буквы.'));
+
+  const extra = textField(card, 'Строка про услугу — если каталог услуг пуст', club.extraService || '');
+  extra.placeholder = 'Натяжка струн на профессиональном станке';
+  card.appendChild(txt('div', 'empty',
+    'Показывается только пока в каталоге нет ни одной услуги: заполненный каталог рассказывает о том же лучше.'));
+
+  const tg = textField(card, 'Ссылка на группу в Telegram', club.telegramGroup || '');
+  tg.placeholder = 'https://t.me/…';
+  const vk = textField(card, 'Ссылка на ВКонтакте', club.vkUrl || '');
+  vk.placeholder = 'https://vk.com/…';
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
+    patch: {
+      club: {
+        phone: phone.value,
+        address: address.value,
+        features: features.value,
+        extraService: extra.value,
+        telegramGroup: tg.value,
+        vkUrl: vk.value,
+      },
+    },
+  }, 'Главная обновлена')));
+  card.appendChild(acts);
+  card.appendChild(txt('div', 'empty',
+    'Ссылки принимаются только http и https. Пустая ссылка убирает кнопку с главной.'));
+
+  view.appendChild(card);
 }
 
 // Шага сетки в форме нет намеренно: все заведённые брони и постоянные

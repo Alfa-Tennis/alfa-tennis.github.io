@@ -193,14 +193,38 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
    05:30. Именно это и видел владелец. `clip` обрезает так же, но
    области прокрутки не создаёт. */
 .grid-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: clip; }
+
+/* Неделя целиком в одну сетку не влезает даже на большом экране, поэтому
+   лента прокручивается вбок внутри карточки. Прокрутка своя, а не у
+   страницы: только так липкая шапка с днями и колонка времени остаются
+   на виду при движении в обе стороны. Высота ограничена, иначе sticky
+   внутри контейнера, равного содержимому, липнуть не к чему. */
+.grid-card.week { overflow: auto; max-height: 74vh; }
+.grid-card.week .g-head { top: 0; }
+.span-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 4px 8px; }
+.span-hint { font-size: 13px; color: var(--ink-soft); }
+/* Заголовок дня стоит над обоими кортами этого дня и липнет вместе с
+   ними — иначе, уехав вбок, человек видит «Корт 1» и не знает, чей. */
+.g-day { position: sticky; top: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: 8px 6px 6px; font-size: 13px; font-weight: 600; text-align: center; white-space: nowrap; }
+.g-day.today { color: var(--court-dk); }
+.g-day.picked { background: var(--court-tint); }
+.grid-card.week .g-head { top: 33px; }
+.grid-card.week .g-head.corner, .grid-card.week .g-day.corner { z-index: 5; left: 0; position: sticky; }
+/* Граница между днями: без неё четырнадцать колонок читаются как один
+   бесконечный день. */
+.grid-card.week .cell.day-edge, .grid-card.week .g-head.day-edge { border-left: 2px solid var(--line); }
 .grid { display: grid; }
 .g-head { position: sticky; top: var(--nav-h, 53px); z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 6px; font-size: 14px; font-weight: 600; text-align: center; }
 .g-head.corner { z-index: 4; }
 .g-head .g-sub { display: block; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
-.g-time { position: sticky; left: 0; z-index: 2; background: var(--surface); border-right: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); padding: 0 8px; display: flex; align-items: center; justify-content: flex-end; height: 34px; }
+/* Получас — 29 пикселей, а не 34: рабочий день клуба это сорок строк, и
+   на телефоне сетка уезжала за экран сильнее, чем нужно. Меньше 28 уже
+   не даёт попасть пальцем. */
+.g-time { position: sticky; left: 0; z-index: 2; background: var(--surface); border-right: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); padding: 0 8px; display: flex; align-items: center; justify-content: flex-end; height: 29px; }
 .g-time.hour { color: var(--ink); font-weight: 600; }
 
-.cell { height: 34px; border-bottom: 1px solid #EEF1F2; border-right: 1px solid #EEF1F2; position: relative; }
+.cell { height: 29px; border-bottom: 1px solid #EEF1F2; border-right: 1px solid #EEF1F2; position: relative; }
 .cell.hour-line { border-top: 1px solid var(--line); }
 .cell.free { background: var(--surface); cursor: pointer; }
 .cell.free:hover { background: var(--court-tint); }
@@ -251,6 +275,14 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .bar .info .t2 { font-size: 14px; color: var(--ink-soft); }
 .bar .info .switch-note { color: var(--warn-dk); }
 .bar .info .switch-note:empty { display: none; }
+
+/* ---------- Рейтинг в кабинете ---------- */
+.rating-box { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.rating-box.low { border-color: var(--warn-line); background: var(--warn-tint); }
+.ball-rating { width: 46px; height: 46px; flex: 0 0 auto; }
+.rating-text .t1 { font-weight: 600; }
+.rating-text .t2 { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
 
 /* ---------- Мои брони ---------- */
 .item { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
@@ -407,7 +439,12 @@ footer a { color: var(--court-dk); }
       <div class="picker-foot" id="pickerFoot"></div>
     </div>
 
-    <div class="grid-card">
+    <div class="span-row">
+      <span class="chips" id="spanChips"></span>
+      <span class="span-hint" id="spanHint"></span>
+    </div>
+
+    <div class="grid-card" id="gridCard">
       <div class="grid" id="grid"><div class="state">Загружаем сетку…</div></div>
     </div>
 
@@ -469,6 +506,7 @@ const state = {
   data: null,          // ответ getAvailability
   dataAt: 0,           // когда занятость читали в последний раз
   date: null,
+  span: 'day',         // 'day' — один день, 'week' — лента на неделю
   plan: null,          // { fromIdx, toIdx, switches, segments }
   duration: 60,
   courtFilter: null,
@@ -484,6 +522,10 @@ const state = {
 };
 
 const TOKEN_KEY = 'alfa_token';
+// Как человек смотрел сетку в прошлый раз. Запоминаем: тому, кто выбрал
+// неделю, показывать её заново по одному дню — значит заставлять
+// переключать при каждом заходе.
+const SPAN_KEY = 'alfa_span';
 
 // Обращение к localStorage может выбросить исключение: приватный режим,
 // отключённое хранилище, открытие файла по data:-адресу. Без обёртки
@@ -794,9 +836,12 @@ async function load() {
     } catch (e) { state.auth = null; }
   }
 
+  if (store.get(SPAN_KEY) === 'week') state.span = 'week';
+
   renderHero();
   renderNav();
   renderDays();
+  renderSpan();
   renderGrid();
   renderPicker();
 
@@ -1533,7 +1578,7 @@ function renderDays() {
       + '<div class="d-free">' + escapeHtml(dayFreeLabel(date, hours)) + '</div>';
     b.addEventListener('click', () => {
       state.date = date; state.plan = null;
-      renderDays(); renderGrid(); renderPicker();
+      renderDays(); renderSpan(); renderGrid(); renderPicker();
       // Выбор дня — тот момент, когда устаревшая занятость обходится
       // дороже всего: дальше человек жмёт по клетке.
       refreshIfStale();
@@ -1688,22 +1733,149 @@ function findOptions(dateIso, durationMinutes, opts) {
 
 // ---------- Сетка ----------
 
+// Сколько дней показывает лента. Неделя — тот горизонт, которым человек
+// планирует игру: «когда на этой неделе есть корт» — вопрос, ради
+// которого раньше приходилось щёлкать по дням по одному.
+const WEEK_DAYS = 7;
+
+// Лента начинается с выбранного дня, а не с сегодняшнего: человек,
+// перешедший на субботу, хочет видеть субботу и то, что за ней.
+function spanDates() {
+  if (state.span !== 'week') return [state.date];
+  const all = state.data.dates;
+  const from = Math.max(0, all.indexOf(state.date));
+  return all.slice(from, from + WEEK_DAYS);
+}
+
+function renderSpan() {
+  const wrap = document.getElementById('spanChips');
+  wrap.innerHTML = '';
+  [['day', 'День'], ['week', 'Неделя']].forEach(([id, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (state.span === id ? ' on' : '');
+    b.textContent = label;
+    b.addEventListener('click', () => {
+      if (state.span === id) return;
+      state.span = id;
+      store.set(SPAN_KEY, id);
+      renderSpan(); renderGrid();
+    });
+    wrap.appendChild(b);
+  });
+
+  const dates = spanDates();
+  document.getElementById('spanHint').textContent = state.span === 'week' && dates.length > 1
+    ? 'Листается вбок: ' + dayLabel(dates[0], state.data.today)
+      + ' — ' + dayLabel(dates[dates.length - 1], state.data.today)
+    : '';
+}
+
+// Клетка одна и та же в обоих режимах — разница только в том, сколько
+// дней стоит рядом. Поэтому построение вынесено из цикла: две копии
+// разошлись бы на первой же правке.
+function buildCell(date, court, slot, idx, edge) {
+  const slots = state.data.slots;
+  const isHour = timeToMinutes(slot) % 60 === 0;
+  const st = cellState(date, court.id, slot);
+  const cell = el('div', 'cell ' + st + (isHour && idx > 0 ? ' hour-line' : '') + (edge ? ' day-edge' : ''));
+
+  // Выбор живёт в одном дне — том, который сейчас выбран. В соседних
+  // днях ленты подсветки нет, иначе одно и то же время выглядело бы
+  // занятым вашей бронью во всю неделю.
+  if (date === state.date) {
+    if (isSelected(court.id, idx)) {
+      cell.className += ' sel';
+      if (isSegmentBreak(court.id, idx)) cell.className += ' seg-break';
+    }
+  }
+  if (st === 'mine') {
+    const m = myBookingAt(date, court.id, slot);
+    if (m && m.index > 0 && timeToMinutes(m.seg.start) === timeToMinutes(slot)) cell.className += ' seg-break';
+  }
+
+  // Тренировки идут вплотную одна за другой, и «предыдущая клетка
+  // того же вида» для них не значит «то же самое окно»: у второй
+  // пропадала подпись, и два окна выглядели одним на пять часов.
+  if (st === 'openplay' && cellState(date, court.id, slots[idx - 1] || '') === 'openplay'
+      && !sameSessionAsPrev(date, court.id, slots, idx)) {
+    cell.className += ' seg-break';
+  }
+
+  // Подпись только у первой клетки отрезка, иначе она повторялась бы
+  // в каждой получасовой ячейке подряд.
+  const startsHere = st === 'openplay'
+    ? !sameSessionAsPrev(date, court.id, slots, idx)
+    : cellState(date, court.id, slots[idx - 1] || '') !== st;
+  if ((st === 'regular' || st === 'closed' || st === 'mine' || st === 'openplay') && startsHere) {
+    const tag = el('span', 'tag');
+    tag.textContent = st === 'openplay' ? openPlayTag(date, court.id, slot)
+      : (st === 'regular' ? 'постоянная' : (st === 'closed' ? 'закрыт' : 'вы'));
+    cell.appendChild(tag);
+  }
+
+  // Свободный корт, до которого осталось меньше запаса, выглядит так
+  // же, как уже прошедшее время, — серым и молчащим. Человеку в клубе
+  // в 23:05 это читается как «занято», хотя корт пуст: причина в
+  // правиле клуба, и сказать её надо прямо здесь.
+  // Сейчас запас нулевой, и эта ветка молчит. Оставлена намеренно:
+  // график у клуба сезонный, и запас однажды вернут настройками —
+  // тогда подсказка понадобится снова, без правки страницы.
+  if (st === 'past' && state.config.booking.minLeadMinutes > 0
+      && !busyAt(date, court.id, slot)
+      && slotTimestamp(date, slot) > Date.now()) {
+    cell.title = 'Запись закрывается за '
+      + hoursText(state.config.booking.minLeadMinutes) + ' до начала. Позвоните в центр.';
+  }
+
+  if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx, date));
+  else if (st === 'openplay') {
+    // Тренировка — единственное «занято», куда можно попасть:
+    // не очередь на чужую бронь, а запись в состав.
+    cell.title = 'Открытая тренировка — нажмите, чтобы посмотреть состав';
+    cell.addEventListener('click', () => onOpenPlayClick(date, court.id, slot));
+  } else if (st === 'busy' || st === 'regular') {
+    cell.title = 'Занято — нажмите, чтобы встать в очередь';
+    cell.addEventListener('click', () => onBusyClick(court.id, slot, date));
+  }
+
+  return cell;
+}
+
 function renderGrid() {
   const grid = document.getElementById('grid');
+  const card = document.getElementById('gridCard');
   const courts = state.config.courts;
   const slots = state.data.slots;
+  const dates = spanDates();
+  const week = state.span === 'week' && dates.length > 1;
 
   grid.innerHTML = '';
-  grid.style.gridTemplateColumns = '64px repeat(' + courts.length + ', minmax(0, 1fr))';
+  card.classList.toggle('week', week);
+  // В ленте колонка не ýже 76 пикселей: иначе на телефоне четырнадцать
+  // столбцов сжимаются в нечитаемые полоски, и листать нечего.
+  grid.style.gridTemplateColumns = '64px repeat(' + dates.length * courts.length + ', '
+    + (week ? 'minmax(76px, 1fr)' : 'minmax(0, 1fr)') + ')';
 
-  const corner = el('div', 'g-head corner');
-  grid.appendChild(corner);
+  if (week) {
+    grid.appendChild(el('div', 'g-day corner'));
+    dates.forEach(date => {
+      const d = el('div', 'g-day' + (date === state.data.today ? ' today' : '')
+        + (date === state.date ? ' picked' : ''));
+      d.style.gridColumn = 'span ' + courts.length;
+      d.textContent = dayLabel(date, state.data.today);
+      grid.appendChild(d);
+    });
+  }
 
-  courts.forEach(court => {
-    const h = el('div', 'g-head');
-    h.innerHTML = escapeHtml(court.name)
-      + (court.surface ? '<span class="g-sub">' + escapeHtml(court.surface) + '</span>' : '');
-    grid.appendChild(h);
+  grid.appendChild(el('div', 'g-head corner'));
+  dates.forEach((date, di) => {
+    courts.forEach((court, ci) => {
+      const h = el('div', 'g-head' + (week && di > 0 && ci === 0 ? ' day-edge' : ''));
+      h.innerHTML = escapeHtml(court.name)
+        + (court.surface ? '<span class="g-sub">' + escapeHtml(court.surface) + '</span>' : '');
+      grid.appendChild(h);
+    });
   });
 
   slots.forEach((slot, idx) => {
@@ -1712,64 +1884,10 @@ function renderGrid() {
     t.textContent = isHour ? fmtTime(slot) : '';
     grid.appendChild(t);
 
-    courts.forEach(court => {
-      const st = cellState(state.date, court.id, slot);
-      const cell = el('div', 'cell ' + st + (isHour && idx > 0 ? ' hour-line' : ''));
-
-      if (isSelected(court.id, idx)) {
-        cell.className += ' sel';
-        if (isSegmentBreak(court.id, idx)) cell.className += ' seg-break';
-      } else if (st === 'mine') {
-        const m = myBookingAt(state.date, court.id, slot);
-        if (m && m.index > 0 && timeToMinutes(m.seg.start) === timeToMinutes(slot)) cell.className += ' seg-break';
-      }
-
-      // Тренировки идут вплотную одна за другой, и «предыдущая клетка
-      // того же вида» для них не значит «то же самое окно»: у второй
-      // пропадала подпись, и два окна выглядели одним на пять часов.
-      if (st === 'openplay' && cellState(state.date, court.id, slots[idx - 1] || '') === 'openplay'
-          && !sameSessionAsPrev(state.date, court.id, slots, idx)) {
-        cell.className += ' seg-break';
-      }
-
-      // Подпись только у первой клетки отрезка, иначе она повторялась бы
-      // в каждой получасовой ячейке подряд.
-      const startsHere = st === 'openplay'
-        ? !sameSessionAsPrev(state.date, court.id, slots, idx)
-        : cellState(state.date, court.id, slots[idx - 1] || '') !== st;
-      if ((st === 'regular' || st === 'closed' || st === 'mine' || st === 'openplay') && startsHere) {
-        const tag = el('span', 'tag');
-        tag.textContent = st === 'openplay' ? openPlayTag(state.date, court.id, slot)
-          : (st === 'regular' ? 'постоянная' : (st === 'closed' ? 'закрыт' : 'вы'));
-        cell.appendChild(tag);
-      }
-
-      // Свободный корт, до которого осталось меньше запаса, выглядит так
-      // же, как уже прошедшее время, — серым и молчащим. Человеку в клубе
-      // в 23:05 это читается как «занято», хотя корт пуст: причина в
-      // правиле клуба, и сказать её надо прямо здесь.
-      // Сейчас запас нулевой, и эта ветка молчит. Оставлена намеренно:
-      // график у клуба сезонный, и запас однажды вернут настройками —
-      // тогда подсказка понадобится снова, без правки страницы.
-      if (st === 'past' && state.config.booking.minLeadMinutes > 0
-          && !busyAt(state.date, court.id, slot)
-          && slotTimestamp(state.date, slot) > Date.now()) {
-        cell.title = 'Запись закрывается за '
-          + hoursText(state.config.booking.minLeadMinutes) + ' до начала. Позвоните в центр.';
-      }
-
-      if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx));
-      else if (st === 'openplay') {
-        // Тренировка — единственное «занято», куда можно попасть:
-        // не очередь на чужую бронь, а запись в состав.
-        cell.title = 'Открытая тренировка — нажмите, чтобы посмотреть состав';
-        cell.addEventListener('click', () => onOpenPlayClick(state.date, court.id, slot));
-      } else if (st === 'busy' || st === 'regular') {
-        cell.title = 'Занято — нажмите, чтобы встать в очередь';
-        cell.addEventListener('click', () => onBusyClick(court.id, slot));
-      }
-
-      grid.appendChild(cell);
+    dates.forEach((date, di) => {
+      courts.forEach((court, ci) => {
+        grid.appendChild(buildCell(date, court, slot, idx, week && di > 0 && ci === 0));
+      });
     });
   });
 
@@ -1792,7 +1910,20 @@ function setPlan(plan) {
   renderPicker();
 }
 
-function onCellClick(courtId, idx) {
+function onCellClick(courtId, idx, date) {
+  // Клик по клетке соседнего дня ленты — это и есть выбор дня: человек
+  // ткнул в четверг, значит дальше он собирает бронь в четверге. Начатый
+  // в другом дне выбор при этом сбрасывается: бронь через полночь между
+  // разными днями всё равно невозможна.
+  if (date && date !== state.date) {
+    state.date = date;
+    state.plan = null;
+    // Сетку перерисовываем сразу, не дожидаясь плана: подсветка дня в
+    // шапке ленты обязана переехать даже тогда, когда бронь не сложилась
+    // и человек увидит отказ.
+    renderDays(); renderSpan(); renderGrid(); renderPicker();
+  }
+
   const p = state.plan;
   const cfg = state.config.booking;
   const minSlots = Math.ceil(cfg.minBookingMinutes / cfg.slotStep);
@@ -2611,9 +2742,18 @@ function homeOpenPlay() {
   return card;
 }
 
-function onBusyClick(courtId, slot) {
-  const block = busyAt(state.date, courtId, slot);
+function onBusyClick(courtId, slot, date) {
+  const day = date || state.date;
+  const block = busyAt(day, courtId, slot);
   if (!block) return;
+  // Очередь ставится на конкретный день, поэтому клик в ленте сначала
+  // переводит выбор на него — иначе человек встал бы в очередь на
+  // сегодня, глядя на субботу.
+  if (day !== state.date) {
+    state.date = day;
+    state.plan = null;
+    renderDays(); renderSpan(); renderGrid(); renderPicker();
+  }
   openWaitlist({ from: block.start, to: block.end });
 }
 
@@ -2956,6 +3096,49 @@ function confirmCancel(g, late) {
 // Профиль
 // ============================================================
 
+// Мяч из фирменного знака — тот же путь, что в assets/favicon.svg, и
+// перерисовывать его от руки нельзя: свой мяч отличался бы от логотипа.
+// Цифра ложится поверх, обводка белым нужна ради швов: без неё «4,5»
+// теряется на лаймовом.
+const BALL_PATH = 'M181.045 0C184.394 0 187.502 1.0345 190.066 2.8013C190.322 2.97743 190.367 3.33292 190.179 3.58018C186.353 8.61986 185.52 13.8544 186.203 18.4514C186.789 22.3943 188.479 25.8112 190.222 28.2442C190.399 28.4919 190.351 28.8383 190.101 29.0118C187.53 30.7934 184.41 31.838 181.045 31.838C177.292 31.838 173.843 30.5382 171.121 28.3654C170.891 28.1816 170.86 27.8469 171.037 27.6114C174.8 22.6015 175.62 17.4053 174.941 12.8377C174.417 9.31011 173.009 6.20321 171.471 3.84523C171.313 3.60341 171.361 3.27922 171.593 3.10761C174.236 1.15434 177.506 0 181.045 0ZM193.253 6.81484C193.461 6.51846 193.895 6.51649 194.103 6.81325C195.906 9.39354 196.964 12.5325 196.964 15.919C196.964 19.2786 195.922 22.3941 194.145 24.9626C193.934 25.2677 193.488 25.2592 193.287 24.9472C192.079 23.0705 190.96 20.5869 190.546 17.806C190.052 14.481 190.55 10.6681 193.253 6.81484ZM167.61 7.37558C167.821 7.04389 168.3 7.06042 168.491 7.40429C169.441 9.11577 170.259 11.1989 170.598 13.4831C171.073 16.6767 170.631 20.32 168.2 24.0173C167.989 24.3383 167.522 24.329 167.327 23.9982C165.929 21.6298 165.126 18.8684 165.126 15.919C165.126 12.7752 166.037 9.84397 167.61 7.37558Z';
+
+function ratingBall(value) {
+  const label = ratingText(value);
+  // Шаг рейтинга — сотые, поэтому в мяч приходит и «5», и «4,55». Размер
+  // подбираем по длине: одним кеглем на все случаи либо мелко у целых,
+  // либо четыре знака вылезают за швы.
+  const size = label.length >= 4 ? 9 : (label.length >= 3 ? 11 : 13);
+  return '<svg class="ball-rating" viewBox="165.126 0 31.838 31.838" role="img" aria-label="Рейтинг ' + label + '">'
+    + '<path d="' + BALL_PATH + '" fill="var(--ball)"/>'
+    + '<text x="181.045" y="16.4" text-anchor="middle" dominant-baseline="central"'
+    + ' font-size="' + size + '" font-weight="700" fill="var(--ball-dk)"'
+    + ' stroke="#fff" stroke-width="' + (size / 5) + '" paint-order="stroke">' + label + '</text>'
+    + '</svg>';
+}
+
+function ratingText(value) {
+  return String(value).replace('.', ',');
+}
+
+// Рейтинг в кабинете: цифра без объяснения пугает, поэтому рядом стоит
+// то, из-за чего она меняется, и порог, ниже которого бронь идёт через
+// администратора.
+function ratingCard(value) {
+  const r = (state.config && state.config.rating) || {};
+  const box = el('div', 'rating-box');
+  const low = r.prepayBelow != null && value <= r.prepayBelow;
+
+  box.innerHTML = ratingBall(value)
+    + '<div class="rating-text"><div class="t1">Клиентский рейтинг</div>'
+    + '<div class="t2">' + (low
+      ? ratingText(r.prepayBelow) + ' и ниже — бронь подтверждает администратор.'
+        + ' Он перезвонит, и за бронь потребуется предоплата.'
+      : 'Состоявшаяся игра поднимает его, неявка и поздняя отмена — опускают.')
+    + '</div></div>';
+  if (low) box.classList.add('low');
+  return box;
+}
+
 function renderProfile() {
   const view = document.getElementById('viewProfile');
   view.innerHTML = '';
@@ -2970,6 +3153,8 @@ function renderProfile() {
     : '<span class="pill bad">доступ закрыт</span>';
   c1.appendChild(html('div', 'item', '<div class="t1">' + escapeHtml(client.name) + ' ' + statusPill + '</div>'
     + '<div class="t2">' + escapeHtml(client.phone) + '</div>'));
+
+  if (client.rating != null) c1.appendChild(ratingCard(client.rating));
 
   const fName = el('label', 'field');
   fName.innerHTML = '<span>Имя и фамилия</span>';
