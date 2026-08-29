@@ -609,7 +609,7 @@ function attachPhoneMask(input) {
 // ---------- Ошибки ----------
 
 const ERRORS = {
-  'slot-taken': 'Это время только что заняли. Выберите другое.',
+  'slot-taken': 'Это время только что заняли. Выберите другое или встаньте в очередь на него.',
   'too-many-active': 'У вас уже две активные брони. Отмените одну, чтобы записаться снова.',
   'not-verified': 'Администратор ещё не подтвердил вашу заявку.',
   'too-many-no-shows': 'Из-за пропущенных броней записывает администратор. Позвоните в центр.',
@@ -2413,12 +2413,19 @@ function startBooking() {
     } catch (e) {
       confirm.disabled = false;
       confirm.textContent = 'Забронировать';
-      toast(errorText(e.code), 4000);
       if (e.code === 'slot-taken') {
+        // Время увели у человека из-под рук, и он уже знает, когда хочет
+        // играть. Отправлять его обратно в сетку искать заново — терять
+        // и его вечер, и наш корт: очередь на это же время стоит здесь
+        // же, одной кнопкой.
+        const taken = { from: info.start, to: info.end };
         closeModal(); setPlan(null);
         await refreshAvailability();
         renderDays(); renderGrid(); renderPicker();
+        openSlotTaken(taken);
+        return;
       }
+      toast(errorText(e.code), 4000);
     }
   });
   acts.appendChild(confirm);
@@ -2667,6 +2674,32 @@ function onBusyClick(courtId, slot, date) {
 // Очередь ставится на «сколько времени и в каком промежутке», а не на
 // конкретную чужую бронь. Иначе освободившийся соседний слот прошёл бы
 // мимо человека, который его с радостью бы взял.
+// Отказ «время только что заняли» — единственный случай, когда человек
+// уже сделал всё правильно и всё равно остался ни с чем. Поэтому не
+// тост, который исчезнет через четыре секунды, а окно с выбором: искать
+// дальше или занять очередь на это же время.
+function openSlotTaken(taken) {
+  const body = el('div');
+  body.innerHTML = '<h3>Это время только что заняли</h3>'
+    + '<div class="m-sub">' + escapeHtml(fmtRange(taken.from, taken.to))
+    + ' — кто-то успел на секунды раньше. Оба корта в это время уже заняты.</div>';
+
+  const note = el('div', 'notice info');
+  note.textContent = 'Встанете в очередь — бот напишет первым, если это время освободится.';
+  note.style.margin = '0 0 14px';
+  body.appendChild(note);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Встать в очередь', 'btn', () => {
+    closeModal();
+    openWaitlist(taken);
+  }));
+  acts.appendChild(btn('Выбрать другое время', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
 function openWaitlist(prefill) {
   if (!state.auth || !state.auth.client) { openAuth('login'); return; }
 
