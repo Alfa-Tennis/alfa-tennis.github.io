@@ -197,6 +197,18 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
   background: var(--sct); border: 2px solid var(--sc); box-shadow: inset 0 0 0 2px #fff; }
 .swatch.on { box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--ink); }
 .blk.done { border-left-color: #9aa7a0; background: #E3E7E5; color: var(--ink-soft); }
+
+/* Перетаскивание. Курсор-крестик обещает возможность заранее — иначе о
+   ней никто не узнает, а прежний диалог никуда не делся. */
+.blk.movable { cursor: grab; }
+.blk.movable:active { cursor: grabbing; }
+.blk.dragging { opacity: .35; }
+/* Призрак в целевой клетке: показывает и куда встанет бронь, и что
+   именно там окажется — время и корт подписаны прямо в нём. */
+.blk.drag-ghost { pointer-events: none; z-index: 8; display: flex; align-items: center; justify-content: center;
+  border: 2px dashed var(--accent); border-left-width: 2px; background: var(--accent-tint);
+  color: var(--accent); font-weight: 600; font-size: 12px; text-align: center; }
+.blk.drag-ghost.bad { border-color: var(--danger); background: var(--danger-tint); color: var(--danger); }
 .blk.noshow { border-left-color: var(--danger); background: var(--danger-tint); }
 .blk.closed { border-left-color: #7b857f; background: repeating-linear-gradient(45deg, #cdd5d1 0 6px, #bfc9c4 6px 12px); }
 
@@ -1103,8 +1115,8 @@ function renderDay(view) {
     view.appendChild(card);
 
     view.appendChild(txt('div', 'empty',
-      'Лента листается вбок. Клетка и бронь работают так же, как в дне; '
-      + 'лист ожидания и итоги показываются в режиме дня.'));
+      'Лента листается вбок. Клетка и бронь работают так же, как в дне, и бронь так же '
+      + 'перетаскивается — но только внутри своего дня. Лист ожидания и итоги показываются в режиме дня.'));
     return;
   }
 
@@ -1132,7 +1144,8 @@ function renderDay(view) {
   view.appendChild(card);
 
   const hint = el('div', 'empty');
-  hint.textContent = 'Нажмите на свободную клетку, чтобы записать клиента, или на бронь — чтобы изменить её.';
+  hint.textContent = 'Нажмите на свободную клетку, чтобы записать клиента, или на бронь — чтобы изменить её. '
+    + 'Бронь можно перетащить мышью на другое время или корт; с телефона — задержать палец на ней и вести.';
   view.appendChild(hint);
 
   renderWaiting(view, date);
@@ -1166,6 +1179,191 @@ function renderWaiting(view, date) {
     'Когда время освобождается, бот пишет им первым — и только через полчаса объявление '
     + 'уходит в чат центра.'));
   view.appendChild(card);
+}
+
+// ============================================================
+// Перетаскивание броней по сетке
+// ============================================================
+//
+// Диалог «Перенести» никуда не делся — он остаётся для тех, кому удобнее
+// выбрать время списком, и для случаев, когда цель не видна на экране.
+// Но обычный перенос — это «сдвинуть на полчаса» или «переставить на
+// соседний корт», и списком он занимает четыре действия вместо одного.
+//
+// Двигаются только настоящие брони: у постоянной нет своей записи в дне
+// (она разворачивается на лету), у закрытия и тренировки перенос значит
+// не то же самое — там своя карточка и свои уведомления.
+function isMovable(b) {
+  return !!b.booking && !b.openPlay && !b.seriesId && !b.exception
+    && b.status !== 'cancelled' && b.status !== 'noshow';
+}
+
+// Порог, после которого нажатие превращается в перенос. Мышь трогается
+// с места сразу, палец — только после удержания: иначе любая попытка
+// прокрутить сетку пальцем по броне уносила бы её с собой.
+const DRAG_SLOP = 5;
+const TOUCH_HOLD_MS = 400;
+
+let drag = null;
+
+// Блокировать прокрутку во время переноса пальцем приходится здесь:
+// touch-action на самом блоке отнял бы прокрутку и у обычного касания,
+// а её на плотном дне не отнимешь — сетка длиннее экрана.
+document.addEventListener('touchmove', (e) => {
+  if (drag && drag.active) e.preventDefault();
+}, { passive: false });
+
+function dragGeometry(grid) {
+  const rect = grid.getBoundingClientRect();
+  const heads = [...grid.querySelectorAll('.g-head')];
+  const headBottom = heads.length ? heads[0].getBoundingClientRect().bottom : rect.top;
+  const timeCol = grid.querySelector('.g-time');
+  const timeW = timeCol ? timeCol.getBoundingClientRect().width : 58;
+  const rowH = timeCol ? timeCol.getBoundingClientRect().height : 32;
+  return { rect, headBottom, timeW, rowH };
+}
+
+// Куда указывает палец: номер колонки (день × корт) и строка сетки.
+// Считаем арифметикой, а не поиском элемента под курсором: под самим
+// блоком клеток нет, и elementFromPoint вернул бы его самого.
+function dragTarget(evt, ctx) {
+  const g = dragGeometry(ctx.grid);
+  const colW = (g.rect.width - g.timeW) / (ctx.dates.length * db.courts.length);
+  const col = Math.floor((evt.clientX - g.rect.left - g.timeW) / colW);
+  const row = Math.floor((evt.clientY - g.headBottom) / g.rowH);
+  if (col < 0 || col >= ctx.dates.length * db.courts.length) return null;
+
+  const dayIdx = Math.floor(col / db.courts.length);
+  const courtIdx = col % db.courts.length;
+  const open = timeToMinutes(db.config.openTime);
+  const rows = (timeToMinutes(db.config.closeTime) - open) / db.config.slotStep;
+  const clamped = Math.max(0, Math.min(rows - ctx.spanRows, row));
+
+  return {
+    date: ctx.dates[dayIdx],
+    courtId: db.courts[courtIdx].id,
+    start: minutesToTime(open + clamped * db.config.slotStep),
+    row: clamped,
+    col,
+  };
+}
+
+function startDrag(evt, block, b, ctx) {
+  drag.active = true;
+  block.classList.add('dragging');
+
+  const ghost = el('div', 'blk drag-ghost');
+  ghost.textContent = fmtRange(b.start, b.end);
+  ctx.grid.appendChild(ghost);
+  drag.ghost = ghost;
+  drag.block = block;
+  moveGhost(evt, b, ctx);
+}
+
+function moveGhost(evt, b, ctx) {
+  const t = dragTarget(evt, ctx);
+  if (!t) return;
+  drag.target = t;
+
+  const courtIdx = db.courts.findIndex(c => c.id === t.courtId);
+  const dayIdx = ctx.dates.indexOf(t.date);
+  const headRows = ctx.dates.length > 1 ? 3 : 2;
+  drag.ghost.style.gridArea = (t.row + headRows) + ' / '
+    + (2 + dayIdx * db.courts.length + courtIdx) + ' / span ' + ctx.spanRows;
+  // Перенос между днями невозможен: бронь лежит в файле своего дня, и
+  // записать два файла разом атомарно нельзя. Показываем это заранее,
+  // а не отказом после отпускания.
+  const wrongDay = t.date !== b.date;
+  drag.ghost.classList.toggle('bad', wrongDay);
+  drag.ghost.textContent = wrongDay
+    ? 'только внутри дня'
+    : fmtTime(t.start) + ' · ' + courtName(t.courtId);
+}
+
+function endDrag(b, ctx) {
+  const t = drag && drag.target;
+  const moved = drag && drag.active;
+  if (drag) {
+    if (drag.ghost) drag.ghost.remove();
+    if (drag.block) drag.block.classList.remove('dragging');
+    clearTimeout(drag.holdTimer);
+  }
+  drag = null;
+  if (!moved || !t) return false;
+
+  if (t.date !== b.date) { toast('Перенести можно только внутри дня'); return true; }
+  if (t.courtId === b.courtId && t.start === b.start) return true;
+
+  act(() => api('adminMoveBooking', {
+    date: b.date,
+    bookingId: (b.booking || b).id,
+    start: t.start,
+    courtId: t.courtId,
+    exactCourt: true,
+  }), 'Бронь перенесена на ' + fmtTime(t.start) + ', ' + courtName(t.courtId));
+  return true;
+}
+
+// Вешается на каждый блок сетки — и дневной, и недельной.
+function makeDraggable(block, b, ctx) {
+  if (!isMovable(b)) return;
+  block.classList.add('movable');
+
+  block.addEventListener('pointerdown', (evt) => {
+    if (evt.button != null && evt.button !== 0) return;
+    const span = (timeToMinutes(b.end) - timeToMinutes(b.start)) / db.config.slotStep;
+    drag = {
+      id: (b.booking || b).id, x: evt.clientX, y: evt.clientY,
+      active: false, touch: evt.pointerType === 'touch',
+      ctx: Object.assign({ spanRows: span }, ctx),
+    };
+    // Захват указателя нужен, чтобы события шли в блок, даже когда палец
+    // ушёл на соседний корт. Не во всех браузерах он доступен, и без
+    // него перенос всё равно работает — просто чувствительнее к выходу
+    // за границы.
+    try { block.setPointerCapture(evt.pointerId); } catch (e) { /* обойдёмся */ }
+
+    if (drag.touch) {
+      drag.holdTimer = setTimeout(() => {
+        if (drag) {
+          startDrag(evt, block, b, drag.ctx);
+          if (navigator.vibrate) navigator.vibrate(10);
+        }
+      }, TOUCH_HOLD_MS);
+    }
+  });
+
+  block.addEventListener('pointermove', (evt) => {
+    if (!drag || drag.id !== (b.booking || b).id) return;
+    const far = Math.abs(evt.clientX - drag.x) > DRAG_SLOP || Math.abs(evt.clientY - drag.y) > DRAG_SLOP;
+
+    // Палец уехал раньше, чем сработало удержание, — это прокрутка, а не
+    // перенос: отпускаем блок и не мешаем.
+    if (drag.touch && !drag.active) {
+      if (far) { clearTimeout(drag.holdTimer); drag = null; }
+      return;
+    }
+    if (!drag.active) {
+      if (!far) return;
+      startDrag(evt, block, b, drag.ctx);
+    }
+    moveGhost(evt, b, drag.ctx);
+  });
+
+  block.addEventListener('pointerup', () => {
+    if (!drag || drag.id !== (b.booking || b).id) return;
+    // Перенос состоялся — значит это не клик, и карточку открывать не
+    // надо. Флаг снимает обработчик ниже, он же гасит само событие.
+    if (endDrag(b, drag.ctx)) block.dataset.justDragged = '1';
+  });
+  block.addEventListener('pointercancel', () => { if (drag) endDrag(b, drag.ctx); });
+
+  block.addEventListener('click', (evt) => {
+    if (block.dataset.justDragged !== '1') return;
+    block.dataset.justDragged = '';
+    evt.stopImmediatePropagation();
+    evt.preventDefault();
+  }, true);
 }
 
 // Неделя целиком: колонки — день × корт, прокрутка вбок внутри карточки.
@@ -1230,6 +1428,7 @@ function buildWeekGrid(dates) {
         + ((to - from) >= 3 ? '<div class="b-n">' + escapeHtml(b.clientName) + '</div>' : '');
       div.title = fmtRange(b.start, b.end) + ' · ' + b.clientName;
       div.addEventListener('click', () => openBlock(b));
+      makeDraggable(div, b, { grid, dates });
       grid.appendChild(div);
     });
 
@@ -1301,6 +1500,7 @@ function buildDayGrid(date, blocks) {
       + (b.kind === 'openplay' && b.openPlay && (to - from) >= 3 && signupNames(b.openPlay)
         ? '<div class="b-x">' + escapeHtml(signupNames(b.openPlay)) + '</div>' : '');
     div.addEventListener('click', () => openBlock(b));
+    makeDraggable(div, b, { grid, dates: [date] });
     grid.appendChild(div);
   });
 
