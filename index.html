@@ -644,6 +644,9 @@ const ERRORS = {
   'duration-too-short': 'Минимальная бронь — 1 час.',
   'window-too-short': 'Промежуток короче, чем нужное время. Расширьте его.',
   'outside-hours': 'Это время за пределами работы центра.',
+  'move-limit': 'Эту бронь уже переносили максимальное число раз. Отмените и запишитесь заново.',
+  'move-too-late': 'До игры осталось меньше часа — перенести уже нельзя.',
+  'not-movable': 'Эту бронь перенести нельзя.',
   'openplay-not-found': 'Тренировка не найдена — обновите страницу.',
   'openplay-cancelled': 'Эта тренировка отменена.',
   'signups-closed': 'Набор закрыт. Позвоните в центр, если хотите попасть.',
@@ -2997,11 +3000,115 @@ function bookingItem(g, isPast) {
       acts.appendChild(txt('div', 't3',
         'Срок отмены без потери клиентского рейтинга прошёл. Отменить всё ещё можно, но рейтинг снизится.'));
     }
+    // Перенос — не отмена: рейтинг он не трогает вовсе. Кнопка стоит
+    // первой, потому что «сдвинуть на полчаса» люди хотят чаще, чем
+    // отменить совсем, и раньше ради этого звонили администратору.
+    if (g.movable) acts.appendChild(btn('Изменить время', 'btn sm', () => openMoveBooking(g)));
     acts.appendChild(btn('Отменить', 'btn sm sec', () => confirmCancel(g, late)));
     it.appendChild(acts);
   }
 
   return it;
+}
+
+// Перенос своей брони. Жестов здесь нет намеренно: в сетке легко задеть
+// чужое время пальцем и увезти игру, а исправлять это будет
+// администратор. Список времён — скучно и надёжно.
+function openMoveBooking(g) {
+  const cfg = state.config.booking;
+  const minutes = timeToMinutes(g.end) - timeToMinutes(g.start);
+  const need = minutes / cfg.slotStep;
+  const leadMs = (cfg.moveLeadMinutes || 60) * 60000;
+
+  // Своя же бронь не должна мешать себе при сдвиге на полчаса — иначе
+  // соседнее время выглядит занятым ею самой.
+  const grid = state.data.slots.map(slot =>
+    state.config.courts.filter(c => {
+      if (cellState(g.date, c.id, slot) === 'free') return true;
+      const mine = myBookingAt(g.date, c.id, slot);
+      return !!(mine && (mine.group.key === g.key || mine.group.id === g.id));
+    }).map(c => c.id));
+
+  const options = [];
+  state.data.slots.forEach((slot, idx) => {
+    if (idx + need - 1 >= state.data.slots.length) return;
+    if (slotTimestamp(g.date, slot) < Date.now() + leadMs) return;
+    if (slot === g.start) return;
+    const plan = planBooking(g.date, grid, idx, idx + need - 1, { preferCourtId: g.segments[0].courtId });
+    if (plan) options.push({ slot, plan });
+  });
+
+  const body = el('div');
+  body.innerHTML = '<h3>Изменить время</h3>'
+    + '<div class="m-sub">' + escapeHtml(dayLabelLong(g.date, state.mine.today)
+      + ' · сейчас ' + fmtRange(g.start, g.end)) + '</div>';
+
+  if (!options.length) {
+    body.appendChild(txt('div', 'empty',
+      'Свободного времени такой длины в этот день не осталось. На другой день — отмените бронь и запишитесь заново.'));
+    const acts0 = el('div', 'm-acts');
+    acts0.appendChild(btn('Закрыть', 'btn sec', closeModal));
+    body.appendChild(acts0);
+    showModal(body);
+    return;
+  }
+
+  let picked = null;
+  const opts = el('div', 'opts');
+  options.forEach(o => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'opt';
+    const courts = o.plan.segments.map(s => {
+      const c = state.config.courts.find(x => x.id === s.courtId);
+      return c ? c.name : 'Корт';
+    });
+    b.innerHTML = '<span class="o-time">' + escapeHtml(fmtTime(o.slot)) + '</span>'
+      + '<span class="o-court">' + escapeHtml([...new Set(courts)].join(' → ')) + '</span>';
+    b.addEventListener('click', () => {
+      picked = o;
+      [...opts.children].forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      move.disabled = false;
+    });
+    opts.appendChild(b);
+  });
+  body.appendChild(opts);
+
+  // Два предупреждения, которые человек должен прочитать до нажатия:
+  // перенос ничего не стоит, но и не обнуляет дедлайн отмены.
+  const note = el('div', 'notice info');
+  note.innerHTML = '<b>Перенос не влияет на рейтинг.</b> Осталось переносов: '
+    + (g.movesLeft != null ? g.movesLeft : cfg.maxMovesPerBooking)
+    + '. Бесплатная отмена по-прежнему считается от первоначального времени'
+    + (g.originalStart ? ' — ' + escapeHtml(fmtTime(g.originalStart)) : '') + '.';
+  note.style.margin = '12px 0 0';
+  body.appendChild(note);
+
+  const acts = el('div', 'm-acts');
+  const move = btn('Перенести', 'btn', async () => {
+    if (!picked) return;
+    move.disabled = true;
+    move.textContent = 'Переносим…';
+    try {
+      await api('moveBooking', { date: g.date, bookingId: g.id, start: picked.slot });
+      closeModal();
+      await refreshAvailability();
+      await refreshMine();
+      renderDays(); renderGrid(); renderPicker(); renderMine();
+      toast('Время изменено на ' + fmtTime(picked.slot), 3600);
+    } catch (e) {
+      move.disabled = false;
+      move.textContent = 'Перенести';
+      toast(errorText(e.code), 4000);
+    }
+  });
+  move.disabled = true;
+  acts.appendChild(move);
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  showModal(body);
 }
 
 function confirmCancel(g, late) {

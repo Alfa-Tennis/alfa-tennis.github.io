@@ -1773,11 +1773,13 @@ function openSeriesOccurrence(b) {
   body.appendChild(info);
 
   const acts = el('div', 'm-acts');
-  // Снятое занятие освобождает время, которого в сетке обычно не бывает.
-  // Автопоста в чат клуба пока нет — и обещать его тостом нельзя.
+  // Снятое занятие освобождает время, которого в сетке обычно не бывает,
+  // — и уходит объявлением: сначала тем, кто стоит в очереди, потом в
+  // чат центра.
   acts.appendChild(btn('Снять это занятие', 'btn danger', () => {
     closeModal();
-    act(() => api('adminSkipSeries', { seriesId: s.id, date: b.date }), 'Занятие снято, время свободно');
+    act(() => api('adminSkipSeries', { seriesId: s.id, date: b.date }),
+      'Занятие снято, время свободно — объявление уйдёт в чат');
   }));
   acts.appendChild(btn('Записать вместо них', 'btn sec', async () => {
     closeModal();
