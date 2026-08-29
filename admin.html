@@ -133,8 +133,11 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .g-free.past { background: #f7f8f7; cursor: default; }
 .g-free.past:hover { background: #f7f8f7; }
 
+/* Заливки заметно плотнее прежних пастельных: на дешёвой матрице и при
+   боковом взгляде занятые клетки сливались с белой сеткой, и день
+   читался как пустой. Полоса слева тоже шире — она несёт цвет серии. */
 .blk { border-radius: 8px; margin: 1px 3px; padding: 4px 7px; overflow: hidden; cursor: pointer;
-  font-size: 12px; line-height: 1.25; border-left: 3px solid var(--accent); background: var(--accent-tint); }
+  font-size: 12px; line-height: 1.25; border-left: 4px solid var(--accent); background: #DCEAF8; }
 .blk:hover { filter: brightness(.97); }
 .blk .b-t { font-weight: 600; }
 .blk .b-n { color: var(--ink-soft); }
@@ -142,7 +145,7 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
    приходиться открывать вкладку и искать окно в списке. */
 .blk .b-x { color: var(--ink-soft); font-size: 12px; line-height: 1.35; margin-top: 2px; }
 .blk.pending { border-left-color: var(--warn); background: var(--warn-tint); }
-.blk.series { border-left-color: var(--grass); background: var(--grass-tint); }
+.blk.series { border-left-color: var(--grass); background: #DFEACB; }
 /* Открытая тренировка — не чужая бронь: на неё ещё идёт набор, и
    отличать её в сетке взглядом важнее, чем экономить один цвет. */
 .blk.openplay { border-left-color: var(--ball-dk); background: var(--ball-tint); }
@@ -150,22 +153,22 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
    произвольная палитра рано или поздно даёт жёлтое по жёлтому или цвет,
    неотличимый от «закрыто на техработы». Два тона на цвет: полоса слева
    и заливка. Гостю на сайте цвета не показываются вовсе. */
-.c-grass { --sc: #5C752F; --sct: #EDF3E2; }
-.c-court { --sc: #3F6CA3; --sct: #E8F0F9; }
-.c-gold  { --sc: #B08900; --sct: #FBF2D4; }
-.c-plum  { --sc: #7A4E7F; --sct: #F2E9F3; }
-.c-coral { --sc: #B0503C; --sct: #FAE9E5; }
-.c-teal  { --sc: #2F7268; --sct: #E4F0EE; }
-.c-slate { --sc: #5A6570; --sct: #EDEFF1; }
+.c-grass { --sc: #5C752F; --sct: #D3E3B5; }
+.c-court { --sc: #3F6CA3; --sct: #C4D9F0; }
+.c-gold  { --sc: #B08900; --sct: #F4DF97; }
+.c-plum  { --sc: #7A4E7F; --sct: #DDC7E0; }
+.c-coral { --sc: #B0503C; --sct: #F0C7BC; }
+.c-teal  { --sc: #2F7268; --sct: #BFDBD6; }
+.c-slate { --sc: #5A6570; --sct: #CDD5DA; }
 .blk.series[class*=" c-"] { border-left-color: var(--sc); background: var(--sct); }
 
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .swatch { width: 30px; height: 30px; border-radius: 8px; cursor: pointer; padding: 0;
   background: var(--sct); border: 2px solid var(--sc); box-shadow: inset 0 0 0 2px #fff; }
 .swatch.on { box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--ink); }
-.blk.done { border-left-color: #9aa7a0; background: #f0f2f1; color: var(--ink-soft); }
+.blk.done { border-left-color: #9aa7a0; background: #E3E7E5; color: var(--ink-soft); }
 .blk.noshow { border-left-color: var(--danger); background: var(--danger-tint); }
-.blk.closed { border-left-color: #7b857f; background: repeating-linear-gradient(45deg, #e4e8e6 0 6px, #dae0dd 6px 12px); }
+.blk.closed { border-left-color: #7b857f; background: repeating-linear-gradient(45deg, #cdd5d1 0 6px, #bfc9c4 6px 12px); }
 
 /* ---------- Списки ---------- */
 .item { border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; margin-bottom: 8px; }
@@ -253,7 +256,7 @@ table.tbl td { padding: 8px; border-bottom: 1px solid #eef1ef; }
     <h1>Панель администратора</h1>
     <p class="who">Теннисный центр «Альфа»</p>
     <div class="login-note" id="loginNote">
-      Вход для администратора и владельца клуба.
+      Вход для администратора и владельца центра.
     </div>
     <input class="inp" id="loginPhone" type="tel" inputmode="tel" autocomplete="username"
            placeholder="+7 (___) ___-__-__" style="width:100%;margin-bottom:8px">
@@ -347,18 +350,18 @@ const ERRORS = {
   'already-cancelled': 'Бронь уже отменена.',
   'booking-not-found': 'Бронь не найдена — возможно, её только что изменили.',
   'client-not-found': 'Клиент не найден.',
-  'outside-hours': 'Время выходит за часы работы клуба.',
+  'outside-hours': 'Время выходит за часы работы центра.',
   'invalid-name': 'Укажите имя и фамилию.',
   'invalid-phone': 'Проверьте номер телефона.',
   'invalid-duration': 'Длительность не по шагу сетки.',
   'invalid-time': 'Время не по шагу сетки.',
   'not-movable': 'Такую бронь перенести нельзя.',
   'staff-reset-owner-only': 'Пароль администратору или владельцу может сбросить только владелец.',
-  'owner-only': 'Это может только владелец клуба.',
+  'owner-only': 'Это может только владелец центра.',
   'reason-required': 'Напишите причину — она останется в карточке клиента.',
   'invalid-rating': 'Рейтинг — от 0 до 5 с шагом в половину балла.',
   'invalid-role': 'Такой роли нет.',
-  'own-role': 'Снять роль с самого себя нельзя — клуб останется без владельца.',
+  'own-role': 'Снять роль с самого себя нельзя — центр останется без владельца.',
   'owner-role-immutable': 'Роль владельца через панель не меняется.',
   'client-not-verified': 'Сначала подтвердите клиента: администратором становится только проверенный.',
   'invalid-date': 'Проверьте дату.',
@@ -378,7 +381,7 @@ const ERRORS = {
   'not-an-occurrence': 'В этот день занятия нет.',
   'exception-not-found': 'Закрытие не найдено — возможно, его только что сняли.',
   'invalid-rule': 'Проверьте скидочное окно: часы и цену.',
-  'rule-outside-hours': 'Окно выходит за часы работы клуба.',
+  'rule-outside-hours': 'Окно выходит за часы работы центра.',
   'invalid-month': 'Этот месяц ещё не наступил.',
   'reminders-order': 'Второе напоминание должно приходить позже первого.',
   'court-not-found': 'Корт не найден — обновите страницу.',
@@ -1024,8 +1027,8 @@ function renderWaiting(view, date) {
     });
 
   card.appendChild(txt('div', 'empty',
-    'Когда время освобождается, бот пишет им первым — и только через четверть часа объявление '
-    + 'уходит в чат клуба.'));
+    'Когда время освобождается, бот пишет им первым — и только через полчаса объявление '
+    + 'уходит в чат центра.'));
   view.appendChild(card);
 }
 
@@ -1937,7 +1940,7 @@ function renderSeries(view) {
     + 'раз смотрит, попадает ли день в её расписание. Поэтому снятое занятие сразу освобождает '
     + 'корт, а завершают бронь датой — занятия до неё остаются в истории такими, какими были.'
     + '<br><br>Снятое занятие уходит объявлением: сначала молча тем, кто ждёт это время, '
-    + 'через четверть часа — постом в чат клуба. Чат выбирается во вкладке «Настройки»; '
+    + 'через полчаса — постом в чат центра. Чат выбирается во вкладке «Настройки»; '
     + 'пока он не выбран, объявления не уходят никуда.</div>';
   view.appendChild(note);
 }
@@ -2053,7 +2056,7 @@ function clientPicker(parent, initialId) {
   const current = clientById(initialId);
   input.value = current ? current.name : '';
   input.placeholder = 'Имя или телефон — необязательно';
-  wrapField(parent, 'Клиент клуба', input);
+  wrapField(parent, 'Клиент центра', input);
 
   const results = el('div');
   parent.appendChild(results);
@@ -2208,10 +2211,10 @@ function showNtrpProposals(res) {
 
   const sum = el('div', 'item');
   sum.innerHTML = '<div class="t1">Всего в файле: ' + s.total + '</div>'
-    + '<div class="t2">Совпало с клиентами клуба: <b>' + s.match + '</b>'
+    + '<div class="t2">Совпало с клиентами центра: <b>' + s.match + '</b>'
     + ' · уже стоит такой уровень: ' + s.same
     + ' · требуют решения: ' + s.ambiguous
-    + ' · нет в клубе: ' + s.unknown + '</div>';
+    + ' · нет в центре: ' + s.unknown + '</div>';
   body.appendChild(sum);
 
   const ready = res.proposals.filter(p => p.status === 'match' && !p.same);
@@ -2222,7 +2225,7 @@ function showNtrpProposals(res) {
 
   if (!ready.length) {
     body.appendChild(txt('div', 'empty',
-      'Ставить нечего: совпавших с клубом строк нет или уровни уже проставлены.'));
+      'Ставить нечего: совпавших с центром строк нет или уровни уже проставлены.'));
   } else {
     body.appendChild(txt('div', 'section-title', 'Поставим уровень'));
     ready.forEach(p => {
@@ -2498,7 +2501,7 @@ function openSessionForm(session, preset) {
 
   const fNote = el('label', 'field'); fNote.innerHTML = '<span>Примечание для игроков</span>';
   const inpNote = document.createElement('input');
-  inpNote.placeholder = 'Например: с тренером, мячи клуба';
+  inpNote.placeholder = 'Например: с тренером, мячи центра';
   inpNote.value = op ? op.note : '';
   fNote.appendChild(inpNote); body.appendChild(fNote);
 
@@ -2790,7 +2793,7 @@ function renderNews(view) {
   }
 
   if (!db.news.enabled) {
-    card.appendChild(txt('div', 'empty', 'Сбор новостей выключен в настройках клуба.'));
+    card.appendChild(txt('div', 'empty', 'Сбор новостей выключен в настройках центра.'));
   }
 
   if (!db.news.news.length) {
@@ -2868,7 +2871,7 @@ function openEventForm(existing) {
 
   const title = document.createElement('input');
   title.value = existing ? existing.title : '';
-  title.placeholder = 'Например: Кубок клуба «Альфа»';
+  title.placeholder = 'Например: Кубок «Альфа»';
   wrapField(body, 'Название', title);
 
   const cat = document.createElement('select');
@@ -3027,6 +3030,15 @@ function openCatalogForm(existing) {
   priceNote.placeholder = 'например: за штуку, от';
   wrapField(body, 'Приписка к цене — необязательно', priceNote);
 
+  // Свой телефон позиции: у натяжки записывает стрингер, а не
+  // администратор, и звонок в центр человека только развернёт. Пусто —
+  // кнопки «Позвонить» на витрине не будет, останется заявка.
+  const contactPhone = document.createElement('input');
+  contactPhone.type = 'tel';
+  contactPhone.value = existing ? (existing.contactPhone || '') : '';
+  contactPhone.placeholder = '+7 961 515-70-11';
+  wrapField(body, 'Телефон для записи — необязательно', contactPhone);
+
   // Варианты цены нужны стрингеру: перетяжка для своих, для сторонних и
   // срочная — это три цены одной услуги, а не три услуги.
   const optionsWrap = el('div');
@@ -3114,6 +3126,7 @@ function openCatalogForm(existing) {
       description: desc.value,
       price: price.value === '' ? null : Number(price.value),
       priceNote: priceNote.value,
+      contactPhone: contactPhone.value,
       options: readOptionRows(rows),
       question: {
         name: qName.value,
@@ -3140,7 +3153,7 @@ function openCatalogForm(existing) {
 function addOptionRow(wrap, option) {
   const row = el('div', 'opt-row');
   const name = document.createElement('input');
-  name.placeholder = 'Например: для клиентов клуба';
+  name.placeholder = 'Например: для клиентов центра';
   name.value = option ? option.name : '';
   const price = document.createElement('input');
   price.type = 'number'; price.min = '0'; price.step = '50';
@@ -3246,7 +3259,7 @@ function renderStats(view) {
   [
     [money2(s.money.revenue), 'начислено за месяц'],
     [money2(s.money.courts), 'корты'],
-    [money2(s.money.extras), 'прокат'],
+    [money2(s.money.extras), 'аренда'],
     [money2(s.money.lost), 'потеряно на неявках'],
   ].forEach(([v, l]) => {
     const k = el('div', 'kpi');
@@ -3427,7 +3440,7 @@ function renderSettings(view) {
   const owner = !!(me && me.role === 'owner');
 
   const c1 = el('div', 'card');
-  c1.innerHTML = '<h2>Как настроен клуб</h2>';
+  c1.innerHTML = '<h2>Как настроен центр</h2>';
   view.appendChild(c1);
 
   if (owner) renderSettingsForm(c1, cfg);
@@ -3438,7 +3451,7 @@ function renderSettings(view) {
       ['Шаг сетки', cfg.slotStep + ' мин'],
       ['Минимальная бронь', hoursText(cfg.minBookingMinutes)],
       ['Подтверждать брони от', hoursText(cfg.approvalFromMinutes)],
-      ['Отмена без потери рейтинга не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
+      ['Отмена без потери клиентского рейтинга не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
       ['…и всегда в первые', (cfg.cancelGraceMinutes || 0) + ' мин после брони'],
       ['Активных броней на клиента', String(cfg.maxActiveBookingsPerClient)],
       ['Запись открыта на', cfg.horizonDays + ' дн.'],
@@ -3479,8 +3492,8 @@ function renderSettingsForm(card, cfg) {
 
   // Часы — выбором из сетки, а не строкой: «до часу ночи» внутри живёт
   // как 25:00, и вводить это руками владелец не должен.
-  const open = timeSelect(card, 'Клуб открывается', cfg.openTime, 0, 12 * 60);
-  const close = timeSelect(card, 'Клуб закрывается', cfg.closeTime, 18 * 60, 30 * 60);
+  const open = timeSelect(card, 'Центр открывается', cfg.openTime, 0, 12 * 60);
+  const close = timeSelect(card, 'Центр закрывается', cfg.closeTime, 18 * 60, 30 * 60);
 
   const quick = el('div', 'acts');
   quick.appendChild(txt('span', 't2', 'Обычные варианты:'));
@@ -3497,7 +3510,7 @@ function renderSettingsForm(card, cfg) {
   // штрафа нет, дальше рейтинг бережёт только заблаговременность. Без
   // первого поля вечернюю бронь, заведённую уже за дедлайном, нельзя
   // было снять без потери рейтинга даже через минуту.
-  const cancelM = numField(card, 'Отмена без потери рейтинга в первые, мин после брони',
+  const cancelM = numField(card, 'Отмена без потери клиентского рейтинга в первые, мин после брони',
     cfg.cancelGraceMinutes == null ? 30 : cfg.cancelGraceMinutes);
   const cancelH = numField(card, '…и не позднее чем за, ч до игры', cfg.cancelDeadlineHours);
   const maxActive = numField(card, 'Активных броней на клиента', cfg.maxActiveBookingsPerClient);
@@ -3691,7 +3704,7 @@ function renderReminders(view) {
 // и что-то видел: числовой id группы владельцу взять неоткуда.
 function renderAnnounceChat(view) {
   const card = el('div', 'card');
-  card.innerHTML = '<h2>Чат клуба <span class="sub">объявления и новости</span></h2>';
+  card.innerHTML = '<h2>Чат центра <span class="sub">объявления и новости</span></h2>';
   view.appendChild(card);
 
   if (!db.chats) {
@@ -3701,7 +3714,7 @@ function renderAnnounceChat(view) {
 
   if (!db.chats.chats.length) {
     card.appendChild(txt('div', 'empty',
-      'Бот пока не видел ни одной группы. Добавьте его в чат клуба администратором и '
+      'Бот пока не видел ни одной группы. Добавьте его в чат центра администратором и '
       + 'напишите там что-нибудь — группа появится в этом списке в течение минуты.'));
     return;
   }
@@ -3827,7 +3840,7 @@ function openRuleForm(existing, preset) {
   const source = existing || preset || {};
   const body = el('div');
   body.innerHTML = '<h3>' + (existing ? 'Правка скидочного окна' : 'Новое скидочное окно') + '</h3>'
-    + '<div class="m-sub">Базовая цена клуба — ' + escapeHtml(money(cfg.pricePerHour)) + ' за час.</div>';
+    + '<div class="m-sub">Базовая цена центра — ' + escapeHtml(money(cfg.pricePerHour)) + ' за час.</div>';
 
   const label = document.createElement('input');
   label.value = source.label || '';
@@ -3959,7 +3972,7 @@ function openExceptionForm(existing) {
   body.appendChild(check('Весь день', wholeDay.on, v => {
     wholeDay.on = v;
     times.hidden = v;
-  }, 'Так задаётся выходной клуба целиком.'));
+  }, 'Так задаётся выходной центра целиком.'));
   times.hidden = wholeDay.on;
   body.appendChild(times);
 
@@ -4048,7 +4061,7 @@ function confirmDemote(s) {
   body.innerHTML = '<h3>Снять роль администратора?</h3>'
     + '<div class="m-sub">' + escapeHtml(s.name + ' · ' + fmtPhone(s.phone)) + '</div>'
     + '<div class="empty">Панель и телефоны клиентов закроются сразу. Учётная запись, '
-    + 'привязанный Telegram и история броней останутся — человек станет обычным клиентом клуба.</div>';
+    + 'привязанный Telegram и история броней останутся — человек станет обычным клиентом центра.</div>';
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   acts.appendChild(btn('Снять роль', 'btn danger', () => {

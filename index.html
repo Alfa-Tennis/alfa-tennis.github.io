@@ -114,7 +114,10 @@ input, select, textarea { font: inherit; color: inherit; }
 .nav .dot { background: var(--ball); color: #2C3A08; border-radius: 999px; font-size: 11px; padding: 1px 6px; margin-left: 5px; font-weight: 600; }
 
 main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
-.section-title { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 22px 4px 10px; text-transform: uppercase; letter-spacing: .05em; }
+/* Заголовки разделов витрины: серым и тонким они терялись между
+   карточками, и человек пролистывал каталог, не заметив, что начался
+   новый раздел. */
+.section-title { font-size: 13px; font-weight: 700; color: var(--ink); margin: 22px 4px 10px; text-transform: uppercase; letter-spacing: .05em; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
 .card h2 { margin: 0 0 10px; font-size: 16px; }
@@ -201,15 +204,18 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .cell.hour-line { border-top: 1px solid var(--line); }
 .cell.free { background: var(--surface); cursor: pointer; }
 .cell.free:hover { background: var(--court-tint); }
-.cell.busy { background: #E5E9EA; cursor: pointer; }
-.cell.busy:hover { background: #DCE1E3; }
-.cell.regular { background: repeating-linear-gradient(45deg, #E5E9EA 0 6px, #DBE1E2 6px 12px); cursor: pointer; }
+/* Занятое и постоянные брони держим заметно темнее фона: на дешёвой
+   матрице и при боковом взгляде прежние светло-серые клетки сливались
+   со свободными, и сетка читалась как пустая. */
+.cell.busy { background: #C9D1D4; cursor: pointer; }
+.cell.busy:hover { background: #BAC4C8; }
+.cell.regular { background: repeating-linear-gradient(45deg, #C9D1D4 0 6px, #A9B9C6 6px 12px); cursor: pointer; }
 /* Открытая тренировка — занято, но не чужое: сюда можно записаться,
    и клетка обязана отличаться от обычной брони с первого взгляда. */
 .cell.openplay { background: var(--ball-tint); cursor: pointer; box-shadow: inset 3px 0 0 var(--ball); }
 .cell.openplay:hover { background: #E7F4C4; }
 .cell.openplay .tag { color: var(--ball-dk); font-weight: 600; }
-.cell.closed { background: repeating-linear-gradient(45deg, #D2D8DA 0 6px, #C7CED0 6px 12px); }
+.cell.closed { background: repeating-linear-gradient(45deg, #B3BCC0 0 6px, #A2ADB2 6px 12px); }
 .cell.past { background: #F7F8F9; }
 .cell.mine { background: var(--grass); }
 .cell.sel { background: var(--court); }
@@ -223,17 +229,17 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 /* Название тренировки бывает длиннее колонки — на телефоне она ýже
    половины экрана. Обрезаем многоточием, иначе подпись выезжает на
    соседний корт. */
-.cell .tag { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #8B979C; pointer-events: none; white-space: nowrap; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
+.cell .tag { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #55636A; pointer-events: none; white-space: nowrap; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
 .cell.mine .tag { color: #fff; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 4px 0; font-size: 13px; color: var(--ink-soft); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); display: inline-block; }
 .sw.free { background: #fff; }
-.sw.busy { background: #E5E9EA; }
-.sw.regular { background: repeating-linear-gradient(45deg, #E5E9EA 0 4px, #DBE1E2 4px 8px); }
+.sw.busy { background: #C9D1D4; }
+.sw.regular { background: repeating-linear-gradient(45deg, #C9D1D4 0 4px, #A9B9C6 4px 8px); }
 .sw.openplay { background: var(--ball-tint); box-shadow: inset 3px 0 0 var(--ball); }
-.sw.closed { background: repeating-linear-gradient(45deg, #D2D8DA 0 4px, #C7CED0 4px 8px); }
+.sw.closed { background: repeating-linear-gradient(45deg, #B3BCC0 0 4px, #A2ADB2 4px 8px); }
 .sw.mine { background: var(--grass); }
 
 /* ---------- Нижняя панель ---------- */
@@ -343,7 +349,8 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .svc-row.sub { padding-left: 14px; font-size: 14px; color: var(--ink-soft); }
 .svc-row:last-child { border-bottom: 0; }
 .svc-row b { white-space: nowrap; }
-.links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.links .or { color: var(--ink-soft); font-size: 14px; }
 footer { max-width: 920px; margin: 26px auto 0; padding: 0 16px; color: var(--ink-soft); font-size: 13px; }
 footer a { color: var(--court-dk); }
 
@@ -592,14 +599,14 @@ const ERRORS = {
   'slot-taken': 'Это время только что заняли. Выберите другое.',
   'too-many-active': 'У вас уже две активные брони. Отмените одну, чтобы записаться снова.',
   'not-verified': 'Администратор ещё не подтвердил вашу заявку.',
-  'too-many-no-shows': 'Из-за пропущенных броней записывает администратор. Позвоните в клуб.',
-  'already-started': 'Игра уже началась — отменить нельзя. Позвоните в клуб.',
+  'too-many-no-shows': 'Из-за пропущенных броней записывает администратор. Позвоните в центр.',
+  'already-started': 'Игра уже началась — отменить нельзя. Позвоните в центр.',
   'temp-password-expired': 'Временный пароль просрочен. Обратитесь к администратору.',
   'bad-credentials': 'Неверный телефон или пароль.',
   'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
   // Потолок регистраций за сутки. Человек здесь ни при чём, поэтому
   // не «попробуйте позже», а живой путь дальше — позвонить в клуб.
-  'too-many-signups': 'Регистрация с сайта сейчас недоступна. Позвоните в клуб — вас заведут по телефону.',
+  'too-many-signups': 'Регистрация с сайта сейчас недоступна. Позвоните в центр — вас заведут по телефону.',
   'password-too-short': 'Пароль должен быть не короче 6 символов.',
   'password-too-simple': 'Такой пароль подбирается сразу. Не подряд идущие символы и не одна буква.',
   'password-is-phone': 'Пароль не может быть вашим номером телефона.',
@@ -608,25 +615,25 @@ const ERRORS = {
   'item-not-found': 'Этой позиции больше нет — обновите страницу.',
   'option-required': 'Выберите тариф — без него администратор не поймёт, о чём заявка.',
   'answer-required': 'Ответьте на вопрос под тарифом — иначе заявку не принять.',
-  'blocked': 'Доступ закрыт. Обратитесь к администратору клуба.',
+  'blocked': 'Доступ закрыт. Обратитесь к администратору центра.',
   'token-revoked': 'Нужно войти заново.',
   'unauthorized': 'Нужно войти заново.',
   'booking-not-found': 'Бронь не найдена.',
-  'not-linked': 'Telegram не привязан к учётке. Откройте бота клуба и поделитесь номером.',
+  'not-linked': 'Telegram не привязан к учётке. Откройте бота центра и поделитесь номером.',
   'bad-init-data': 'Telegram не подтвердил вход. Откройте страницу заново.',
   'declined': 'Вход отклонён в Telegram.',
   'wrong-code': 'В боте нажата кнопка с другим кодом — вход отменён. Начните заново.',
   'bad-code': 'Ссылка для входа устарела. Начните заново.',
-  'telegram-not-configured': 'Привязка Telegram пока недоступна. Позвоните в клуб.',
+  'telegram-not-configured': 'Привязка Telegram пока недоступна. Позвоните в центр.',
   'server-unavailable': 'Сервер не отвечает. Попробуйте через минуту.',
   'too-soon': 'До начала осталось слишком мало времени.',
   'beyond-horizon': 'Так далеко записываться пока нельзя.',
   'duration-too-short': 'Минимальная бронь — 1 час.',
   'window-too-short': 'Промежуток короче, чем нужное время. Расширьте его.',
-  'outside-hours': 'Это время за пределами работы клуба.',
+  'outside-hours': 'Это время за пределами работы центра.',
   'openplay-not-found': 'Тренировка не найдена — обновите страницу.',
   'openplay-cancelled': 'Эта тренировка отменена.',
-  'signups-closed': 'Набор закрыт. Позвоните в клуб, если хотите попасть.',
+  'signups-closed': 'Набор закрыт. Позвоните в центр, если хотите попасть.',
   'already-signed': 'Вы уже записаны на эту тренировку.',
   'not-signed': 'Вы на эту тренировку не записаны.',
 };
@@ -882,7 +889,7 @@ function renderHero() {
   // Поздняя отмена стоит рейтинга, так и написано.
   document.getElementById('footerRules').textContent =
     'Бронирование от ' + hoursText(c.booking.minBookingMinutes) + ', шаг '
-    + c.booking.slotStep + ' минут. Отмена без потери рейтинга — не позже чем за '
+    + c.booking.slotStep + ' минут. Отмена без потери клиентского рейтинга — не позже чем за '
     + c.booking.cancelDeadlineHours + ' ч до начала'
     // Про окно «передумал сразу» сказано здесь же: человек, взявший корт
     // на сегодняшний вечер, иначе решит, что отменить без штрафа нельзя.
@@ -949,7 +956,7 @@ function renderStatusNotice() {
     const bot = state.config.club.botUsername;
     n.hidden = false;
     n.className = 'notice';
-    n.innerHTML = '<b>Ещё пара секунд.</b> Откройте бота клуба и нажмите «Поделиться номером» — '
+    n.innerHTML = '<b>Ещё пара секунд.</b> Откройте бота центра и нажмите «Поделиться номером» —'
       + 'после этого вход сюда будет без пароля.'
       + (bot ? ` <a href="https://t.me/${bot}" target="_blank" rel="noopener">Открыть бота</a>` : '');
     return;
@@ -961,7 +968,7 @@ function renderStatusNotice() {
   n.innerHTML = client.status === 'pending'
     ? '<b>Заявка на рассмотрении.</b> Администратор подтвердит вас, обычно в течение дня. '
       + 'После этого бронировать можно будет самостоятельно. Занятость кортов видна и сейчас.'
-    : '<b>Доступ закрыт.</b> Обратитесь к администратору клуба.';
+    : '<b>Доступ закрыт.</b> Обратитесь к администратору центра.';
 }
 
 document.getElementById('whoBtn').addEventListener('click', () => {
@@ -993,7 +1000,7 @@ function renderHome() {
   const chips = [
     '<span class="fact accent">' + priceFact + '</span>',
     '<span class="fact"><b>' + escapeHtml(fmtRange(c.booking.openTime, c.booking.closeTime)) + '</b> ежедневно</span>',
-    '<span class="fact">' + c.courts.length + ' крытых корта</span>',
+    '<span class="fact">' + c.courts.length + ' крытых всесезонных корта</span>',
   ];
   // Подписи скидочных окон — то, ради чего владелец их и заводит.
   (c.pricing.rules || []).filter(r => r.showOnHome && r.label).forEach(r => {
@@ -1010,7 +1017,7 @@ function renderHome() {
 
   const posts = (state.landing && state.landing.news) || [];
   if (posts.length) {
-    view.appendChild(txt('div', 'section-title', 'Новости клуба'));
+    view.appendChild(txt('div', 'section-title', 'Новости центра'));
     view.appendChild(homeNews(posts, c));
   }
 
@@ -1027,11 +1034,11 @@ function renderHome() {
   const items = (state.landing && state.landing.catalog) || [];
   const goods = items.filter(i => i.category !== 'service');
   if (goods.length) {
-    view.appendChild(txt('div', 'section-title', 'Товары клуба'));
+    view.appendChild(txt('div', 'section-title', 'Товары центра'));
     view.appendChild(homeGoods(goods));
   }
 
-  view.appendChild(txt('div', 'section-title', 'Услуги и прокат'));
+  view.appendChild(txt('div', 'section-title', 'Услуги'));
   view.appendChild(homeServices(c, items.filter(i => i.category === 'service')));
 
   view.appendChild(txt('div', 'section-title', 'Как нас найти'));
@@ -1068,7 +1075,7 @@ function homeNews(posts, c) {
 
   if (c.club.telegramGroup) {
     const links = el('div', 'links');
-    links.appendChild(link('Все новости в группе клуба', c.club.telegramGroup));
+    links.appendChild(link('Все новости в нашей группе', c.club.telegramGroup));
     card.appendChild(links);
   }
 
@@ -1088,7 +1095,7 @@ function homeEvents() {
   }
   if (!events.length) {
     card.appendChild(txt('div', 'empty',
-      'Ближайших турниров пока нет. Объявления появляются здесь и в группе клуба.'));
+      'Ближайших турниров пока нет. Объявления появляются здесь и в нашей группе.'));
     return card;
   }
 
@@ -1141,7 +1148,7 @@ function homeGoods(goods) {
   });
 
   card.appendChild(grid);
-  card.appendChild(txt('div', 'empty', 'Про наличие и размеры спросите администратора клуба.'));
+  card.appendChild(txt('div', 'empty', 'Про наличие и размеры спросите администратора центра.'));
   return card;
 }
 
@@ -1198,6 +1205,19 @@ function homeServices(c, services) {
     if (item.description) body.appendChild(txt('div', 'empty', item.description));
     const ask = el('div', 'links');
     ask.appendChild(btn('Записаться на услугу', 'btn sec sm', () => openRequest(item, null)));
+    // Звоним по номеру самой услуги, а не в центр: натяжку записывает
+    // стрингер по своему телефону, и звонок администратору человека
+    // только развернёт. Номера нет — нет и кнопки, остаётся заявка.
+    const callTo = phoneDigits(item.contactPhone);
+    if (callTo) {
+      ask.appendChild(txt('span', 'or', 'или'));
+      const call = document.createElement('a');
+      call.className = 'btn sec sm';
+      call.style.textDecoration = 'none';
+      call.href = 'tel:' + callTo;
+      call.textContent = 'Позвонить';
+      ask.appendChild(call);
+    }
     body.appendChild(ask);
 
     block.appendChild(body);
@@ -1215,13 +1235,13 @@ function homeServices(c, services) {
 
   (c.pricing.inventory || []).forEach(item => {
     const row = el('div', 'svc-row');
-    row.innerHTML = '<span>' + escapeHtml(item.name) + ' напрокат</span>'
+    row.innerHTML = '<span>' + escapeHtml(item.name) + ' в аренду</span>'
       + '<b>' + money(item.pricePerHour) + ' / час</b>';
     card.appendChild(row);
   });
 
   card.appendChild(txt('div', 'empty',
-    'Прокат добавляется при бронировании — ракетка или корзина мячей будут ждать на корте.'));
+    'Аренда добавляется при бронировании корта — ракетка или корзина мячей будут ждать на корте.'));
   return card;
 }
 
@@ -1241,11 +1261,11 @@ function homeContacts(c) {
 
   const links = el('div', 'links');
   if (c.club.mapUrl) links.appendChild(link('Открыть карту', c.club.mapUrl));
-  if (c.club.telegramGroup) links.appendChild(link('Группа клуба в Telegram', c.club.telegramGroup));
+  if (c.club.telegramGroup) links.appendChild(link('Наша группа в Telegram', c.club.telegramGroup));
   // Трансляции с кортов клуб ведёт во ВКонтакте — своей трансляции у нас
   // нет, поэтому ссылка туда, а не встроенный плеер.
   if (c.club.vkUrl) links.appendChild(link('Трансляции с кортов во ВКонтакте', c.club.vkUrl));
-  if (c.club.botUsername) links.appendChild(link('Бот клуба', 'https://t.me/' + c.club.botUsername));
+  if (c.club.botUsername) links.appendChild(link('Наш бот', 'https://t.me/' + c.club.botUsername));
   if (c.club.phone) links.appendChild(link('Позвонить', 'tel:' + c.club.phone.replace(/[^\d+]/g, '')));
   card.appendChild(links);
 
@@ -1290,7 +1310,7 @@ function openRequest(item, option) {
 
   const body = el('div');
   body.innerHTML = '<h3>' + escapeHtml(item.name) + '</h3>'
-    + '<div class="m-sub">Администратор перезвонит и всё расскажет — про наличие, размер и оплату.</div>';
+    + '<div class="m-sub">Администратор перезвонит и проконсультирует по выбранной услуге.</div>';
 
   // Обязательные группы собираем списком: при отправке достаточно
   // пройти по нему, а не помнить про каждую по отдельности.
@@ -1341,7 +1361,7 @@ function openRequest(item, option) {
   const fComment = el('label', 'field');
   fComment.innerHTML = '<span>Что уточнить — необязательно</span>';
   const comment = document.createElement('input');
-  comment.placeholder = 'Например: нужна ручка размера 2';
+  comment.placeholder = 'Например: нужна струна 1.25';
   fComment.appendChild(comment); body.appendChild(fComment);
 
   const acts = el('div', 'm-acts');
@@ -1735,7 +1755,7 @@ function renderGrid() {
           && !busyAt(state.date, court.id, slot)
           && slotTimestamp(state.date, slot) > Date.now()) {
         cell.title = 'Запись закрывается за '
-          + hoursText(state.config.booking.minLeadMinutes) + ' до начала. Позвоните в клуб.';
+          + hoursText(state.config.booking.minLeadMinutes) + ' до начала. Позвоните в центр.';
       }
 
       if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx));
@@ -2067,7 +2087,7 @@ function openAuth(mode) {
   function draw() {
     const body = el('div');
     body.innerHTML = '<h3>' + (tab === 'login' ? 'Вход' : 'Регистрация') + '</h3>'
-      + '<div class="m-sub">Бронирование доступно проверенным клиентам клуба.</div>';
+      + '<div class="m-sub">Бронирование доступно проверенным клиентам центра.</div>';
 
     const tabs = el('div', 'tabs2');
     const tLogin = btn('Вход', tab === 'login' ? 'on' : '', () => { tab = 'login'; draw(); });
@@ -2175,7 +2195,7 @@ function forgotPassword() {
   const box = el('div', 'empty');
   box.style.marginTop = '-4px';
   box.style.marginBottom = '12px';
-  box.textContent = 'Не помните пароль — администратор сбросит его в клубе.';
+  box.textContent = 'Забыли пароль — свяжитесь с администратором.';
 
   const phone = phoneDigits(state.config && state.config.club && state.config.club.phone);
   if (!phone) return box;
@@ -2280,7 +2300,7 @@ function startBooking() {
 
   if (inventory.length) {
     const rent = el('div', 'rent');
-    rent.appendChild(txt('div', 'rent-head', 'Взять на прокат'));
+    rent.appendChild(txt('div', 'rent-head', 'Взять в аренду'));
 
     inventory.forEach(item => {
       picked[item.id] = 0;
@@ -2307,7 +2327,7 @@ function startBooking() {
       rent.appendChild(row);
     });
 
-    rent.appendChild(txt('div', 'rent-note', 'Оплата на месте вместе с кортом. Отменить прокат можно при отмене брони.'));
+    rent.appendChild(txt('div', 'rent-note', 'Оплата на месте вместе с кортом. Отменить аренду можно при отмене брони.'));
     body.appendChild(rent);
   }
 
@@ -2497,7 +2517,7 @@ function openSessionCard(idOrSession) {
   if (op.mine) {
     acts.appendChild(btn('Отказаться', 'btn danger', () => leaveSession(s)));
   } else if (op.signupsClosed) {
-    body.appendChild(txt('div', 'notice', 'Набор закрыт. Позвоните в клуб, если хотите попасть.'));
+    body.appendChild(txt('div', 'notice', 'Набор закрыт. Позвоните в центр, если хотите попасть.'));
   } else {
     const fPair = el('label', 'field');
     fPair.innerHTML = '<span>Идёте парой? Впишите партнёра — займёте два места</span>';
@@ -2671,7 +2691,7 @@ function openWaitlist(prefill) {
     note.style.margin = '4px 0 0';
     note.innerHTML = 'Сообщим, как только в промежутке <b>' + escapeHtml(fmtRange(minutesToTime(from), minutesToTime(to)))
       + '</b> освободится <b>' + escapeHtml(hoursText(duration)) + '</b>. '
-      + 'Вы узнаете первым — раньше, чем время уйдёт в общий чат клуба.';
+      + 'Вы узнаете первым — раньше, чем время уйдёт в общий чат центра.';
     body.appendChild(note);
 
     // Без этого «сообщим» звучит как «ждите неизвестно где». Человек
@@ -2679,8 +2699,8 @@ function openWaitlist(prefill) {
     const where = el('div', hasTelegram() ? 'notice info' : 'notice');
     where.style.margin = '10px 0 0';
     where.innerHTML = hasTelegram()
-      ? '<b>Куда придёт:</b> в Telegram, личным сообщением от бота клуба.'
-      : '<b>Куда придёт:</b> в Telegram, личным сообщением от бота клуба. '
+      ? '<b>Куда придёт:</b> в Telegram, личным сообщением от бота центра.'
+      : '<b>Куда придёт:</b> в Telegram, личным сообщением от бота центра. '
         + 'Нужен работающий Telegram и привязка в профиле — без неё сообщить будет некуда, '
         + 'и следить за освободившимся временем придётся самому.';
     body.appendChild(where);
@@ -2740,7 +2760,7 @@ function renderMine() {
       + (pass.expiresAt
         ? 'Ближайшие часы сгорают ' + escapeHtml(dayLabelLong(pass.expiresAt, state.mine.today))
         : 'Без срока действия')
-      + '. Часы списываются после игры — через двое суток, когда клуб закроет день.</div></div>';
+      + '. Часы списываются после игры — через двое суток, когда центр закроет день.</div></div>';
 
     // История — не «на всякий случай», а чтобы у человека не осталось
     // вопросов: он видит каждую игру и каждое списание, и спрашивать на
@@ -2822,7 +2842,7 @@ function renderMine() {
         + ' · сообщим, как только освободится</div>';
 
       it.appendChild(hasTelegram()
-        ? txt('div', 't2', '📩 Сообщение придёт в Telegram от бота клуба')
+        ? txt('div', 't2', '📩 Сообщение придёт в Telegram от бота центра')
         : txt('div', 't3', '⚠ Telegram не привязан — сообщать некуда. Привяжите его в профиле.'));
 
       const acts = el('div', 'acts');
@@ -2895,7 +2915,7 @@ function bookingItem(g, isPast) {
     // в лист ожидания. Но предупредить обязаны до нажатия.
     if (late) {
       acts.appendChild(txt('div', 't3',
-        'Срок отмены без потери рейтинга прошёл. Отменить всё ещё можно, но рейтинг снизится.'));
+        'Срок отмены без потери клиентского рейтинга прошёл. Отменить всё ещё можно, но рейтинг снизится.'));
     }
     acts.appendChild(btn('Отменить', 'btn sm sec', () => confirmCancel(g, late)));
     it.appendChild(acts);
@@ -2988,7 +3008,7 @@ function renderProfile() {
       toast('Пароль изменён');
     } catch (e) { toast(errorText(e.code)); }
   }));
-  c2.appendChild(txt('div', 'empty', 'Забыли пароль — позвоните в клуб, администратор сбросит.'));
+  c2.appendChild(txt('div', 'empty', 'Забыли пароль — свяжитесь с администратором.'));
   view.appendChild(c2);
 
   const c3 = el('div', 'card');
