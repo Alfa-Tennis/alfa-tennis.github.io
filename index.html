@@ -221,6 +221,10 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .cell { height: 29px; border-bottom: 1px solid #EEF1F2; border-right: 1px solid #EEF1F2; position: relative; }
 .cell.hour-line { border-top: 1px solid var(--line); }
 .cell.free { background: var(--surface); cursor: pointer; }
+/* Сетка выкладывается по строкам (время, корт 1, корт 2), поэтому
+   соседи в DOM — это соседние корты, а не соседние получасы. Отделять
+   прошедшее от свободного правилом «сосед сверху» тут нечем: полагаемся
+   на заливку, её теперь хватает. */
 .cell.free:hover { background: var(--court-tint); }
 /* Занятое и постоянные брони держим заметно темнее фона: на дешёвой
    матрице и при боковом взгляде прежние светло-серые клетки сливались
@@ -234,7 +238,11 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .cell.openplay:hover { background: #E7F4C4; }
 .cell.openplay .tag { color: var(--ball-dk); font-weight: 600; }
 .cell.closed { background: repeating-linear-gradient(45deg, #B3BCC0 0 6px, #A2ADB2 6px 12px); }
-.cell.past { background: #F7F8F9; }
+/* Прошедшее время — ровный серый в полную силу. Прежний #F7F8F9 от
+   белого «свободно» отличался на глаз едва-едва, и человек в клубе
+   принимал закрытый хвост дня за свободный. Ощутимо темнее занятого
+   (#C9D1D4) быть не должно: это не «занято», а «уже не бывает». */
+.cell.past { background: #DFE4E7; cursor: default; border-bottom-color: #D2D9DC; border-right-color: #D2D9DC; }
 .cell.mine { background: var(--grass); }
 .cell.sel { background: var(--court); }
 .cell.sel:hover { background: var(--court-dk); }
@@ -259,6 +267,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .sw.openplay { background: var(--ball-tint); box-shadow: inset 3px 0 0 var(--ball); }
 .sw.closed { background: repeating-linear-gradient(45deg, #B3BCC0 0 4px, #A2ADB2 4px 8px); }
 .sw.mine { background: var(--grass); }
+.sw.past { background: #DFE4E7; }
 
 /* ---------- Нижняя панель ---------- */
 .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 24px rgba(34,39,44,.09); transform: translateY(110%); transition: transform .18s ease-out; }
@@ -444,6 +453,7 @@ footer a { color: var(--court-dk); }
       <span><i class="sw openplay"></i> открытая тренировка</span>
       <span><i class="sw mine"></i> ваша бронь</span>
       <span><i class="sw closed"></i> корт закрыт</span>
+      <span><i class="sw past"></i> время прошло</span>
     </div>
     <p class="grid-hint">Занятое время тоже нажимается — так можно встать в очередь на случай отмены.</p>
   </section>
@@ -666,6 +676,7 @@ const ERRORS = {
   'signups-closed': 'Набор закрыт. Позвоните в центр, если хотите попасть.',
   'already-signed': 'Вы уже записаны на эту тренировку.',
   'not-signed': 'Вы на эту тренировку не записаны.',
+  'window-in-past': 'Это время уже прошло — в очередь на него встать нельзя.',
   'roster-not-found': 'Этот состав уже не набирается — обновите страницу.',
   'series-not-found': 'Постоянная бронь не найдена — обновите страницу.',
   'not-an-occurrence': 'Это занятие уже снято или расписание изменилось. Обновите страницу.',
@@ -1614,14 +1625,24 @@ function myBookingAt(dateIso, courtId, slot) {
 // Порядок проверок = приоритет отображения: своя бронь важнее чужой,
 // закрытый корт важнее занятого, прошедшее важнее свободного.
 function cellState(dateIso, courtId, slot) {
+  // Прошедшее время важнее всего остального, что могло стоять в клетке.
+  // Раньше проверка времени шла только для пустых клеток, и вчерашняя
+  // чужая бронь оставалась «занято» — с подсказкой «нажмите, чтобы
+  // встать в очередь». Очередь на время, которое уже прошло, — это
+  // ожидание того, что никогда не наступит.
+  //
+  // Заодно это решает и второй вопрос: что стояло в прошедшем часе —
+  // чужая бронь, тренировка или ремонт — клиента не касается. Он видит
+  // ровный серый и не читает чужое расписание.
+  const lead = (state.config.booking.minLeadMinutes || 0) * 60000;
+  if (slotTimestamp(dateIso, slot) < Date.now() + lead) return 'past';
+
   const b = busyAt(dateIso, courtId, slot);
   if (b) {
     if (myBookingAt(dateIso, courtId, slot)) return 'mine';
     if (b.kind === 'openplay') return 'openplay';
     return b.kind === 'closed' ? 'closed' : (b.kind === 'regular' ? 'regular' : 'busy');
   }
-  const lead = (state.config.booking.minLeadMinutes || 0) * 60000;
-  if (slotTimestamp(dateIso, slot) < Date.now() + lead) return 'past';
   return 'free';
 }
 
