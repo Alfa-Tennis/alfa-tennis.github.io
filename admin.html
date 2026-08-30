@@ -379,14 +379,63 @@ function setToken(value) {
   } catch (e) { /* приватный режим — переживём одну сессию */ }
 }
 
+// Действия, которые ничего не меняют. Их можно молча повторить, и только
+// им можно ставить короткий срок ожидания: зависший запрос лучше бросить
+// и переспросить, чем держать человека перед «Загружаем…».
+//
+// Списка «что менять нельзя» здесь нет намеренно: повторить запись —
+// это вторая бронь на то же время, и такое должен решать человек.
+const READ_ONLY = new Set([
+  'adminBootstrap', 'adminDay', 'adminWeek', 'adminReview', 'adminStats',
+  'adminSettings', 'adminLedger', 'adminOpenPlayWeek', 'listClients',
+  'listStaff', 'listEvents', 'listCatalog', 'listRequests', 'listNews',
+  'health', 'getConfig',
+]);
+
+// Сколько ждём ответа. Чтение — девять секунд: дольше этого висит только
+// сломанное соединение с хранилищем, и переспросить дешевле, чем ждать.
+// Запись ждём почти до конца серверного таймаута: там повтор опасен, и
+// оборвать запрос, который вот-вот пройдёт, хуже, чем подождать.
+const READ_TIMEOUT_MS = 9000;
+const WRITE_TIMEOUT_MS = 25000;
+
+async function fetchOnce(action, payload, ms) {
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), ms) : null;
+  try {
+    return await fetch(API_URL || '/api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ action, token }, payload || {})),
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+  } finally { if (timer) clearTimeout(timer); }
+}
+
 // Ошибку сервера превращаем в исключение с кодом: вызывающий код решает,
 // показать её человеку или обработать молча.
 async function api(action, payload) {
-  const res = await fetch(API_URL || '/api', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(Object.assign({ action, token }, payload || {})),
-  });
+  const readOnly = READ_ONLY.has(action);
+  const attempts = readOnly ? 2 : 1;
+
+  let res = null, lastError = null;
+  for (let i = 0; i < attempts; i++) {
+    if (i) await new Promise(r => setTimeout(r, 400));
+    try {
+      res = await fetchOnce(action, payload, readOnly ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS);
+    } catch (e) {
+      // Оборвали по времени или сеть не ответила вовсе.
+      lastError = e; res = null; continue;
+    }
+    // 5xx — «сервер не смог», такое повторяют. 4xx повторять бессмысленно.
+    if (res.status >= 500 && i + 1 < attempts) { lastError = new Error('server-' + res.status); res = null; continue; }
+    break;
+  }
+  if (!res) {
+    const err = new Error('server-unavailable');
+    err.code = lastError && lastError.name === 'AbortError' ? 'timeout' : 'server-unavailable';
+    throw err;
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(body.error || 'request-failed');
@@ -435,6 +484,8 @@ const ERRORS = {
   'invalid-weekday': 'Выберите день недели.',
   'invalid-court': 'Выберите корт.',
   'invalid-reason': 'Напишите причину закрытия.',
+  'timeout': 'Сервер не ответил вовремя. Нажмите «Обновить» — обычно со второго раза проходит.',
+  'server-unavailable': 'Сервер не отвечает. Проверьте интернет и нажмите «Обновить».',
   'date-in-past': 'Эта дата уже прошла.',
   'target-in-past': 'Переносить в прошедшее время нельзя.',
   'already-started': 'Эта бронь уже началась — переносить её поздно. Отметьте неявку или отмените.',

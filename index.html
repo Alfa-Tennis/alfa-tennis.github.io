@@ -700,18 +700,29 @@ async function request(payload, retries) {
   let lastError = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (attempt) await new Promise(r => setTimeout(r, 400 * attempt));
+    // Срок ожидания: без него зависшее соединение держит страницу на
+    // «Загружаем…» столько, сколько сервер вообще готов молчать. Повтор
+    // тут уже есть — но повторять нечего, пока первый запрос не отпустит.
+    // Для повторяемых действий срок короткий, для остальных — почти
+    // весь серверный таймаут: оборвать запись, которая вот-вот пройдёт,
+    // хуже, чем подождать.
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), retries ? 9000 : 25000) : null;
     try {
       const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: ctrl ? ctrl.signal : undefined,
       });
       // 5xx — это «сервер не смог», такое повторяют. 4xx — «запрос не тот»,
       // повторять бессмысленно, ответ не изменится.
       if (res.status >= 500 && attempt < retries) { lastError = new Error('server-' + res.status); continue; }
       return res;
     } catch (e) {
-      lastError = e; // сеть не ответила вовсе
+      lastError = e; // сеть не ответила вовсе или оборвали по времени
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
   throw lastError || new Error('request-failed');
