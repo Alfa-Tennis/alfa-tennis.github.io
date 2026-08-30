@@ -2800,7 +2800,10 @@ function sessionRow(s) {
   it.dataset.sid = s.id;
 
   const courts = s.segments.map(x => courtName(x.courtId));
-  const uniqueCourts = courts.filter((c, i) => courts.indexOf(c) === i).join(' → ');
+  // Тренировка занимает корты одновременно, поэтому «и», а не стрелка:
+  // стрелка означает переход посреди игры, которого здесь нет.
+  const parallel = s.segments.every(x => x.start === s.segments[0].start);
+  const uniqueCourts = courts.filter((c, i) => courts.indexOf(c) === i).join(parallel ? ' и ' : ' → ');
 
   it.innerHTML = '<div class="t1">' + escapeHtml(fmtRange(s.start, s.end))
     + ' · ' + escapeHtml(op.title)
@@ -2906,6 +2909,12 @@ function openSessionForm(session, preset) {
     [90, 120, 150, 180, 210, 240].forEach(m => selDur.appendChild(opt(m, hoursText(m))));
     selDur.value = String((preset && preset.durationMinutes) || 150);
     fDur.appendChild(selDur); body.appendChild(fDur);
+
+    // Корт не выбирается: тренировка занимает центр целиком. Сказать об
+    // этом надо здесь, а не после отказа «время занято».
+    body.appendChild(txt('div', 'empty',
+      'Тренировка занимает все корты центра на это время, и цена считается за них все. '
+      + 'Если хотя бы один корт занят, окно не создастся.'));
   }
 
   const fTitle = el('label', 'field'); fTitle.innerHTML = '<span>Подпись</span>';

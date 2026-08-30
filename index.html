@@ -652,6 +652,8 @@ const ERRORS = {
   'signups-closed': 'Набор закрыт. Позвоните в центр, если хотите попасть.',
   'already-signed': 'Вы уже записаны на эту тренировку.',
   'not-signed': 'Вы на эту тренировку не записаны.',
+  'series-not-found': 'Постоянная бронь не найдена — обновите страницу.',
+  'not-an-occurrence': 'Это занятие уже снято или расписание изменилось. Обновите страницу.',
 };
 function errorText(code) { return ERRORS[code] || 'Не получилось. Попробуйте ещё раз.'; }
 
@@ -2522,10 +2524,17 @@ function openSessionCard(idOrSession) {
       + ' · ' + fmtRange(s.start, s.end) + ' · ' + op.level) + '</div>';
 
   const info = el('div', 'summary');
-  const courts = s.courts.filter((c, i) => s.courts.indexOf(c) === i).join(' → ');
-  info.innerHTML = '<div class="s-row"><span>Корт</span><span>' + escapeHtml(courts) + '</span></div>'
+  // Тренировка держит корты одновременно, а не по очереди, — значит «и»,
+  // а не стрелка перехода: «Корт 1 → Корт 2» читалось бы как смена корта
+  // посреди игры.
+  const names = s.courts.filter((c, i) => s.courts.indexOf(c) === i);
+  const parallel = s.segments.every(seg => seg.start === s.segments[0].start);
+  const courts = names.join(parallel ? ' и ' : ' → ');
+  info.innerHTML = '<div class="s-row"><span>' + (names.length > 1 && parallel ? 'Корты' : 'Корт')
+    + '</span><span>' + escapeHtml(courts) + '</span></div>'
     + '<div class="s-row"><span>Записались</span><span>' + op.taken + ' из ' + op.seats + '</span></div>'
-    + '<div class="s-row"><span>Корт целиком</span><span>' + money(s.total) + '</span></div>'
+    + '<div class="s-row"><span>' + (names.length > 1 && parallel ? 'Корты целиком' : 'Корт целиком')
+    + '</span><span>' + money(s.total) + '</span></div>'
     // Две цифры намеренно: делить корт на одного записавшегося честно
     // арифметически, но читается как цена, по которой никто не придёт.
     // Как игроки делят сумму на месте, клуб всё равно не решает.
@@ -2955,6 +2964,9 @@ function bookingItem(g, isPast) {
   });
 
   let badge = '';
+  // Занятие постоянной брони помечаем: человек должен видеть, что
+  // отменяет одну неделю, а не всю серию.
+  if (g.kind === 'series') badge = ' <span class="pill grey">↻ постоянная</span>';
   if (g.status === 'pending') badge = ' <span class="pill wait">ждёт подтверждения</span>';
   else if (g.status === 'expired') badge = ' <span class="pill grey">не подтверждена вовремя</span>';
   else if (g.status === 'noshow') badge = ' <span class="pill bad">не пришли</span>';
@@ -2966,6 +2978,10 @@ function bookingItem(g, isPast) {
     + '<div class="t2">' + escapeHtml(dayLabelLong(g.date, state.mine.today))
     + ' · ' + escapeHtml([...new Set(courts)].join(' → '))
     + ' · ' + money(g.total != null ? g.total : g.price) + '</div>';
+
+  if (g.kind === 'series') {
+    it.appendChild(txt('div', 't3', '↻ ' + g.title + ' · то же время каждую неделю'));
+  }
 
   // Что взято на прокат — строкой под броней: человек должен помнить,
   // что ракетки ждут его на стойке, а не искать их в кармане.
@@ -3004,7 +3020,8 @@ function bookingItem(g, isPast) {
     // первой, потому что «сдвинуть на полчаса» люди хотят чаще, чем
     // отменить совсем, и раньше ради этого звонили администратору.
     if (g.movable) acts.appendChild(btn('Изменить время', 'btn sm', () => openMoveBooking(g)));
-    acts.appendChild(btn('Отменить', 'btn sm sec', () => confirmCancel(g, late)));
+    acts.appendChild(btn(g.kind === 'series' ? 'Отменить занятие' : 'Отменить', 'btn sm sec',
+      () => confirmCancel(g, late)));
     it.appendChild(acts);
   }
 
@@ -3113,9 +3130,16 @@ function openMoveBooking(g) {
 
 function confirmCancel(g, late) {
   const penalty = state.mine.lateCancelPenalty || 0.5;
+  const series = g.kind === 'series';
   const body = el('div');
-  body.innerHTML = '<h3>Отменить бронь?</h3>'
+  body.innerHTML = '<h3>' + (series ? 'Отменить это занятие?' : 'Отменить бронь?') + '</h3>'
     + '<div class="m-sub">' + escapeHtml(dayLabelLong(g.date, state.mine.today) + ' · ' + fmtRange(g.start, g.end)) + '</div>'
+    // Главное, что человек должен понять до нажатия: снимается одна
+    // неделя, а не постоянное время целиком. Вернуть занятие обратно
+    // сам он не сможет — время сразу уходит в общий доступ.
+    + (series ? '<div class="empty" style="padding:0 0 10px">Снимется только это занятие — '
+      + 'остальные недели останутся за вами. Время сразу станет свободным для других, '
+      + 'и вернуть его получится только через администратора.</div>' : '')
     + (g.switches > 0 ? '<div class="empty" style="padding:0 0 10px">Бронь собрана из двух кортов — снимутся обе части.</div>' : '')
     // Цену поздней отмены называем прямо в окне подтверждения: узнать
     // о ней после нажатия — худший из возможных вариантов.
@@ -3124,14 +3148,18 @@ function confirmCancel(g, late) {
       + String(penalty).replace('.', ',') + '. Корт при этом сразу вернётся в общий доступ.</div>' : '');
 
   const acts = el('div', 'm-acts');
-  acts.appendChild(btn('Отменить бронь', 'btn danger', async () => {
+  acts.appendChild(btn(series ? 'Отменить занятие' : 'Отменить бронь', 'btn danger', async () => {
     try {
-      const res = await api('cancelBooking', { date: g.date, bookingId: g.id });
+      const res = series
+        ? await api('skipMySeries', { seriesId: g.seriesId, date: g.date })
+        : await api('cancelBooking', { date: g.date, bookingId: g.id });
       closeModal();
       await refreshAvailability();
       await refreshMine();
       renderDays(); renderGrid(); renderPicker(); renderMine();
-      toast(res && res.late ? 'Бронь отменена, рейтинг снижен' : 'Бронь отменена');
+      toast(res && res.late
+        ? (series ? 'Занятие снято, рейтинг снижен' : 'Бронь отменена, рейтинг снижен')
+        : (series ? 'Занятие снято' : 'Бронь отменена'));
     } catch (e) { toast(errorText(e.code), 4000); }
   }));
   acts.appendChild(btn('Оставить', 'btn sec', closeModal));
