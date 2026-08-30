@@ -3,6 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Единственный заголовок безопасности, который нам доступен: заголовки
+     ответа задаёт GitHub Pages, а не мы, и добавить HSTS или
+     X-Frame-Options на статике некуда — в теге браузер их игнорирует.
+
+     'unsafe-inline' здесь неизбежен: страница обязана оставаться одним
+     самодостаточным файлом, весь скрипт и стиль лежат внутри неё. От самой
+     инъекции такая политика защищает слабо, и смысл её не в этом:
+     connect-src и img-src не дают увезти данные на чужой хост, даже если
+     инъекция однажды случится. Список адресов держать в порядке —
+     фотографии каталога и новостей идут из бакета, запросы уходят только в
+     функцию. Локальный стенд подставляет свой адрес в connect-src сам,
+     файл на диске при этом не меняется (tools/dev-server.js). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://storage.yandexcloud.net; connect-src https://functions.yandexcloud.net; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Теннисный центр «Альфа» — бронирование кортов в Краснодаре</title>
 <meta name="description" content="Онлайн-бронирование кортов теннисного центра «Альфа», Краснодар. Два крытых корта, с 5:00 до 24:00 без выходных.">
 <!-- Иконка вкладки вшита сюда же, как и логотип: страница обязана
