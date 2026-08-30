@@ -596,6 +596,30 @@ function everyWeekday(i, capital) {
   return capital ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 const WD_SHORT = ['вс','пн','вт','ср','чт','пт','сб'];
+// Понедельник первым: так думает человек, а не Date.getUTCDay().
+const WD_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+// Дни недели серии. В файле лежит либо список, либо старый одиночный
+// день — читаем и то и другое, чтобы серии, заведённые раньше, не
+// требовали правки файла.
+function seriesDays(s) {
+  if (s && Array.isArray(s.weekdays) && s.weekdays.length) return s.weekdays;
+  return s && s.weekday != null ? [s.weekday] : [];
+}
+
+// Подпись расписания серии. Один день — «каждый вторник», несколько —
+// «по вторникам и четвергам»: писать «каждый вторник, каждый четверг»
+// длинно, а список сокращений («вт, чт») у карточки читается хуже, чем
+// фраза.
+const WD_BY = ['воскресеньям','понедельникам','вторникам','средам','четвергам','пятницам','субботам'];
+function seriesSchedule(s, capital) {
+  const days = seriesDays(s).slice().sort((a, b) => WD_ORDER.indexOf(a) - WD_ORDER.indexOf(b));
+  if (days.length === 1) return everyWeekday(days[0], capital);
+  const names = days.map(d => WD_BY[d]);
+  const last = names.pop();
+  const text = 'по ' + (names.length ? names.join(', ') + ' и ' + last : last);
+  return capital ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
 
 function longDate(dateIso) {
   const d = new Date(dateIso + 'T00:00:00Z');
@@ -883,7 +907,7 @@ function clientById(id) { return db.clients.find(c => c.id === id) || null; }
 
 function seriesOn(dateIso) {
   const wd = weekday(dateIso);
-  return db.series.filter(s => s.active && s.weekday === wd
+  return db.series.filter(s => s.active && seriesDays(s).indexOf(wd) !== -1
     && (!s.from || dateIso >= s.from) && (!s.to || dateIso <= s.to)
     && s.skipDates.indexOf(dateIso) === -1);
 }
@@ -1851,7 +1875,7 @@ function openSeriesOccurrence(b) {
 
   const info = el('div', 'item');
   info.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title) + '</div>'
-    + '<div class="t2">Постоянная бронь, ' + everyWeekday(s.weekday) + '. ' + escapeHtml(fmtPhone((clientById(s.clientId) || {}).phone || '')) + '</div>';
+    + '<div class="t2">Постоянная бронь, ' + seriesSchedule(s) + '. ' + escapeHtml(fmtPhone((clientById(s.clientId) || {}).phone || '')) + '</div>';
   body.appendChild(info);
 
   const acts = el('div', 'm-acts');
@@ -2451,7 +2475,7 @@ function renderSeries(view) {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(s.title)
         + (ended ? ' <span class="pill grey">завершена</span>' : '') + '</div>'
-        + '<div class="t2">' + everyWeekday(s.weekday, true) + ', ' + escapeHtml(fmtRange(s.start, s.end))
+        + '<div class="t2">' + seriesSchedule(s, true) + ', ' + escapeHtml(fmtRange(s.start, s.end))
         + ' · ' + escapeHtml(courtName(s.courtId))
         + ' · с ' + shortDate(s.from) + (s.to ? ' по ' + shortDate(s.to) : ', бессрочно')
         + (cl ? ' · ' + escapeHtml(fmtPhone(cl.phone)) : '') + '</div>';
@@ -2537,11 +2561,22 @@ function openSeriesForm(existing) {
   if (existing) court.value = String(existing.courtId);
   wrapField(body, 'Корт', court);
 
-  const wd = document.createElement('select');
-  // Понедельник первым — так думает человек, а не Date.getUTCDay().
-  [1, 2, 3, 4, 5, 6, 0].forEach(i => wd.appendChild(opt(String(i), WD_FULL[i])));
-  wd.value = String(existing ? existing.weekday : weekday(todayIso()));
-  wrapField(body, 'День недели', wd);
+  // Дней может быть несколько: одна группа ходит и во вторник, и в
+  // четверг, и это одна договорённость — заводить под неё две почти
+  // одинаковые карточки владельцу приходилось руками.
+  const days = new Set(existing ? seriesDays(existing) : [weekday(todayIso())]);
+  const wdField = el('div', 'field');
+  wdField.innerHTML = '<span>Дни недели — можно выбрать несколько</span>';
+  const wdRow = el('div', 'acts');
+  WD_ORDER.forEach(i => {
+    const b = btn(WD_SHORT[i], days.has(i) ? 'btn sm' : 'btn sm sec', () => {
+      if (days.has(i)) days.delete(i); else days.add(i);
+      b.className = days.has(i) ? 'btn sm' : 'btn sm sec';
+    });
+    wdRow.appendChild(b);
+  });
+  wdField.appendChild(wdRow);
+  body.appendChild(wdField);
 
   const start = document.createElement('select');
   startTimes().forEach(t => start.appendChild(opt(t, fmtTime(t))));
@@ -2583,8 +2618,10 @@ function openSeriesForm(existing) {
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   acts.appendChild(btn(existing ? 'Сохранить' : 'Завести', 'btn', async () => {
     if (title.value.trim().length < 2) { toast('Укажите название'); return; }
+    if (!days.size) { toast('Выберите хотя бы один день недели'); return; }
     const payload = {
-      courtId: Number(court.value), weekday: Number(wd.value),
+      courtId: Number(court.value),
+      weekdays: WD_ORDER.filter(i => days.has(i)),
       start: start.value, end: end.value,
       title: title.value, from: from.value, to: to.value || null,
       clientId: picked.id,
@@ -2713,7 +2750,7 @@ function showClashes(data) {
   (data.series || []).forEach(s => {
     const it = el('div', 'item');
     it.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title) + '</div>'
-      + '<div class="t2">' + escapeHtml(everyWeekday(s.weekday, true) + ', ' + s.start + '–' + s.end) + '</div>';
+      + '<div class="t2">' + escapeHtml(seriesSchedule(s, true) + ', ' + s.start + '–' + s.end) + '</div>';
     body.appendChild(it);
   });
 
@@ -2764,7 +2801,7 @@ function nextOccurrences(s, n) {
     if (!s.active) break;
     if (s.from && date < s.from) continue;
     if (s.to && date > s.to) break;
-    if (weekday(date) !== s.weekday) continue;
+    if (seriesDays(s).indexOf(weekday(date)) === -1) continue;
     if ((s.skipDates || []).indexOf(date) !== -1) continue;
     out.push(date);
   }
