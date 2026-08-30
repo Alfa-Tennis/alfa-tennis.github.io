@@ -917,7 +917,7 @@ let savedSpan = null;
 try { savedSpan = localStorage.getItem(SPAN_KEY); } catch (e) { savedSpan = null; }
 
 const state = {
-  tab: 'day', date: todayIso(), clientQuery: '', loadedAt: 0, focusSession: null,
+  tab: 'day', date: todayIso(), clientQuery: '', clientSort: 'default', loadedAt: 0, focusSession: null,
   // День или неделя в сетке. Запоминаем: у стойки режим выбирают один
   // раз и работают в нём всю смену.
   span: savedSpan === 'week' ? 'week' : 'day',
@@ -1728,15 +1728,16 @@ function openNewBooking(date, courtId, start) {
   [60, 90, 120, 150, 180, 240].forEach(m => selDur.appendChild(opt(m, hoursText(m))));
   fDur.appendChild(selDur); body.appendChild(fDur);
 
-  const fWho = el('label', 'field'); fWho.innerHTML = '<span>Клиент</span>';
-  const selWho = document.createElement('select');
-  selWho.appendChild(opt('', '— записать с улицы —'));
-  db.clients.filter(c => c.status !== 'blocked')
-    .slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-    .forEach(c => selWho.appendChild(opt(c.id, c.name + ' · ' + fmtPhone(c.phone))));
-  fWho.appendChild(selWho); body.appendChild(fWho);
-
+  // Поиск, а не список всех клиентов: в выпадающем списке на три сотни
+  // человек нужного не найти, а однофамильцев в нём не различить вовсе.
+  // Ищет сервер — и по имени, и по цифрам телефона.
   const guest = el('div');
+  const who = clientPicker(body, null, {
+    label: 'Клиент',
+    placeholder: 'Имя или телефон — пусто значит «с улицы»',
+    onChange: (id) => { guest.hidden = !!id; },
+  });
+
   const fName = el('label', 'field'); fName.innerHTML = '<span>Имя</span>';
   const inpName = document.createElement('input'); inpName.placeholder = 'Как записать';
   fName.appendChild(inpName);
@@ -1746,8 +1747,6 @@ function openNewBooking(date, courtId, start) {
   fPhone.appendChild(inpPhone);
   guest.appendChild(fName); guest.appendChild(fPhone);
   body.appendChild(guest);
-
-  selWho.addEventListener('change', () => { guest.hidden = !!selWho.value; });
 
   const price = el('div', 'empty');
   const updPrice = () => { price.textContent = 'К оплате: ' + money(Number(selDur.value) / 60 * db.config.pricePerHour); };
@@ -1759,16 +1758,16 @@ function openNewBooking(date, courtId, start) {
     const dur = Number(selDur.value);
     const end = minutesToTime(timeToMinutes(start) + dur);
     if (timeToMinutes(end) > timeToMinutes(db.config.closeTime)) return toast('Не помещается до закрытия');
-    if (!selWho.value && !inpName.value.trim()) return toast('Укажите имя или выберите клиента');
+    if (!who.id && !inpName.value.trim()) return toast('Найдите клиента или впишите имя');
 
     // Занятость корта проверяет сервер ещё раз, уже на свежих данных:
     // между открытием окна и нажатием кнопки время могли занять.
     closeModal();
     act(() => api('adminCreateBooking', {
       date, start, durationMinutes: dur, courtId, exactCourt: true,
-      clientId: selWho.value || undefined,
-      clientName: selWho.value ? undefined : inpName.value.trim(),
-      clientPhone: selWho.value ? undefined : inpPhone.value.trim(),
+      clientId: who.id || undefined,
+      clientName: who.id ? undefined : inpName.value.trim(),
+      clientPhone: who.id ? undefined : inpPhone.value.trim(),
     }), 'Записано');
   }));
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
@@ -1944,6 +1943,54 @@ function shortDateTime(iso) {
 // Вкладка: Клиенты
 // ============================================================
 
+// Порядки списка клиентов. Каждый — про свой вопрос администратора:
+// «кого проверить», «кому нельзя без предоплаты», «кто новенький»,
+// «кому не дойдёт напоминание».
+//
+// По умолчанию оставлен серверный порядок (ждущие проверки сверху, потом
+// имя): это единственное, что требует действия прямо сейчас, и терять
+// его при каждом заходе не стоит.
+const CLIENT_SORTS = [
+  { id: 'default', label: 'сначала ждущие проверки' },
+  { id: 'name', label: 'по имени, А→Я' },
+  { id: 'rating-asc', label: 'рейтинг: сначала низкий' },
+  { id: 'rating-desc', label: 'рейтинг: сначала высокий' },
+  { id: 'ntrp-desc', label: 'уровень NTRP: сначала сильные' },
+  { id: 'ntrp-asc', label: 'уровень NTRP: сначала слабые' },
+  { id: 'new', label: 'сначала новые' },
+  { id: 'old', label: 'сначала давние' },
+  { id: 'no-tg', label: 'сначала без Telegram' },
+  { id: 'games', label: 'сначала кто больше играл' },
+];
+
+function sortedClients() {
+  const list = db.clients.slice();
+  const byName = (a, b) => a.name.localeCompare(b.name, 'ru');
+  // Уровень известен не у всех, и «не знаем» — это не ноль: такие
+  // карточки уезжают в конец при любой сортировке по NTRP, иначе они
+  // притворяются самыми слабыми игроками клуба.
+  const byNtrp = dir => (a, b) => {
+    if ((a.ntrp == null) !== (b.ntrp == null)) return a.ntrp == null ? 1 : -1;
+    if (a.ntrp == null) return byName(a, b);
+    return (a.ntrp - b.ntrp) * dir || byName(a, b);
+  };
+  const at = c => Date.parse(c.createdAt || '') || 0;
+
+  switch (state.clientSort) {
+    case 'name': return list.sort(byName);
+    case 'rating-asc': return list.sort((a, b) => a.rating - b.rating || byName(a, b));
+    case 'rating-desc': return list.sort((a, b) => b.rating - a.rating || byName(a, b));
+    case 'ntrp-desc': return list.sort(byNtrp(-1));
+    case 'ntrp-asc': return list.sort(byNtrp(1));
+    case 'new': return list.sort((a, b) => at(b) - at(a) || byName(a, b));
+    case 'old': return list.sort((a, b) => at(a) - at(b) || byName(a, b));
+    case 'no-tg': return list.sort((a, b) => (a.tg === b.tg) ? byName(a, b) : (a.tg ? 1 : -1));
+    case 'games': return list.sort((a, b) => b.completedCount - a.completedCount || byName(a, b));
+    // Порядок сервера: ждущие проверки сверху, дальше по имени.
+    default: return list;
+  }
+}
+
 function renderClients(view) {
   const card = el('div', 'card');
   card.innerHTML = '<h2>Клиенты <span class="sub">' + db.clients.length
@@ -1965,6 +2012,18 @@ function renderClients(view) {
     }); }, 350);
   });
   card.appendChild(search);
+
+  // Порядок списка. Сортируем уже полученный список, а не переспрашиваем
+  // сервер: список за один запрос и так в руках, а лишний вызов у нас
+  // стоит холодного старта (см. «один запрос на экземпляр»).
+  const fSort = el('label', 'field');
+  fSort.innerHTML = '<span>Порядок</span>';
+  const selSort = document.createElement('select');
+  CLIENT_SORTS.forEach(o => selSort.appendChild(opt(o.id, o.label)));
+  selSort.value = state.clientSort;
+  selSort.addEventListener('change', () => { state.clientSort = selSort.value; render(); });
+  fSort.appendChild(selSort);
+  card.appendChild(fSort);
 
   // Загрузка «Корзин игроков». Кнопка живёт здесь, а не в настройках:
   // уровень — свойство клиента, и смотреть на результат импорта надо
@@ -1995,7 +2054,7 @@ function renderClients(view) {
     return;
   }
 
-  db.clients.forEach(c => {
+  sortedClients().forEach(c => {
     const it = el('div', 'item');
     const flags = [];
     flags.push(c.status === 'verified' ? '<span class="pill ok">проверенный</span>'
@@ -2015,7 +2074,11 @@ function renderClients(view) {
     it.innerHTML = '<div class="t1">' + escapeHtml(c.name) + ' ' + flags.join(' ') + '</div>'
       + '<div class="t2">' + escapeHtml(fmtPhone(c.phone))
       + ' · рейтинг <b>' + String(c.rating).replace('.', ',') + '</b>'
-      + ' · ' + counters.join(' · ') + '</div>';
+      + ' · ' + counters.join(' · ')
+      // Дата регистрации нужна не сама по себе, а рядом с порядком
+      // «сначала новые»: иначе непонятно, почему список выстроился так.
+      + (c.createdAt ? ' · с ' + escapeHtml(c.createdAt.slice(8, 10) + '.'
+        + c.createdAt.slice(5, 7) + '.' + c.createdAt.slice(0, 4)) : '') + '</div>';
 
     // Откуда взялось число, если его правили руками. Без этой строки у
     // стойки не объяснить пятёрку у человека с двумя неявками.
@@ -2511,22 +2574,25 @@ function openEndSeries(s) {
 
 // Привязка к учётке необязательна: у группы её и не бывает. Но если
 // человек в клубе есть, связать полезно — тогда в карточке виден телефон.
-function clientPicker(parent, initialId) {
+function clientPicker(parent, initialId, opts) {
+  const o = opts || {};
   const state = { id: initialId || null };
   const input = document.createElement('input');
   const current = clientById(initialId);
   input.value = current ? current.name : '';
-  input.placeholder = 'Имя или телефон — необязательно';
-  wrapField(parent, 'Клиент центра', input);
+  input.placeholder = o.placeholder || 'Имя или телефон — необязательно';
+  wrapField(parent, o.label || 'Клиент центра', input);
 
   const results = el('div');
   parent.appendChild(results);
+
+  const pick = (id) => { state.id = id; if (o.onChange) o.onChange(id); };
 
   let timer = null;
   input.addEventListener('input', () => {
     // Начали править текст — прежний выбор снят: иначе к серии осталась
     // бы привязана учётка, которую в поле уже не видно.
-    state.id = null;
+    pick(null);
     const query = input.value.trim();
     clearTimeout(timer);
     results.innerHTML = '';
@@ -2536,14 +2602,24 @@ function clientPicker(parent, initialId) {
       try { found = await api('listClients', { query }); } catch (e) { return; }
       results.innerHTML = '';
       const row = el('div', 'acts');
-      found.clients.slice(0, 5).forEach(c => {
+      // Заблокированных не предлагаем: записать их всё равно нельзя, а в
+      // списке они путают — особенно когда однофамильцев несколько.
+      const shown = found.clients.filter(c => c.status !== 'blocked').slice(0, 6);
+      shown.forEach(c => {
         row.appendChild(btn(c.name + ' · ' + fmtPhone(c.phone), 'btn sm sec', () => {
-          state.id = c.id;
-          input.value = c.name;
+          pick(c.id);
+          input.value = c.name + ' · ' + fmtPhone(c.phone);
           results.innerHTML = '';
         }));
       });
-      if (!found.clients.length) row.appendChild(txt('span', 't2', 'Никого не нашлось'));
+      // Однофамильцев в клубе будет много, и разбирать их по имени
+      // бесполезно — поэтому телефон стоит в самой кнопке, а искать по
+      // нему можно так же, как по имени (сервер сверяет цифры).
+      if (!shown.length) row.appendChild(txt('span', 't2', 'Никого не нашлось — попробуйте телефон'));
+      else if (found.clients.length > shown.length) {
+        row.appendChild(txt('span', 't2', 'Показаны первые ' + shown.length
+          + ' из ' + found.clients.length + ' — уточните запрос'));
+      }
       results.appendChild(row);
     }, 350);
   });
@@ -3170,15 +3246,15 @@ function openAddSignup(s, roster) {
   body.innerHTML = '<h3>Записать на тренировку</h3>'
     + '<div class="m-sub">' + escapeHtml(target.title + ' · ' + longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
 
-  const fWho = el('label', 'field'); fWho.innerHTML = '<span>Клиент</span>';
-  const selWho = document.createElement('select');
-  selWho.appendChild(opt('', '— записать по имени —'));
-  db.clients.filter(c => c.status !== 'blocked')
-    .slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-    .forEach(c => selWho.appendChild(opt(c.id, c.name + ' · ' + fmtPhone(c.phone))));
-  fWho.appendChild(selWho); body.appendChild(fWho);
-
+  // Тот же поиск, что и при записи на корт: списком в три сотни имён
+  // пользоваться нельзя.
   const guest = el('div');
+  const who = clientPicker(body, null, {
+    label: 'Клиент',
+    placeholder: 'Имя или телефон — пусто значит «по имени»',
+    onChange: (id) => { guest.hidden = !!id; },
+  });
+
   const fName = el('label', 'field'); fName.innerHTML = '<span>Имя</span>';
   const inpName = document.createElement('input'); inpName.placeholder = 'Как записать';
   fName.appendChild(inpName);
@@ -3187,7 +3263,6 @@ function openAddSignup(s, roster) {
   fPhone.appendChild(inpPhone);
   guest.appendChild(fName); guest.appendChild(fPhone);
   body.appendChild(guest);
-  selWho.addEventListener('change', () => { guest.hidden = !!selWho.value; });
 
   const fPair = el('label', 'field');
   fPair.innerHTML = '<span>Партнёр — если пришли парой, займут два места</span>';
@@ -3203,14 +3278,14 @@ function openAddSignup(s, roster) {
 
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Записать', 'btn', () => {
-    if (!selWho.value && inpName.value.trim().length < 2) return toast('Укажите имя или выберите клиента');
+    if (!who.id && inpName.value.trim().length < 2) return toast('Найдите клиента или впишите имя');
     closeModal();
     act(() => api('adminAddSignup', {
       date: s.date, bookingId: s.id,
       roster: which === 'alt' ? 'alt' : undefined,
-      clientId: selWho.value || undefined,
-      name: selWho.value ? undefined : inpName.value.trim(),
-      phone: selWho.value ? undefined : inpPhone.value.trim(),
+      clientId: who.id || undefined,
+      name: who.id ? undefined : inpName.value.trim(),
+      phone: who.id ? undefined : inpPhone.value.trim(),
       partnerName: inpPair.value.trim() || undefined,
     }), 'Записан');
   }));
