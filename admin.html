@@ -174,8 +174,13 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .g-time.hour { color: var(--ink); font-weight: 600; }
 .g-free { border-bottom: 1px solid #eef1ef; border-right: 1px solid #eef1ef; cursor: pointer; background: #fff; }
 .g-free:hover { background: var(--accent-tint); }
-.g-free.past { background: #f7f8f7; cursor: default; }
-.g-free.past:hover { background: #f7f8f7; }
+/* Прошедшее время — тот же серый, что и на клиентской странице. Прежний
+   #f7f8f7 от белого отличался едва различимо, и вчерашний хвост дня
+   выглядел свободным. Заливка светлее любой брони: это не «занято», а
+   «уже не бывает», и брони поверх неё должны читаться по-прежнему. */
+.g-free.past { background: #DFE4E7; cursor: default;
+  border-bottom-color: #D2D9DC; border-right-color: #D2D9DC; }
+.g-free.past:hover { background: #DFE4E7; }
 
 /* Заливки заметно плотнее прежних пастельных: на дешёвой матрице и при
    боковом взгляде занятые клетки сливались с белой сеткой, и день
@@ -431,6 +436,8 @@ const ERRORS = {
   'invalid-court': 'Выберите корт.',
   'invalid-reason': 'Напишите причину закрытия.',
   'date-in-past': 'Эта дата уже прошла.',
+  'target-in-past': 'Переносить в прошедшее время нельзя.',
+  'already-started': 'Эта бронь уже началась — переносить её поздно. Отметьте неявку или отмените.',
   'rivals-exist': 'На одном из окон висят два состава — сначала распустите лишний.',
   'roster-not-found': 'Этого состава больше нет — обновите страницу.',
   'already-decided': 'Состав уже определился — второй завести некуда.',
@@ -1212,7 +1219,13 @@ function renderWaiting(view, date) {
 // не то же самое — там своя карточка и свои уведомления.
 function isMovable(b) {
   return !!b.booking && !b.openPlay && !b.seriesId && !b.exception
-    && b.status !== 'cancelled' && b.status !== 'noshow';
+    && b.status !== 'cancelled' && b.status !== 'noshow'
+    // Начавшуюся бронь не двигаем: игра уже идёт или прошла, и перенос
+    // переписал бы прожитый день. Открыть карточку и отметить неявку
+    // по-прежнему можно — блок остаётся нажимаемым, теряется только
+    // перетаскивание. Сервер отвечает тем же отказом: страница проверок
+    // не заменяет.
+    && !isPast(b.date, b.start);
 }
 
 // Порог, после которого нажатие превращается в перенос. Мышь трогается
@@ -1291,10 +1304,11 @@ function moveGhost(evt, b, ctx) {
   // записать два файла разом атомарно нельзя. Показываем это заранее,
   // а не отказом после отпускания.
   const wrongDay = t.date !== b.date;
-  drag.ghost.classList.toggle('bad', wrongDay);
-  drag.ghost.textContent = wrongDay
-    ? 'только внутри дня'
-    : fmtTime(t.start) + ' · ' + courtName(t.courtId);
+  const inPast = isPast(t.date, t.start);
+  drag.ghost.classList.toggle('bad', wrongDay || inPast);
+  drag.ghost.textContent = wrongDay ? 'только внутри дня'
+    : (inPast ? 'это время прошло'
+      : fmtTime(t.start) + ' · ' + courtName(t.courtId));
 }
 
 function endDrag(b, ctx) {
@@ -1309,6 +1323,7 @@ function endDrag(b, ctx) {
   if (!moved || !t) return false;
 
   if (t.date !== b.date) { toast('Перенести можно только внутри дня'); return true; }
+  if (isPast(t.date, t.start)) { toast('Это время уже прошло'); return true; }
   if (t.courtId === b.courtId && t.start === b.start) return true;
 
   act(() => api('adminMoveBooking', {
