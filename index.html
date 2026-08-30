@@ -652,6 +652,7 @@ const ERRORS = {
   'signups-closed': 'Набор закрыт. Позвоните в центр, если хотите попасть.',
   'already-signed': 'Вы уже записаны на эту тренировку.',
   'not-signed': 'Вы на эту тренировку не записаны.',
+  'roster-not-found': 'Этот состав уже не набирается — обновите страницу.',
   'series-not-found': 'Постоянная бронь не найдена — обновите страницу.',
   'not-an-occurrence': 'Это занятие уже снято или расписание изменилось. Обновите страницу.',
 };
@@ -2477,8 +2478,11 @@ function sessionAt(dateIso, courtId, slot) {
 function openPlayTag(dateIso, courtId, slot) {
   const s = sessionAt(dateIso, courtId, slot);
   if (!s) return 'тренировка';
-  const op = s.openPlay;
+  const op = rosterOf(s, myRoster(s));
   if (op.mine) return op.title + ' · вы записаны';
+  // Два состава в клетку сетки не влезают — там только «есть выбор»,
+  // подробности человек увидит, нажав на клетку.
+  if (s.rival) return op.title + ' · два состава';
   if (op.full) return op.title + ' · мест нет';
   return op.title + ' · ' + seatsText(op.left);
 }
@@ -2513,15 +2517,46 @@ function onOpenPlayClick(dateIso, courtId, slot) {
 // Принимает и id, и саму карточку: в кабинете записи приходят из
 // myBookings, и требовать, чтобы та же тренировка нашлась ещё и в
 // списке ближайших, значило бы ломать экран на границе горизонта.
-function openSessionCard(idOrSession) {
+// На одно время центр иногда вешает два состава — например, женскую и
+// мужскую группу, — и играет тот, который соберётся первым. Составов при
+// этом два, а время одно, поэтому и карточка одна: с переключателем.
+function rosterOf(s, roster) {
+  return roster === 'alt' && s.rival ? s.rival : s.openPlay;
+}
+
+// Какой состав показывать человеку по умолчанию: тот, в котором он уже
+// стоит. Иначе основной.
+function myRoster(s) {
+  return s.rival && s.rival.mine ? 'alt' : 'main';
+}
+
+function openSessionCard(idOrSession, roster) {
   const s = typeof idOrSession === 'string' ? sessionById(idOrSession) : idOrSession;
   if (!s) { toast('Тренировка не найдена — обновите страницу'); return; }
-  const op = s.openPlay;
+  const which = roster || myRoster(s);
+  const op = rosterOf(s, which);
+  const other = which === 'alt' ? s.openPlay : s.rival;
 
   const body = el('div');
   body.innerHTML = '<h3>' + escapeHtml(op.title) + '</h3>'
     + '<div class="m-sub">' + escapeHtml(dayLabelLong(s.date, state.data.today)
       + ' · ' + fmtRange(s.start, s.end) + ' · ' + op.level) + '</div>';
+
+  // Переключатель составов и правило: без объяснения человек не поймёт,
+  // почему на один час два разных набора.
+  if (other) {
+    body.appendChild(html('div', 'notice',
+      'На это время набираются два состава — играет тот, который соберётся первым. '
+      + 'Записаться можно только в один.'));
+    const tabs = el('div', 'acts');
+    // Текущий состав — не кнопка, а подпись: нажимать на то, что уже
+    // открыто, некуда.
+    tabs.appendChild(txt('span', 'pill ok', op.title + ' · ' + op.taken + ' из ' + op.seats));
+    tabs.appendChild(btn(other.title + ' · ' + other.taken + ' из ' + other.seats
+      + (other.mine ? ' · вы здесь' : ''), 'btn sm sec',
+      () => openSessionCard(s, which === 'alt' ? 'main' : 'alt')));
+    body.appendChild(tabs);
+  }
 
   const info = el('div', 'summary');
   // Тренировка держит корты одновременно, а не по очереди, — значит «и»,
@@ -2573,6 +2608,9 @@ function openSessionCard(idOrSession) {
   const acts = el('div', 'm-acts');
   if (op.mine) {
     acts.appendChild(btn('Отказаться', 'btn danger', () => leaveSession(s)));
+  } else if (other && other.mine) {
+    body.appendChild(txt('div', 'notice',
+      'Вы записаны в соседний состав. Чтобы перейти сюда, сначала снимитесь оттуда.'));
   } else if (op.signupsClosed) {
     body.appendChild(txt('div', 'notice', 'Набор закрыт. Позвоните в центр, если хотите попасть.'));
   } else {
@@ -2584,7 +2622,7 @@ function openSessionCard(idOrSession) {
     body.insertBefore(fPair, list);
 
     acts.appendChild(btn(op.full ? 'Встать в очередь' : 'Записаться', 'btn',
-      () => joinSession(s, inpPair.value.trim(), false)));
+      () => joinSession(s, inpPair.value.trim(), false, which)));
   }
   acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
   body.appendChild(acts);
@@ -2592,7 +2630,7 @@ function openSessionCard(idOrSession) {
   showModal(body);
 }
 
-async function joinSession(s, partnerName, confirmLevel) {
+async function joinSession(s, partnerName, confirmLevel, roster) {
   if (!state.auth || !state.auth.client) { openAuth('login'); return; }
 
   try {
@@ -2600,6 +2638,7 @@ async function joinSession(s, partnerName, confirmLevel) {
       date: s.date, bookingId: s.id,
       partnerName: partnerName || undefined,
       confirmLevel: confirmLevel || undefined,
+      roster: roster === 'alt' ? 'alt' : undefined,
     });
     closeModal();
     await refreshAvailability();
@@ -2611,15 +2650,15 @@ async function joinSession(s, partnerName, confirmLevel) {
     // Уровень не запрещает записаться, а предупреждает: ссорить систему
     // с людьми из-за половины балла не стоит, решает организатор.
     if (e.code === 'needs-level-confirm') {
-      confirmLevelAndJoin(s, partnerName, e.hint);
+      confirmLevelAndJoin(s, partnerName, e.hint, roster);
       return;
     }
     toast(errorText(e.code), 4000);
   }
 }
 
-function confirmLevelAndJoin(s, partnerName, hint) {
-  const op = s.openPlay;
+function confirmLevelAndJoin(s, partnerName, hint, roster) {
+  const op = rosterOf(s, roster || 'main');
   const body = el('div');
   body.innerHTML = '<h3>Проверьте уровень</h3>'
     + '<div class="m-sub">' + escapeHtml(op.title + ' · ' + op.level) + '</div>';
@@ -2628,7 +2667,7 @@ function confirmLevelAndJoin(s, partnerName, hint) {
     : 'Ваш уровень выше диапазона этой тренировки. Записаться можно, но игра может оказаться слишком лёгкой.'));
 
   const acts = el('div', 'm-acts');
-  acts.appendChild(btn('Всё равно записаться', 'btn', () => joinSession(s, partnerName, true)));
+  acts.appendChild(btn('Всё равно записаться', 'btn', () => joinSession(s, partnerName, true, roster)));
   acts.appendChild(btn('Передумал', 'btn sec', closeModal));
   body.appendChild(acts);
   showModal(body);
@@ -2653,11 +2692,12 @@ async function leaveSession(s) {
 function homeOpenPlay() {
   const card = el('div', 'card');
   openPlaySessions().slice(0, 6).forEach(s => {
-    const op = s.openPlay;
+    const op = rosterOf(s, myRoster(s));
     const it = el('div', 'item');
     it.innerHTML = '<div class="t1">' + escapeHtml(op.title)
       + ' <span class="pill ' + (op.full ? 'grey' : 'ok') + '">'
       + (op.full ? 'мест нет' : seatsText(op.left)) + '</span>'
+      + (s.rival ? ' <span class="pill wait">и второй состав</span>' : '')
       + (op.mine ? ' <span class="pill ok">вы записаны</span>' : '') + '</div>'
       + '<div class="t2">' + escapeHtml(dayLabelLong(s.date, state.data.today)
         + ' · ' + fmtRange(s.start, s.end) + ' · ' + op.level) + '</div>';
@@ -2905,7 +2945,7 @@ function renderMine() {
     const cs = el('div', 'card');
     cs.innerHTML = '<h2>Вы записаны на тренировки</h2>';
     sessions.forEach(s => {
-      const op = s.openPlay;
+      const op = rosterOf(s, myRoster(s));
       const inQueue = op.queue.some(p => p.mine);
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(op.title)

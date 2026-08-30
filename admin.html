@@ -417,6 +417,9 @@ const ERRORS = {
   'invalid-court': 'Выберите корт.',
   'invalid-reason': 'Напишите причину закрытия.',
   'date-in-past': 'Эта дата уже прошла.',
+  'rivals-exist': 'На одном из окон висят два состава — сначала распустите лишний.',
+  'roster-not-found': 'Этого состава больше нет — обновите страницу.',
+  'already-decided': 'Состав уже определился — второй завести некуда.',
   'series-not-found': 'Постоянная бронь не найдена — возможно, её только что изменили.',
   'series-clash': 'В это время на корте уже стоит другая постоянная бронь.',
   'series-started': 'Эта бронь уже проводилась — её можно завершить, но не удалить.',
@@ -2805,29 +2808,34 @@ function sessionRow(s) {
   const parallel = s.segments.every(x => x.start === s.segments[0].start);
   const uniqueCourts = courts.filter((c, i) => courts.indexOf(c) === i).join(parallel ? ' и ' : ' → ');
 
+  // В шапке строки — время, корты и деньги: то, что общее у обоих
+  // составов. Всё остальное — внутри блока состава.
   it.innerHTML = '<div class="t1">' + escapeHtml(fmtRange(s.start, s.end))
-    + ' · ' + escapeHtml(op.title)
-    + ' <span class="pill ' + (op.full ? 'ok' : 'wait') + '">'
-    + op.taken + ' из ' + op.seats + '</span>'
-    + (op.signupsClosed ? ' <span class="pill grey">набор закрыт</span>' : '') + '</div>'
-    + '<div class="t2">' + escapeHtml(uniqueCourts + ' · ' + op.level)
-    + ' · ' + money(s.total)
-    + (s.perPerson ? ' (' + money(s.perPerson) + ' с человека)' : '')
-    + '</div>'
-    + (op.note ? '<div class="t2">' + escapeHtml(op.note) + '</div>' : '');
+    + (s.rival ? ' <span class="pill wait">два состава</span>' : '')
+    + (s.decidedAt ? ' <span class="pill ok">состав определился</span>' : '') + '</div>'
+    + '<div class="t2">' + escapeHtml(uniqueCourts) + ' · ' + money(s.total)
+    + (s.openPlay.perPerson ? ' (' + money(s.openPlay.perPerson) + ' с человека)' : '')
+    + '</div>';
 
-  const list = el('div');
-  if (!op.signups.length) {
-    list.appendChild(txt('div', 'empty', 'Никто ещё не записался.'));
+  it.appendChild(rosterBlock(s, 'main'));
+
+  // Второй состав на том же времени — своим блоком под первым. Играет
+  // тот, кто соберётся первым; время при этом занято один раз.
+  if (s.rival) {
+    it.appendChild(txt('div', 't2', '⚔ Конкурирующий состав — играет тот, кто соберётся первым'));
+    it.appendChild(rosterBlock(s, 'alt'));
   }
-  op.signups.forEach((p, i) => list.appendChild(signupRow(s, p, i + 1, false)));
-  op.queue.forEach((p, i) => list.appendChild(signupRow(s, p, i + 1, true)));
-  it.appendChild(list);
 
   const acts = el('div', 'acts');
-  acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s)));
   acts.appendChild(btn('Изменить', 'btn sm sec', () => openSessionForm(s, null)));
-  if (openPlaySessions().filter(x => x.date === s.date && x.id !== s.id && x.status !== 'cancelled').length) {
+  if (!s.rival && !s.decidedAt) {
+    acts.appendChild(btn('Второй состав', 'btn sm sec', () => openRivalForm(s)));
+  }
+  // Окно с двумя составами не сливается: непонятно, чей состав куда
+  // переезжает. Кнопку не показываем, а не отказываем после нажатия.
+  if (!s.rival
+    && openPlaySessions().filter(x => x.date === s.date && x.id !== s.id
+      && x.status !== 'cancelled' && !x.rival).length) {
     acts.appendChild(btn('Объединить', 'btn sm sec', () => openMergeSession(s)));
   }
   acts.appendChild(btn('Отменить', 'btn sm danger', () => confirmDelete(
@@ -2841,6 +2849,40 @@ function sessionRow(s) {
   it.appendChild(acts);
 
   return it;
+}
+
+// Один состав внутри строки тренировки: счётчик, список, свои кнопки.
+// Вынесено отдельно ровно потому, что составов бывает два и рисовать их
+// надо одинаково.
+function rosterBlock(s, roster) {
+  const op = roster === 'alt' ? s.rival : s.openPlay;
+  const wrap = el('div', 'item');
+  wrap.innerHTML = '<div class="t1">' + escapeHtml(op.title)
+    + ' <span class="pill ' + (op.full ? 'ok' : 'wait') + '">'
+    + op.taken + ' из ' + op.seats + '</span>'
+    + (op.signupsClosed ? ' <span class="pill grey">набор закрыт</span>' : '')
+    + '</div>'
+    + '<div class="t2">' + escapeHtml(op.level) + '</div>'
+    + (op.note ? '<div class="t2">' + escapeHtml(op.note) + '</div>' : '');
+
+  if (!op.signups.length) wrap.appendChild(txt('div', 'empty', 'Никто ещё не записался.'));
+  op.signups.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, false)));
+  op.queue.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, true)));
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s, roster)));
+  if (roster === 'alt') {
+    acts.appendChild(btn('Изменить состав', 'btn sm sec', () => openSessionForm(s, null, 'alt')));
+    acts.appendChild(btn('Распустить', 'btn sm danger', () => confirmDelete(
+      'Распустить второй состав?', op.title,
+      op.taken > 0
+        ? 'Записанным (' + op.taken + ') уйдёт уведомление, что состав снят. Время останется за первым составом.'
+        : 'В нём никого нет. Время останется за первым составом.',
+      () => act(() => api('adminUpdateOpenPlay', { date: s.date, bookingId: s.id, alt: null }),
+        'Второй состав распущен'))));
+  }
+  wrap.appendChild(acts);
+  return wrap;
 }
 
 function signupRow(s, p, num, inQueue) {
@@ -2880,10 +2922,12 @@ function lastFilledDay() {
 
 // ---------- Окна: создание и правка ----------
 
-function openSessionForm(session, preset) {
-  const op = session ? session.openPlay : null;
+function openSessionForm(session, preset, roster) {
+  const which = roster === 'alt' ? 'alt' : 'main';
+  const op = session ? (which === 'alt' ? session.rival : session.openPlay) : null;
   const body = el('div');
-  body.innerHTML = '<h3>' + (session ? 'Изменить окно' : 'Новое окно') + '</h3>'
+  body.innerHTML = '<h3>' + (session
+    ? (which === 'alt' ? 'Изменить второй состав' : 'Изменить окно') : 'Новое окно') + '</h3>'
     + (session ? '<div class="m-sub">' + escapeHtml(longDate(session.date) + ' · ' + fmtRange(session.start, session.end)) + '</div>' : '');
 
   // Время и корт у существующего окна меняются переносом брони — тем же
@@ -2943,6 +2987,21 @@ function openSessionForm(session, preset) {
   inpNote.value = op ? op.note : '';
   fNote.appendChild(inpNote); body.appendChild(fNote);
 
+  // Второй состав можно завести сразу: владелец обычно так и вешает —
+  // две конкурирующие группы на один хороший вечерний час.
+  let rivalTitle = null;
+  if (!session) {
+    const fRival = el('label', 'field');
+    fRival.innerHTML = '<span>Второй состав на это же время — пусто значит «не нужен»</span>';
+    rivalTitle = document.createElement('input');
+    rivalTitle.placeholder = 'Например: мужская одиночка';
+    fRival.appendChild(rivalTitle); body.appendChild(fRival);
+    body.appendChild(txt('div', 'empty',
+      'Два состава делят одно время: играет тот, кто первым наберётся полностью, '
+      + 'второй распускается — записанным уйдёт уведомление. Мест во втором столько же, '
+      + 'потом можно поправить.'));
+  }
+
   let closedFlag = op ? !!op.signupsClosed : false;
   if (session) {
     body.appendChild(check('Набор закрыт', closedFlag, v => { closedFlag = v; },
@@ -2965,18 +3024,72 @@ function openSessionForm(session, preset) {
     closeModal();
     if (session) {
       payloadOp.signupsClosed = closedFlag;
-      act(() => api('adminUpdateOpenPlay', { date: session.date, bookingId: session.id, openPlay: payloadOp }),
-        'Окно изменено');
+      act(() => api('adminUpdateOpenPlay', {
+        date: session.date, bookingId: session.id,
+        roster: which === 'alt' ? 'alt' : undefined,
+        openPlay: payloadOp,
+      }), which === 'alt' ? 'Второй состав изменён' : 'Окно изменено');
     } else {
+      const rival = rivalTitle && rivalTitle.value.trim();
+      if (rival) payloadOp.alt = { title: rival };
       act(() => api('adminCreateOpenPlay', {
         date: inpDate.value, start: selStart.value, durationMinutes: Number(selDur.value),
         openPlay: payloadOp,
-      }), 'Окно создано');
+      }), rival ? 'Окно создано, составов два' : 'Окно создано');
     }
   }));
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   body.appendChild(acts);
 
+  showModal(body);
+}
+
+// Второй состав к уже заведённому окну. Отдельным окошком, а не полем в
+// форме правки: это не «настройка тренировки», а решение вешать на час
+// вторую группу, и спрашивать надо ровно то, что её отличает.
+function openRivalForm(s) {
+  const body = el('div');
+  body.innerHTML = '<h3>Второй состав</h3>'
+    + '<div class="m-sub">' + escapeHtml(longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
+  body.appendChild(txt('div', 'empty',
+    'Играет тот состав, который первым наберётся полностью. Второй распускается — '
+    + 'записанным уйдёт уведомление. Время центра при этом занято один раз.'));
+
+  const fTitle = el('label', 'field'); fTitle.innerHTML = '<span>Подпись</span>';
+  const inpTitle = document.createElement('input');
+  inpTitle.placeholder = 'Например: мужская одиночка';
+  fTitle.appendChild(inpTitle); body.appendChild(fTitle);
+
+  const fLevel = el('div', 'field');
+  fLevel.innerHTML = '<span>Уровень NTRP — пусто значит «любой»</span>';
+  const levelRow = el('div', 'row');
+  const selMin = ntrpSelect(null, 'от');
+  const selMax = ntrpSelect(null, 'до');
+  levelRow.appendChild(selMin); levelRow.appendChild(selMax);
+  fLevel.appendChild(levelRow); body.appendChild(fLevel);
+
+  const fSeats = el('label', 'field'); fSeats.innerHTML = '<span>Мест</span>';
+  const selSeats = document.createElement('select');
+  for (let n = 2; n <= db.openplay.maxSeats; n++) selSeats.appendChild(opt(n, String(n)));
+  selSeats.value = String(s.openPlay.seats);
+  fSeats.appendChild(selSeats); body.appendChild(fSeats);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Завести', 'btn', () => {
+    if (inpTitle.value.trim().length < 2) return toast('Укажите подпись состава');
+    closeModal();
+    act(() => api('adminUpdateOpenPlay', {
+      date: s.date, bookingId: s.id,
+      alt: {
+        title: inpTitle.value.trim(),
+        seats: Number(selSeats.value),
+        ntrpMin: selMin.value === '' ? null : Number(selMin.value),
+        ntrpMax: selMax.value === '' ? null : Number(selMax.value),
+      },
+    }), 'Второй состав заведён');
+  }));
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  body.appendChild(acts);
   showModal(body);
 }
 
@@ -3021,10 +3134,12 @@ function openRepeatDay(sample) {
 
 // ---------- Состав ----------
 
-function openAddSignup(s) {
+function openAddSignup(s, roster) {
+  const which = roster === 'alt' ? 'alt' : 'main';
+  const target = which === 'alt' ? s.rival : s.openPlay;
   const body = el('div');
   body.innerHTML = '<h3>Записать на тренировку</h3>'
-    + '<div class="m-sub">' + escapeHtml(s.openPlay.title + ' · ' + longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
+    + '<div class="m-sub">' + escapeHtml(target.title + ' · ' + longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
 
   const fWho = el('label', 'field'); fWho.innerHTML = '<span>Клиент</span>';
   const selWho = document.createElement('select');
@@ -3051,9 +3166,10 @@ function openAddSignup(s) {
   fPair.appendChild(inpPair); body.appendChild(fPair);
 
   const note = el('div', 'empty');
-  note.textContent = s.openPlay.full
+  note.textContent = (target.full
     ? 'Мест нет — запись уйдёт в очередь.'
-    : 'Свободно мест: ' + s.openPlay.left + '.';
+    : 'Свободно мест: ' + target.left + '.')
+    + (s.rival ? ' Человек может стоять только в одном из двух составов.' : '');
   body.appendChild(note);
 
   const acts = el('div', 'm-acts');
@@ -3062,6 +3178,7 @@ function openAddSignup(s) {
     closeModal();
     act(() => api('adminAddSignup', {
       date: s.date, bookingId: s.id,
+      roster: which === 'alt' ? 'alt' : undefined,
       clientId: selWho.value || undefined,
       name: selWho.value ? undefined : inpName.value.trim(),
       phone: selWho.value ? undefined : inpPhone.value.trim(),
