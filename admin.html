@@ -265,6 +265,11 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .opt-row input:last-child { width: 96px; }
 .opt-row input { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
 
+/* Длинный список внутри карточки: за смену событий набегает несколько
+   десятков, и полотном они выдавливают всё остальное со вкладки. */
+.scroller { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.scroller .item:last-child { margin-bottom: 0; }
+
 .pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 12px; border: 1px solid var(--line); }
 .pill.ok { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent-dark); }
 .pill.wait { background: var(--warn-tint); border-color: var(--warn-line); color: var(--warn); }
@@ -699,6 +704,7 @@ function mapClient(c) {
     name: c.name,
     phone: c.phone,
     tg: !!c.hasTelegram,
+    awaitingGroup: !!c.awaitingGroup,
     status: c.status,
     role: c.role || 'client',
     rating: c.rating,
@@ -768,6 +774,10 @@ async function loadAll() {
   // Скидочные окна редактируются на вкладке настроек и показываются в
   // статистике — берём их из публичных настроек, других тарифов нет.
   config.rules = pub.config.pricing.rules || [];
+  // Окно ленты «Что нового» — настройка панели, наружу её не отдаём,
+  // поэтому приезжает она вместе с самой лентой, а не в публичных
+  // настройках.
+  config.recentWindowHours = review.recentWindowHours;
 
   const bookings = {};
   bookings[day.date] = day.items.map(b => Object.assign({}, b, { date: day.date }));
@@ -1954,6 +1964,8 @@ function renderRequests(view) {
   });
   view.appendChild(c1);
 
+  view.appendChild(renderRecentFeed());
+
   const c2 = el('div', 'card');
   c2.innerHTML = '<h2>Новые клиенты <span class="sub">подтвердите, если знаете человека</span></h2>';
   if (!clients.length) c2.appendChild(txt('div', 'empty', 'Новых заявок нет.'));
@@ -1961,7 +1973,11 @@ function renderRequests(view) {
     const it = el('div', 'item hl');
     it.innerHTML = '<div class="t1">' + escapeHtml(cl.name) + '</div>'
       + '<div class="t2">' + escapeHtml(fmtPhone(cl.phone)) + ' · '
-      + (cl.tg ? 'телефон подтверждён Telegram' : '<b>без Telegram</b> — напоминания не дойдут') + '</div>';
+      + (cl.tg ? 'телефон подтверждён Telegram' : '<b>без Telegram</b> — напоминания не дойдут')
+      // Почему человек здесь оказался. Без этой строки владелец
+      // подтверждает вслепую: «не состоит в группе» — как раз то, ради
+      // чего проверка и заводилась.
+      + (cl.awaitingGroup ? ' · <b>не состоит в группе центра</b>' : '') + '</div>';
     const acts = el('div', 'acts');
     acts.appendChild(btn('Подтвердить', 'btn sm', () =>
       act(() => api('verifyClient', { clientId: cl.id }), 'Клиент может бронировать')));
@@ -2004,6 +2020,62 @@ function renderRequests(view) {
     c3.appendChild(it);
   });
   view.appendChild(c3);
+}
+
+// Лента «Что нового»: записались, перенесли, отменили. Обычная бронь на
+// час нигде в панели не всплывает — она просто ложится в сетку своего
+// дня, — и единственным сигналом о ней остаётся сообщение бота. Ляжет
+// Telegram, и смена пройдёт вслепую: здесь она видна и без него.
+//
+// Действий у строк нет, кроме «открыть день»: это хроника, а не список
+// дел. По той же причине лента не идёт в счётчик на вкладке — он значит
+// «требует решения» и перестал бы обнуляться.
+const RECENT_EVENTS = {
+  created: { label: 'запись', cls: 'ok' },
+  moved: { label: 'перенос', cls: 'wait' },
+  cancelled: { label: 'отмена', cls: 'bad' },
+};
+
+const RECENT_SOURCES = {
+  web: 'с сайта', bot: 'из бота', admin: 'завёл администратор', openplay: 'тренировка',
+};
+
+function renderRecentFeed() {
+  const card = el('div', 'card');
+  const hours = db.config.recentWindowHours;
+  const items = (db.review && db.review.recent) || [];
+
+  card.innerHTML = '<h2>Что нового <span class="sub">записи, переносы и отмены за '
+    + hoursText((hours || 12) * 60) + '</span></h2>';
+
+  if (!items.length) {
+    card.appendChild(txt('div', 'empty', 'За это время ничего не менялось.'));
+    return card;
+  }
+
+  const list = el('div', 'scroller');
+  items.forEach(b => {
+    const ev = RECENT_EVENTS[b.event] || RECENT_EVENTS.created;
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(b.clientName || 'Бронь')
+      + ' <span class="pill ' + ev.cls + '">' + ev.label + '</span></div>'
+      + '<div class="t2">' + escapeHtml(courtName(b.courtId) + ' · ' + longDate(b.date)
+        + ' · ' + fmtRange(b.start, b.end))
+      + (Number.isFinite(b.price) ? ' · ' + escapeHtml(money(b.price)) : '') + '</div>'
+      + '<div class="t2">' + escapeHtml(shortDateTime(b.eventAt))
+      + (RECENT_SOURCES[b.source] ? ' · ' + escapeHtml(RECENT_SOURCES[b.source]) : '')
+      + (b.clientPhone ? ' · ' + escapeHtml(fmtPhone(b.clientPhone)) : '')
+      + '</div>';
+
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Открыть день', 'btn sm sec', () => {
+      state.date = b.date; state.tab = 'day'; reload();
+    }));
+    it.appendChild(acts);
+    list.appendChild(it);
+  });
+  card.appendChild(list);
+  return card;
 }
 
 function shortDateTime(iso) {
@@ -4315,6 +4387,8 @@ function renderSettingsForm(card, cfg) {
   const horizon = numField(card, 'Запись открыта на, дней', cfg.horizonDays);
   const lead = numField(card, 'Запас до начала игры, мин', cfg.minLeadMinutes);
   const switches = numField(card, 'Переходов между кортами в одной брони', cfg.maxSwitches);
+  const recent = numField(card, 'Показывать «Что нового» на вкладке «Заявки» за последние, ч',
+    cfg.recentWindowHours == null ? 12 : cfg.recentWindowHours);
 
   card.appendChild(check('Разрешать брони с переходом между кортами',
     draft.allowCourtSwitch, v => { draft.allowCourtSwitch = v; },
@@ -4337,6 +4411,7 @@ function renderSettingsForm(card, cfg) {
         horizonDays: Number(horizon.value),
         minLeadMinutes: Number(lead.value),
         maxSwitches: Number(switches.value),
+        recentWindowHours: Number(recent.value),
         allowCourtSwitch: draft.allowCourtSwitch,
         packCourts: draft.packCourts,
       },
@@ -4562,6 +4637,45 @@ function renderAnnounceChat(view) {
     + ' минут время предлагается только тем, кто стоит в очереди ожидания, — и лишь потом '
     + 'попадает в чат. Несколько отмен подряд склеиваются в одно сообщение.'
     + (db.chats.lastPostAt ? ' Последнее объявление: ' + shortDateTime(db.chats.lastPostAt) + '.' : '')));
+
+  renderMembershipGate(view);
+}
+
+// Кто может завести учётку через бота. Подтверждённый Telegram номер
+// отвечает на вопрос «настоящий ли телефон», но не на вопрос «кто это»;
+// на второй отвечает группа центра.
+//
+// Не состоит — не отказ: учётка заводится и ждёт в «Новых клиентах»,
+// администратор решает сам. Так же обрабатывается молчащий Telegram.
+function renderMembershipGate(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Регистрация через Telegram <span class="sub">кого пускать без администратора</span></h2>';
+  view.appendChild(card);
+
+  const draft = { on: !!db.chats.requireGroupMembership };
+
+  const chatSel = document.createElement('select');
+  chatSel.appendChild(opt('', 'Не проверять'));
+  db.chats.chats.forEach(c => chatSel.appendChild(opt(String(c.id), c.title)));
+  chatSel.value = db.chats.membershipChatId || '';
+
+  card.appendChild(check('Пускать только тех, кто состоит в группе центра',
+    draft.on, v => { draft.on = v; },
+    'Кто в группе — бронирует сразу. Кого там нет, попадёт в «Новые клиенты» и будет ждать вас; '
+    + 'вступит в группу и напишет боту ещё раз — бот подтвердит его сам.'));
+
+  wrapField(card, 'Группа центра', chatSel);
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
+    patch: { clients: { requireGroupMembership: draft.on, membershipChatId: chatSel.value } },
+  }, 'Условие регистрации сохранено')));
+  card.appendChild(acts);
+
+  card.appendChild(txt('div', 'empty', draft.on && chatSel.value
+    ? 'Проверка включена. Уже подтверждённых клиентов она не касается — только новых.'
+    : 'Проверка выключена: пока группа не выбрана, любой человек с подтверждённым в Telegram '
+      + 'номером получает доступ сразу.'));
 }
 
 // Скидочные окна: «с 10 до 16 по будням корт 1500». Механизм расчёта в
