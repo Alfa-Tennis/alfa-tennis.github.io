@@ -716,6 +716,7 @@ function mapClient(c) {
     phone: c.phone,
     tg: !!c.hasTelegram,
     awaitingGroup: !!c.awaitingGroup,
+    createdByAdmin: !!c.createdByAdmin,
     status: c.status,
     role: c.role || 'client',
     rating: c.rating,
@@ -1899,12 +1900,20 @@ function openNewBooking(date, courtId, start) {
     // Занятость корта проверяет сервер ещё раз, уже на свежих данных:
     // между открытием окна и нажатием кнопки время могли занять.
     closeModal();
+    // Записанный «с улицы» получает карточку: совпал телефон — берётся
+    // существующая, не совпал — заводится новая. Говорим об этом вслух,
+    // иначе база растёт молча.
     act(() => api('adminCreateBooking', {
       date, start, durationMinutes: dur, courtId, exactCourt: true,
       clientId: who.id || undefined,
       clientName: who.id ? undefined : inpName.value.trim(),
       clientPhone: who.id ? undefined : inpPhone.value.trim(),
-    }), 'Записано');
+    })).then(res => {
+      if (!res) return;
+      toast(res.clientCreated
+        ? 'Записано · заведена карточка: ' + res.clientName
+        : (who.id ? 'Записано' : 'Записано · клиент найден: ' + res.clientName), 3200);
+    });
   }));
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   body.appendChild(acts);
@@ -2262,6 +2271,10 @@ function renderClients(view) {
       flags.push('<span class="pill grey">' + (c.role === 'owner' ? 'владелец' : 'администратор') + '</span>');
     }
     if (!c.tg) flags.push('<span class="pill grey">без Telegram</span>');
+    // Заведён при записи с улицы, сам не регистрировался. Отличать
+    // важно: у зарегистрировавшегося без Telegram напоминания не дошли,
+    // а этот их и не ждал — и войти в свою учётку пока не может.
+    if (c.createdByAdmin) flags.push('<span class="pill grey">с улицы</span>');
     if (c.needsPrepay) flags.push('<span class="pill bad">только предоплата</span>');
 
     const counters = [];

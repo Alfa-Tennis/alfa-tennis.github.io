@@ -185,6 +185,12 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .field.need > span { color: var(--danger); }
 .field.need .chip { border-color: var(--danger); }
 .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ink-soft); cursor: pointer; }
+/* Согласие на обработку данных. Галочка не проставлена заранее и стоит
+   рядом с кнопкой: согласие должно быть действием человека, а не
+   состоянием формы по умолчанию. */
+.consent { display: flex; gap: 9px; align-items: flex-start; margin: 4px 0 14px;
+  font-size: 13px; line-height: 1.45; color: var(--ink-soft); cursor: pointer; }
+.consent input { margin: 2px 0 0; flex: 0 0 auto; width: 16px; height: 16px; }
 
 /* Вариантов бывает три десятка — без ограничения высоты они отодвигают
    сетку кортов далеко за пределы экрана телефона. */
@@ -466,6 +472,10 @@ footer a { color: var(--court-dk); }
 
   <footer>
     <p id="footerRules">Бронирование от 1 часа, шаг 30 минут.</p>
+    <!-- Политику обязаны видеть все, а не только те, кто дошёл до формы
+         регистрации: закон требует её опубликовать, а не показать по
+         случаю. -->
+    <p><a href="/privacy.html">Политика обработки персональных данных</a></p>
   </footer>
 </main>
 
@@ -1425,6 +1435,12 @@ function openRequest(item, option) {
   comment.placeholder = 'Например: нужна струна 1.25';
   fComment.appendChild(comment); body.appendChild(fComment);
 
+  // Вошедший согласие уже давал — оно записано в его карточке. С витрины
+  // заявку оставляют и без учётки, и вот там имя с телефоном приходят
+  // впервые: спрашиваем согласие только у них.
+  const consent = client ? null : consentBox();
+  if (consent) body.appendChild(consent.el);
+
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   const send = btn('Отправить', 'btn', async () => {
@@ -1439,6 +1455,10 @@ function openRequest(item, option) {
       toast('Оставьте имя и телефон — иначе перезвонить некуда');
       return;
     }
+    if (consent && !consent.checked()) {
+      toast('Отметьте согласие на обработку персональных данных', 3200);
+      return;
+    }
     send.disabled = true;
     try {
       await api('requestItem', {
@@ -1448,6 +1468,7 @@ function openRequest(item, option) {
         name: inpName ? inpName.value : '',
         phone: inpPhone ? inpPhone.value : '',
         comment: comment.value,
+        consent: consent ? true : undefined,
       });
       closeModal();
       toast('Заявка ушла администратору — перезвонит в рабочее время', 4000);
@@ -2217,14 +2238,34 @@ function openAuth(mode) {
     // сперва войти.
     if (tab === 'login') body.appendChild(forgotPassword());
 
+    // Согласие спрашиваем только при регистрации: у входящего оно уже
+    // отмечено в карточке, и просить его заново — значит делать вид,
+    // что прошлого раза не было.
+    const consent = tab === 'register' ? consentBox() : null;
+    if (consent) body.appendChild(consent.el);
+
     const submit = async () => {
+      if (consent && !consent.checked()) {
+        toast('Отметьте согласие на обработку персональных данных', 3200);
+        return;
+      }
       try {
         const res = tab === 'login'
           ? await api('login', { phone: inpPhone.value, password: inpPass.value })
-          : await api('register', { name: inpName ? inpName.value : '', phone: inpPhone.value, password: inpPass.value });
+          : await api('register', {
+            name: inpName ? inpName.value : '', phone: inpPhone.value,
+            password: inpPass.value, consent: true,
+          });
 
         if (tab === 'register' && res.existing) {
-          toast('На этот номер уже есть учётная запись — войдите.', 3600);
+          // Учётку могли завести и не вы: администратор заводит карточку,
+          // когда записывает человека по телефону или у стойки. Пароля у
+          // такой карточки нет вовсе, и «просто войдите» отправляло бы
+          // человека в тупик. Про пароль здесь не спрашиваем у сервера
+          // намеренно — ответ «на этом номере пароля нет» рассказывал бы
+          // о чужом номере больше, чем нужно.
+          toast('На этот номер уже есть учётная запись. Если пароль не заводили — '
+            + 'войдите через Telegram или попросите пароль у администратора.', 6000);
           tab = 'login'; draw();
           return;
         }
@@ -2279,6 +2320,34 @@ function openAuth(mode) {
 function phoneDigits(raw) {
   const s = String(raw == null ? '' : raw).replace(/[^\d+]/g, '');
   return /^\+?\d{10,15}$/.test(s) ? s : '';
+}
+
+// Согласие на обработку персональных данных.
+//
+// Галочка снята по умолчанию и не «принимается автоматически»: закон
+// требует конкретного и осознанного согласия, а проставленная заранее
+// галочка — это ни то, ни другое. Ссылка на политику открывается
+// отдельной вкладкой, чтобы человек не потерял заполненную форму.
+function consentBox() {
+  const box = el('label', 'consent');
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+
+  const text = document.createElement('span');
+  text.appendChild(document.createTextNode('Я согласен на обработку моих персональных данных в соответствии с '));
+  const a = document.createElement('a');
+  a.href = '/privacy.html';
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.textContent = 'политикой центра';
+  // Клик по ссылке не должен переключать галочку: метка ловит его первой.
+  a.addEventListener('click', (e) => e.stopPropagation());
+  text.appendChild(a);
+  text.appendChild(document.createTextNode('.'));
+
+  box.appendChild(cb);
+  box.appendChild(text);
+  return { el: box, checked: () => cb.checked };
 }
 
 function forgotPassword() {
