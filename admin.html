@@ -391,6 +391,10 @@ function setToken(value) {
 // Списка «что менять нельзя» здесь нет намеренно: повторить запись —
 // это вторая бронь на то же время, и такое должен решать человек.
 const READ_ONLY = new Set([
+  // `me` сюда забыли при прошлой правке, и он один во всей панели шёл
+  // без повтора и с двадцатипятисекундным сроком — а стоит он первым,
+  // до всего остального.
+  'me',
   'adminBootstrap', 'adminDay', 'adminWeek', 'adminReview', 'adminStats',
   'adminSettings', 'adminLedger', 'adminOpenPlayWeek', 'listClients',
   'listStaff', 'listEvents', 'listCatalog', 'listRequests', 'listNews',
@@ -401,7 +405,13 @@ const READ_ONLY = new Set([
 // сломанное соединение с хранилищем, и переспросить дешевле, чем ждать.
 // Запись ждём почти до конца серверного таймаута: там повтор опасен, и
 // оборвать запрос, который вот-вот пройдёт, хуже, чем подождать.
-const READ_TIMEOUT_MS = 9000;
+// Первая попытка короткая: соединение до облака с части сетей просто не
+// устанавливается — замер 01.09.2026 поймал такое примерно в каждом
+// двадцатом случае, и операционная система молчит о нём двадцать одну
+// секунду. Ждать их бессмысленно, зависшее соединение не оживает.
+// Успешное чтение укладывается в секунду, так что пять — уже с запасом.
+const READ_TIMEOUT_MS = 5000;
+const READ_RETRY_TIMEOUT_MS = 9000;
 const WRITE_TIMEOUT_MS = 25000;
 
 async function fetchOnce(action, payload, ms) {
@@ -427,7 +437,8 @@ async function api(action, payload) {
   for (let i = 0; i < attempts; i++) {
     if (i) await new Promise(r => setTimeout(r, 400));
     try {
-      res = await fetchOnce(action, payload, readOnly ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS);
+      res = await fetchOnce(action, payload,
+        readOnly ? (i ? READ_RETRY_TIMEOUT_MS : READ_TIMEOUT_MS) : WRITE_TIMEOUT_MS);
     } catch (e) {
       // Оборвали по времени или сеть не ответила вовсе.
       lastError = e; res = null; continue;
@@ -828,10 +839,45 @@ async function loadAll() {
   };
 }
 
+let reloading = false;
+
 async function reload() {
-  await loadAll();
-  state.loadedAt = Date.now();
-  render();
+  reloading = true;
+  try {
+    await loadAll();
+    state.loadedAt = Date.now();
+    render();
+  } finally { reloading = false; }
+}
+
+// Хватает ли слепку данных, чтобы нарисовать вкладку дня.
+//
+// Лента недели приезжает только когда её попросили, а просит её лишь
+// загрузка с уже открытой вкладкой дня. Уход в настройки или каталог
+// перечитывает панель без ленты и теряет её — и возврат на «День»
+// рисовал «Загружаем неделю…», не запрашивая ничего. Навсегда, до
+// нажатия «Обновить».
+function dayDataMissing() {
+  if (db.dayDate !== state.date) return true;
+  return state.span === 'week' && db.weekFrom !== state.date;
+}
+
+// Экран «Загружаем…» обязан чинить себя сам: сюда можно прийти любым
+// путём, и перечислять их по одному — значит однажды снова забыть.
+// Отметка держит от повтора: один запрос на пару «дата + режим», иначе
+// неудачный ответ превратился бы в бесконечный круг.
+let autoLoadKey = null;
+
+function ensureDayData() {
+  const key = state.date + ':' + state.span;
+  if (reloading || autoLoadKey === key) return;
+  autoLoadKey = key;
+  reload().then(() => {
+    // Данные пришли — отметку снимаем, чтобы страховка работала и
+    // в следующий раз. Не пришли — отметка остаётся и держит панель
+    // от бесконечного круга запросов.
+    if (!dayDataMissing()) autoLoadKey = null;
+  }).catch(() => { autoLoadKey = null; toast('Не удалось загрузить'); });
 }
 
 // Панель читает день один раз за заход, а открытой её держат весь день.
@@ -1065,6 +1111,10 @@ function renderTabs() {
       // Данные этого раздела ещё не читали — дочитываем и перерисовываем.
       // Экран до этого показывает «Загружаем», а не пустоту, которую
       // легко принять за «здесь ничего нет».
+      //
+      // Вкладки дня здесь нет намеренно: её нехватку замечает и
+      // добирает сама отрисовка (ensureDayData), и второй запрос отсюда
+      // был бы ровно тем лишним вызовом, которого проект избегает.
       if (LAZY[t.id] && !db[LAZY[t.id]]) {
         reload().catch(() => toast('Не удалось загрузить раздел'));
       }
@@ -1208,8 +1258,9 @@ function renderDay(view) {
   // Пока день не прочитан, сетку не показываем вовсе: пустой корт,
   // который на самом деле занят, — худшее, что панель может сказать
   // администратору, стоящему у стойки с телефоном в руке.
-  if (db.dayDate !== date || (week && db.weekFrom !== date)) {
+  if (dayDataMissing()) {
     view.appendChild(txt('div', 'empty', week ? 'Загружаем неделю…' : 'Загружаем день…'));
+    ensureDayData();
     return;
   }
 
@@ -5149,6 +5200,13 @@ document.getElementById('logoutBtn').addEventListener('click', logout);
     const res = await api('me');
     await enter(res.client);
   } catch (e) {
+    // Сеть не ответила — это не протухший токен. Требовать за это пароль
+    // заново значит наказывать администратора за чужой сбой: токен
+    // оставляем, показываем причину и предлагаем повторить.
+    if (e.code === 'timeout' || e.code === 'server-unavailable') {
+      showLogin('Центр не отвечает. Проверьте связь и обновите страницу — входить заново не нужно.');
+      return;
+    }
     setToken(null);
     showLogin();
   }
