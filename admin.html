@@ -43,6 +43,13 @@
   --warn-line: #EFDCB2;
   --grass: #5C752F;
   --grass-tint: #EEF2E7;
+  /* Счёт в турнирной крестовине: выигрыш зелёным, проигрыш красным.
+     Оливковый --ball-dk читался как обычный текст. */
+  --win: #159B45;
+  --lose: #D4372F;
+  --pass: #159B45;
+  --pass-tint: #E7F6EC;
+
   --ball: #A4DB00;
   --ball-dk: #4C6600;
   --ball-tint: #F0F8D8;
@@ -291,6 +298,47 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.tbl th { text-align: left; font-weight: 600; color: var(--ink-soft); font-size: 13px;
   padding: 6px 8px; border-bottom: 1px solid var(--line); }
 table.tbl td { padding: 8px; border-bottom: 1px solid #eef1ef; }
+/* Снявшийся с турнира остаётся в таблице: его сыгранное уже вошло в очки
+   соперников. Но он больше не участник, и выглядеть должен иначе. */
+table.tbl tr.off td { color: var(--ink-soft); text-decoration: line-through; }
+
+/* ---------- Турниры ---------- */
+/* Крестовина группы. На телефоне уезжает вбок, а не ломается: шестнадцать
+   столбцов в экран не влезают никак. */
+.cross-wrap { overflow-x: auto; }
+table.cross th, table.cross td { text-align: center; padding: 6px 4px; }
+table.cross th.who, table.cross td.who { text-align: left; white-space: nowrap; }
+table.cross th.pl, table.cross td.pl { width: 30px; color: var(--ink-soft); }
+table.cross th.sc, table.cross td.sc { min-width: 56px; font-variant-numeric: tabular-nums; }
+table.cross td.sc.hit { cursor: pointer; }
+table.cross td.sc.hit:hover { background: var(--accent-tint); }
+table.cross td.sc.self {
+  background: repeating-linear-gradient(-45deg, #F3F5F4 0 5px, #E8ECEA 5px 10px);
+}
+table.cross .w { color: var(--win); font-weight: 700; }
+table.cross .l { color: var(--lose); }
+/* Выходящие в плей-офф: заливка плюс полоса слева, иначе её не видно. */
+table.cross tr.up td { background: var(--pass-tint); }
+table.cross tr.up td.pl:first-child { box-shadow: inset 3px 0 0 var(--pass); }
+table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-soft); font-size: 13px; }
+.diff { font-weight: 700; }
+.diff.plus { color: var(--win); }
+.diff.minus { color: var(--lose); }
+.diff.zero { color: var(--ink-soft); }
+.medal { font-size: 17px; margin-right: 4px; }
+table.cross .pend { color: var(--line); }
+table.cross td.pts { background: #F7F9F8; }
+table.cross .no {
+  display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px;
+  border-radius: 999px; background: var(--accent-tint); color: var(--accent-dark);
+  font-size: 12px; font-weight: 600; text-align: center;
+}
+.score-row { display: flex; align-items: center; gap: 8px; }
+.score-row input { width: 72px; text-align: center; }
+.score-sep { color: var(--ink-soft); }
+.picklist { max-height: 300px; overflow: auto; margin: 8px 0; }
+.picklist .item { cursor: pointer; }
+.picklist .item:hover { background: #f4f7f5; }
 
 /* ---------- Модальное окно ---------- */
 .backdrop { position: fixed; inset: 0; background: rgba(22,33,28,.45); display: none;
@@ -772,6 +820,10 @@ async function loadAll() {
     query: state.clientQuery,
     month: state.statsMonth || undefined,
     span: state.tab === 'day' ? state.span : undefined,
+    // Открытый турнир приезжает той же склейкой. Круговой на
+    // шестнадцать человек — сто двадцать матчей, поэтому просим его
+    // только когда он и правда открыт.
+    tournamentId: state.tab === 'tournaments' ? (state.tournamentId || undefined) : undefined,
   });
 
   // Имена оставлены прежними: ниже полторы сотни строк, которые ими
@@ -828,6 +880,8 @@ async function loadAll() {
     catalog: catalog || null,
     news: posts || null,
     openplay: sessions || null,
+    tournaments: b.tournaments || null,
+    tournament: (b.tournament && b.tournament.tournament) || null,
     monthly: monthly || null,
     chats: chats || null,
     ledger: ledger || null,
@@ -1050,6 +1104,8 @@ try { savedSpan = localStorage.getItem(SPAN_KEY); } catch (e) { savedSpan = null
 
 const state = {
   tab: 'day', date: todayIso(), clientQuery: '', clientSort: 'default', loadedAt: 0, focusSession: null,
+  // Какой турнир открыт на вкладке «Турниры». Пусто — показан перечень.
+  tournamentId: null,
   // День или неделя в сетке. Запоминаем: у стойки режим выбирают один
   // раз и работают в нём всю смену.
   span: savedSpan === 'week' ? 'week' : 'day',
@@ -1065,6 +1121,7 @@ const store = {
 const TABS = [
   { id: 'day', label: 'День' },
   { id: 'openplay', label: 'Тренировки' },
+  { id: 'tournaments', label: 'Турниры' },
   { id: 'requests', label: 'Заявки' },
   { id: 'clients', label: 'Клиенты' },
   { id: 'series', label: 'Постоянные' },
@@ -1082,7 +1139,7 @@ function visibleTabs() {
 // Разделы, которым нужны свои данные. Читаются при первом заходе на
 // вкладку, а не при каждом обновлении панели: экраны редкие, а лишний
 // запрос платят все.
-const LAZY = { settings: 'staff', events: 'events', catalog: 'catalog', openplay: 'openplay', stats: 'monthly' };
+const LAZY = { settings: 'staff', events: 'events', catalog: 'catalog', openplay: 'openplay', stats: 'monthly', tournaments: 'tournaments' };
 
 // Высоту вкладок меряем, а не записываем числом: под ними паркуется
 // шапка сетки дня.
@@ -1141,7 +1198,8 @@ function render() {
   renderHealthNotice(view);
   ({ day: renderDay, openplay: renderOpenPlay, requests: renderRequests,
      clients: renderClients, series: renderSeries, events: renderEvents,
-     catalog: renderCatalog, stats: renderStats, settings: renderSettings }[state.tab])(view);
+     catalog: renderCatalog, stats: renderStats, settings: renderSettings,
+     tournaments: renderTournaments }[state.tab])(view);
 
   lastTab = state.tab;
   window.scrollTo({ top: tabChanged ? 0 : y });
@@ -4089,6 +4147,707 @@ function shrinkImage(file, maxSide, maxBytes) {
 }
 
 // ============================================================
+// Вкладка: Турниры
+// ============================================================
+//
+// Карточку и жеребьёвку ведёт владелец, счёт вбивает любой
+// администратор: турнир идёт в выходные, а владелец в это время играет
+// сам. Права проверяет сервер, здесь только показ кнопок.
+//
+// Экран двухуровневый: перечень турниров и открытый турнир. Открытый
+// приезжает отдельной частью склейки, потому что круговой на
+// шестнадцать человек — это сто двадцать матчей, и таскать их вместе
+// с перечнем незачем.
+
+const T_STATUS = {
+  signup: '<span class="pill wait">идёт запись</span>',
+  groups: '<span class="pill ok">групповой этап</span>',
+  playoff: '<span class="pill ok">плей-офф</span>',
+  finished: '<span class="pill grey">завершён</span>',
+};
+
+const T_SCORING = {
+  set1: 'один сет',
+  set2: 'два сета',
+  proset8: 'про-сет до 8',
+};
+
+function tournamentDates(t) {
+  return t.dateFrom === t.dateTo ? longDate(t.dateFrom)
+    : longDate(t.dateFrom) + ' — ' + longDate(t.dateTo);
+}
+
+function renderTournaments(view) {
+  if (state.tournamentId) { renderTournamentCard(view); return; }
+
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Турниры <span class="sub">сетка видна клиентам на отдельной странице</span></h2>';
+  view.appendChild(card);
+
+  if (!db.tournaments) {
+    card.appendChild(txt('div', 'empty', 'Загружаем турниры…'));
+    return;
+  }
+
+  const canEdit = !!db.tournaments.canEdit;
+  const list = db.tournaments.tournaments || [];
+
+  if (!list.length) {
+    card.appendChild(txt('div', 'empty', canEdit
+      ? 'Турниров пока нет. Заведённый сразу откроется для записи.'
+      : 'Турниров пока нет. Заводит их владелец.'));
+  }
+
+  list.forEach(t => {
+    const it = el('div', 'item' + (t.status === 'finished' ? ' past' : ''));
+    it.innerHTML = '<div class="t1">' + escapeHtml(t.title) + ' '
+      + (T_STATUS[t.status] || '') + '</div>'
+      + '<div class="t2">' + escapeHtml(tournamentDates(t))
+      + ' · ' + escapeHtml(t.level)
+      + ' · ' + t.taken + ' из ' + t.maxParticipants
+      + (t.fee ? ' · взнос ' + t.fee + ' ₽' : ' · без взноса')
+      + (t.signupsClosed ? ' · запись закрыта' : '') + '</div>';
+
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Открыть', 'btn sm', () => {
+      state.tournamentId = t.id;
+      // Матчи открытого турнира в слепке ещё не лежат — дочитываем.
+      reload().catch(() => toast('Не удалось загрузить турнир'));
+    }));
+    if (canEdit) {
+      acts.appendChild(btn('Изменить', 'btn sm sec', () => openTournamentForm(t)));
+      acts.appendChild(btn('Удалить', 'btn sm danger', () => confirmDelete(
+        'Удалить турнир?', t.title + ' · ' + tournamentDates(t),
+        'Пропадут состав, жеребьёвка и все результаты. Отменить это нельзя.',
+        () => act(() => api('adminDeleteTournament', { id: t.id }), 'Турнир удалён'))));
+    }
+    it.appendChild(acts);
+    card.appendChild(it);
+  });
+
+  if (canEdit) {
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Новый турнир', 'btn sm', () => openTournamentForm(null)));
+    card.appendChild(acts);
+  }
+}
+
+function renderTournamentCard(view) {
+  const back = el('div', 'acts');
+  back.appendChild(btn('← Ко всем турнирам', 'btn sm sec', () => {
+    state.tournamentId = null;
+    render();
+  }));
+  view.appendChild(back);
+
+  const t = db.tournament;
+  if (!t || t.id !== state.tournamentId) {
+    const card = el('div', 'card');
+    card.appendChild(txt('div', 'empty', 'Загружаем турнир…'));
+    view.appendChild(card);
+    return;
+  }
+
+  const canEdit = !!(db.tournaments && db.tournaments.canEdit);
+
+  const head = el('div', 'card');
+  head.innerHTML = '<h2>' + escapeHtml(t.title) + ' ' + (T_STATUS[t.status] || '') + '</h2>'
+    + '<div class="t2">' + escapeHtml(tournamentDates(t))
+    + ' · ' + escapeHtml(t.level)
+    + ' · счёт: ' + escapeHtml(T_SCORING[t.scoring.mode] || '')
+    + (t.scoring.mode === 'set2'
+      ? (t.scoring.decider === 'tb10' ? ', решающий — тай-брейк до 10' : ', решающий — полный сет') : '')
+    + (t.fee ? ' · взнос ' + t.fee + ' ₽, собрано ' + t.feeTotal + ' ₽' : ' · без взноса')
+    + '</div>'
+    + (t.note ? '<div class="t2">' + escapeHtml(t.note) + '</div>' : '');
+  view.appendChild(head);
+
+  const acts = el('div', 'acts');
+  // Ссылка на публичную сетку — она же и печатается. Открываем в новой
+  // вкладке: панель у стойки держат открытой весь день.
+  const link = document.createElement('a');
+  link.className = 'btn sm sec';
+  link.href = 'tournament.html?t=' + encodeURIComponent(t.id);
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = 'Сетка и печать';
+  acts.appendChild(link);
+
+  if (canEdit && !t.drawnAt) {
+    acts.appendChild(btn('Провести жеребьёвку', 'btn sm', () => confirmDraw(t)));
+  }
+  if (canEdit && t.drawnAt && t.status !== 'finished') {
+    acts.appendChild(btn('Сбросить жеребьёвку', 'btn sm sec', () => confirmDelete(
+      'Сбросить жеребьёвку?', t.title,
+      'Группы и сетка будут собраны заново. Это возможно, только пока не сыгран ни один матч.',
+      () => act(() => api('adminTournamentResetDraw', { id: t.id }), 'Жеребьёвка сброшена'))));
+  }
+  if (t.canStartPlayoff) {
+    acts.appendChild(btn('Запустить плей-офф', 'btn sm', () =>
+      act(() => api('adminStartPlayoff', { id: t.id }), 'Плей-офф собран')));
+  }
+  if (canEdit && t.finished && !t.countedAt) {
+    acts.appendChild(btn('Завершить турнир', 'btn sm', () => confirmFinish(t)));
+  }
+  head.appendChild(acts);
+
+  if (t.countedAt) {
+    head.appendChild(txt('div', 'empty',
+      'Турнир завершён, сыгранное записано участникам в профиль.'));
+  }
+
+  // Итоги — сразу под шапкой: за ними обращаются чаще всего, когда
+  // турнир доигран.
+  if (t.podium && t.podium.length) {
+    const board = el('div', 'card');
+    board.innerHTML = '<h2>Итоги</h2>';
+    const medals = ['🥇', '🥈', '🥉'];
+    t.podium.forEach(row => {
+      const line = el('div', 'item');
+      line.innerHTML = '<div class="t1"><span class="medal">' + medals[row.place - 1] + '</span> '
+        + escapeHtml(row.name || '') + '</div>'
+        + '<div class="t2">' + row.place + ' место</div>';
+      board.appendChild(line);
+    });
+    view.appendChild(board);
+  }
+
+  renderTournamentRoster(view, t, canEdit);
+  (t.groups || []).forEach(g => renderTournamentGroup(view, t, g));
+  renderTournamentBracket(view, t, 'main', 'Плей-офф');
+  if (t.third) {
+    const card = el('div', 'card');
+    card.innerHTML = '<h2>Матч за третье место</h2>';
+    if (!t.third.a && !t.third.b) {
+      card.appendChild(txt('div', 'empty', 'Играют проигравшие в полуфиналах — ждём их.'));
+    } else {
+      card.appendChild(matchRow(t, t.third));
+    }
+    view.appendChild(card);
+  }
+  renderTournamentBracket(view, t, 'consolation', 'Утешительная сетка');
+}
+
+function renderTournamentRoster(view, t, canEdit) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Состав <span class="sub">' + t.taken + ' из ' + t.maxParticipants + '</span></h2>';
+  view.appendChild(card);
+
+  if (!t.participants.length) {
+    card.appendChild(txt('div', 'empty', 'Пока никто не записан.'));
+  }
+
+  if (!t.drawnAt && t.participants.length) {
+    card.appendChild(txt('div', 'empty',
+      'Номер — это место в списке записи, он же будет на мяче во время жеребьёвки. '
+      + 'Отметьте сеяных: они разойдутся по разным группам, а в какую попадёт каждый — жребий.'));
+  }
+
+  t.participants.forEach(p => {
+    const it = el('div', 'item' + (p.status === 'withdrawn' ? ' past' : ''));
+    it.innerHTML = '<div class="t1"><b>' + p.number + '.</b> ' + escapeHtml(p.name)
+      + (p.seeded ? ' <span class="pill ok">сеяный</span>' : '')
+      + (p.group ? ' <span class="pill grey">группа ' + escapeHtml(p.group) + '</span>' : '')
+      + (p.status === 'withdrawn' ? ' <span class="pill bad">снялся</span>' : '')
+      + (p.paid ? ' <span class="pill ok">взнос внесён</span>' : '') + '</div>'
+      + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'NTRP ' + String(p.ntrp).replace('.', ','))
+      + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
+      + (p.replacedFrom ? ' · заменил: ' + escapeHtml(p.replacedFrom) : '') + '</div>';
+
+    const acts = el('div', 'acts');
+    if (!t.drawnAt && p.status !== 'withdrawn') {
+      acts.appendChild(btn(p.seeded ? 'Убрать из сеяных' : 'Сеяный', 'btn sm sec', () =>
+        act(() => api('adminTournamentParticipant',
+          { id: t.id, op: 'seed', participantId: p.id, seeded: !p.seeded }),
+        p.seeded ? 'Больше не сеяный' : 'Отмечен сеяным')));
+    }
+    if (t.fee) {
+      acts.appendChild(btn(p.paid ? 'Снять отметку взноса' : 'Взнос внесён', 'btn sm sec', () =>
+        act(() => api('adminTournamentParticipant',
+          { id: t.id, op: 'paid', participantId: p.id, paid: !p.paid }), 'Отметка изменена')));
+    }
+    if (p.status !== 'withdrawn') {
+      if (!t.drawnAt) {
+        acts.appendChild(btn('Убрать', 'btn sm danger', () =>
+          act(() => api('adminTournamentParticipant',
+            { id: t.id, op: 'remove', participantId: p.id }), 'Убран из состава')));
+      } else {
+        acts.appendChild(btn('Заменить', 'btn sm sec', () => openPickClient(t,
+          'Кем заменить: ' + p.name, (clientId) =>
+            act(() => api('adminTournamentParticipant',
+              { id: t.id, op: 'replace', participantId: p.id, clientId }), 'Участник заменён'))));
+        acts.appendChild(btn('Снять с турнира', 'btn sm danger', () => confirmDelete(
+          'Снять с турнира?', p.name,
+          'Несыгранные матчи станут техническими поражениями, а в сетке соперники пройдут дальше. '
+          + 'Сыгранное останется: оно уже вошло в очки других.',
+          () => act(() => api('adminTournamentParticipant',
+            { id: t.id, op: 'withdraw', participantId: p.id }), 'Участник снят'))));
+      }
+    }
+    it.appendChild(acts);
+    card.appendChild(it);
+  });
+
+  if (!t.drawnAt) {
+    const add = el('div', 'acts');
+    add.appendChild(btn('Добавить участника', 'btn sm', () => openPickClient(t, 'Кого записать', (clientId) =>
+      act(() => api('adminTournamentParticipant', { id: t.id, op: 'add', clientId }), 'Записан'))));
+    card.appendChild(add);
+  }
+
+  if (t.waitlist.length) {
+    const wait = el('div', 'card');
+    wait.innerHTML = '<h2>Лист ожидания <span class="sub">уровень не подошёл или состав полон</span></h2>';
+    view.appendChild(wait);
+    t.waitlist.forEach(p => {
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(p.name) + '</div>'
+        + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'NTRP ' + String(p.ntrp).replace('.', ','))
+        + (p.waitReason === 'level' ? ' · не подходит по уровню' : ' · состав был полон')
+        + (p.phone ? ' · ' + escapeHtml(p.phone) : '') + '</div>';
+      const acts = el('div', 'acts');
+      if (!t.drawnAt) {
+        acts.appendChild(btn('В состав', 'btn sm', () =>
+          act(() => api('adminTournamentParticipant',
+            { id: t.id, op: 'promote', participantId: p.id }), 'Переведён в состав')));
+      }
+      acts.appendChild(btn('Убрать', 'btn sm danger', () =>
+        act(() => api('adminTournamentParticipant',
+          { id: t.id, op: 'remove', participantId: p.id }), 'Убран')));
+      it.appendChild(acts);
+      wait.appendChild(it);
+    });
+  }
+}
+
+function participantName(t, id) {
+  const p = (t.participants || []).find(x => x.id === id);
+  return p ? p.name : '—';
+}
+
+function matchScoreText(m) {
+  if (!m.winner) return '';
+  if (m.walkover) return 'без игры';
+  return (m.sets || []).map(s => s[0] + ':' + s[1]).join(' ');
+}
+
+// Группа — крестовина, как в бумажном протоколе и как на всех турнирных
+// сайтах: строки и столбцы это одни и те же игроки, в клетке счёт их
+// встречи. Счёт вбивается прямо по клетке — списка пар больше нет, у
+// кругового на шестнадцать человек он был на сто двадцать строк.
+function renderTournamentGroup(view, t, g) {
+  const card = el('div', 'card');
+  const left = g.matches.filter(m => !m.winner).length;
+  card.innerHTML = '<h2>Группа ' + escapeHtml(g.key)
+    + ' <span class="sub">' + (left
+      ? 'не сыграно ' + left + ' из ' + g.matches.length + ' · нажмите на клетку, чтобы вписать счёт'
+      : 'все матчи сыграны') + '</span></h2>';
+  view.appendChild(card);
+
+  const members = g.table.map(row => (t.participants || []).find(p => p.id === row.participantId))
+    .filter(Boolean);
+
+  const scroll = el('div', 'cross-wrap');
+  const table = el('table', 'tbl cross');
+  let head = '<thead><tr><th class="pl">#</th><th class="who">Игрок</th>';
+  members.forEach(p => { head += '<th class="sc">' + p.number + '</th>'; });
+  head += '<th class="agg">Очки</th><th class="agg">Сеты</th><th class="agg">Геймы</th>'
+    + '<th class="pl">Место</th></tr></thead>';
+  table.innerHTML = head;
+
+  const body = document.createElement('tbody');
+  g.table.forEach(row => {
+    const me = members.find(p => p.id === row.participantId);
+    const tr = document.createElement('tr');
+    const advance = t.format.groupCount > 0 ? t.format.advance : 0;
+    if (row.status === 'withdrawn') tr.className = 'off';
+    else if (advance && row.place <= advance) tr.className = 'up';
+
+    const pl = el('td', 'pl'); pl.textContent = row.place || '—';
+    tr.appendChild(pl);
+
+    const who = el('td', 'who');
+    who.innerHTML = '<span class="no">' + (me ? me.number : '') + '</span> ' + escapeHtml(row.name);
+    tr.appendChild(who);
+
+    members.forEach(op => {
+      const td = el('td', 'sc');
+      if (!me || op.id === me.id) { td.className = 'sc self'; tr.appendChild(td); return; }
+      const m = g.matches.find(x => (x.a === me.id && x.b === op.id) || (x.a === op.id && x.b === me.id));
+      td.innerHTML = crossCellHtml(m, me.id);
+      if (m && t.status !== 'finished') {
+        td.classList.add('hit');
+        td.title = row.name + ' — ' + (members.find(p => p.id === op.id) || {}).name;
+        td.addEventListener('click', () => openScoreForm(t, m));
+      }
+      tr.appendChild(td);
+    });
+
+    const pts = el('td', 'pts'); pts.innerHTML = '<b>' + row.points + '</b>';
+    tr.appendChild(pts);
+    // Сеты и геймы — то, чем решается место при равных очках. Без них
+    // непонятно, почему один выше другого при тех же двух победах.
+    const sets = el('td', 'agg');
+    sets.innerHTML = row.setsWon + ':' + row.setsLost + ' ' + diffTag(row.setDiff);
+    tr.appendChild(sets);
+    const games = el('td', 'agg');
+    games.innerHTML = row.gamesWon + ':' + row.gamesLost + ' ' + diffTag(row.gameDiff);
+    tr.appendChild(games);
+    const place = el('td', 'pl'); place.textContent = row.place || '—';
+    tr.appendChild(place);
+
+    body.appendChild(tr);
+  });
+  table.appendChild(body);
+  scroll.appendChild(table);
+  card.appendChild(scroll);
+}
+
+// Разница со знаком: ею и решается место при равных очках, поэтому она
+// подписана отдельно и цветом.
+function diffTag(d) {
+  const v = Number(d) || 0;
+  if (!v) return '<span class="diff zero">0</span>';
+  return '<span class="diff ' + (v > 0 ? 'plus' : 'minus') + '">'
+    + (v > 0 ? '+' : '−') + Math.abs(v) + '</span>';
+}
+
+// Счёт глазами того, чья это строка. Пустая клетка — матч не сыгран.
+function crossCellHtml(m, meId) {
+  if (!m) return '';
+  if (!m.winner) return '<span class="pend">—</span>';
+  const iAmA = m.a === meId;
+  const won = (m.winner === 'a') === iAmA;
+  if (m.walkover) return '<span class="' + (won ? 'w' : 'l') + '">' + (won ? '+' : '−') + '</span>';
+  const sets = (m.sets || []).map(s => (iAmA ? s[0] + ':' + s[1] : s[1] + ':' + s[0])).join(' ');
+  return '<span class="' + (won ? 'w' : 'l') + '">' + escapeHtml(sets) + '</span>';
+}
+
+function renderTournamentBracket(view, t, key, title) {
+  const bracket = t[key];
+  if (!bracket) return;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
+  view.appendChild(card);
+
+  bracket.rounds.forEach(r => {
+    card.appendChild(txt('div', 't2', r.label));
+    r.matches.forEach(m => card.appendChild(matchRow(t, m)));
+  });
+}
+
+function matchRow(t, m) {
+  const it = el('div', 'item' + (m.winner ? '' : ' hl'));
+  const a = participantName(t, m.a), b = participantName(t, m.b);
+  const winA = m.winner === 'a', winB = m.winner === 'b';
+  it.innerHTML = '<div class="t1">'
+    + (winA ? '<b>' + escapeHtml(a) + '</b>' : escapeHtml(a))
+    + ' — '
+    + (winB ? '<b>' + escapeHtml(b) + '</b>' : escapeHtml(b))
+    + (m.winner ? ' <span class="pill ok">' + escapeHtml(matchScoreText(m)) + '</span>' : '')
+    + '</div>';
+
+  if (t.status !== 'finished') {
+    const acts = el('div', 'acts');
+    if (m.a && m.b) {
+      acts.appendChild(btn(m.winner ? 'Изменить счёт' : 'Счёт', 'btn sm', () => openScoreForm(t, m)));
+    } else {
+      it.appendChild(txt('div', 't2', 'Соперник ещё не определился.'));
+    }
+    it.appendChild(acts);
+  }
+  return it;
+}
+
+// Ввод счёта. Полей ровно столько, сколько сетов в формате турнира:
+// лишние клетки — прямой путь к «6:4 6:3 0:0» в таблице.
+function openScoreForm(t, m) {
+  const body = el('div');
+  body.innerHTML = '<h3>Счёт матча</h3>'
+    + '<div class="m-sub">' + escapeHtml(participantName(t, m.a))
+    + ' — ' + escapeHtml(participantName(t, m.b)) + '</div>';
+
+  const maxSets = t.scoring.mode === 'set2' ? 3 : 1;
+  const rows = [];
+  for (let i = 0; i < maxSets; i++) {
+    const row = el('div', 'score-row');
+    const left = document.createElement('input');
+    const right = document.createElement('input');
+    [left, right].forEach(inp => {
+      inp.type = 'number'; inp.min = '0'; inp.max = '99'; inp.inputMode = 'numeric';
+      inp.value = m.sets && m.sets[i] ? String(m.sets[i][inp === left ? 0 : 1]) : '';
+    });
+    row.appendChild(left);
+    row.appendChild(txt('span', 'score-sep', ':'));
+    row.appendChild(right);
+    const label = maxSets === 1 ? 'Счёт'
+      : (i === 2 ? (t.scoring.decider === 'tb10' ? 'Решающий тай-брейк' : 'Третий сет') : (i + 1) + '-й сет');
+    wrapField(body, label + (i === 2 ? ' — если играли' : ''), row);
+    rows.push([left, right]);
+  }
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  if (m.winner) {
+    acts.appendChild(btn('Стереть счёт', 'btn danger', () => {
+      closeModal();
+      act(() => api('adminTournamentScore', { id: t.id, matchId: m.id, clear: true }), 'Счёт стёрт');
+    }));
+  }
+  acts.appendChild(btn('Сохранить', 'btn', () => {
+    const sets = [];
+    for (const [left, right] of rows) {
+      if (left.value === '' && right.value === '') continue;
+      sets.push([Number(left.value), Number(right.value)]);
+    }
+    if (!sets.length) { toast('Введите счёт'); return; }
+    closeModal();
+    act(() => api('adminTournamentScore', { id: t.id, matchId: m.id, sets }), 'Счёт записан');
+  }));
+  body.appendChild(acts);
+
+  // Не пришёл — техническое поражение. Отдельными кнопками, а не
+  // счётом 6:0: в таблице это разные вещи, и геймы за неявку не идут.
+  const wo = el('div', 'acts');
+  wo.appendChild(txt('div', 't2', 'Не явился:'));
+  wo.appendChild(btn(participantName(t, m.a), 'btn sm sec', () => {
+    closeModal();
+    act(() => api('adminTournamentScore',
+      { id: t.id, matchId: m.id, walkover: 'b' }), 'Техническое поражение');
+  }));
+  wo.appendChild(btn(participantName(t, m.b), 'btn sm sec', () => {
+    closeModal();
+    act(() => api('adminTournamentScore',
+      { id: t.id, matchId: m.id, walkover: 'a' }), 'Техническое поражение');
+  }));
+  body.appendChild(wo);
+
+  showModal(body);
+}
+
+// Выбор клиента из базы: участник турнира — всегда карточка клиента,
+// с улицы в сетку не попасть. Ищем по тому же списку, что и на вкладке
+// «Клиенты», — он уже приехал вместе с панелью.
+function openPickClient(t, title, onPick) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + escapeHtml(title) + '</h3>'
+    + '<div class="m-sub">В турнир записываются только клиенты центра. '
+    + 'Если человека нет в списке — сначала заведите ему карточку на вкладке «Клиенты».</div>';
+
+  const search = document.createElement('input');
+  search.placeholder = 'Имя или телефон';
+  wrapField(body, 'Поиск', search);
+
+  const list = el('div', 'picklist');
+  body.appendChild(list);
+
+  const taken = new Set();
+  (t.participants || []).concat(t.waitlist || []).forEach(p => (p.players || []).forEach(id => taken.add(id)));
+
+  function draw() {
+    const q = search.value.trim().toLowerCase();
+    list.innerHTML = '';
+    const found = (db.clients || [])
+      .filter(c => !taken.has(c.id))
+      .filter(c => !q || c.name.toLowerCase().indexOf(q) >= 0 || String(c.phone || '').indexOf(q) >= 0)
+      .slice(0, 20);
+    if (!found.length) { list.appendChild(txt('div', 'empty', 'Никого не нашли.')); return; }
+    found.forEach(c => {
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(c.name) + '</div>'
+        + '<div class="t2">' + escapeHtml(c.phone || '')
+        + (c.ntrp == null ? ' · уровень неизвестен' : ' · NTRP ' + String(c.ntrp).replace('.', ',')) + '</div>';
+      it.addEventListener('click', () => { closeModal(); onPick(c.id); });
+      list.appendChild(it);
+    });
+  }
+  search.addEventListener('input', draw);
+  draw();
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+  setTimeout(() => search.focus(), 50);
+}
+
+function confirmDraw(t) {
+  const body = el('div');
+  body.innerHTML = '<h3>Провести жеребьёвку?</h3>'
+    + '<div class="m-sub">' + escapeHtml(t.title) + ' · ' + t.taken + ' участников</div>'
+    + '<div class="empty">Жеребьёвка проводится один раз. Пересдать её можно только сбросом, '
+    + 'и только пока не сыгран ни один матч.<br><br>'
+    + 'Сама раскладка появится на странице сетки — там её показывают людям.</div>';
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Разыграть', 'btn', () => {
+    closeModal();
+    act(() => api('adminTournamentDraw', { id: t.id }), 'Жеребьёвка проведена');
+  }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+function confirmFinish(t) {
+  const body = el('div');
+  body.innerHTML = '<h3>Завершить турнир?</h3>'
+    + '<div class="m-sub">' + escapeHtml(t.title) + '</div>'
+    + '<div class="empty">Всем, кто сыграл хотя бы матч, прибавится сыгранный турнир в профиль, '
+    + 'а победителю — победа. Начисляется один раз.</div>';
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Завершить', 'btn', () => {
+    closeModal();
+    act(() => api('adminFinishTournament', { id: t.id }), 'Турнир завершён');
+  }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// Одна форма и на создание, и на правку — как у афиши.
+function openTournamentForm(existing) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + (existing ? 'Правка турнира' : 'Новый турнир') + '</h3>'
+    + '<div class="m-sub">Состав, жеребьёвка и результаты правкой карточки не меняются.</div>';
+
+  const title = document.createElement('input');
+  title.value = existing ? existing.title : '';
+  title.placeholder = 'Например: Турнир выходного дня';
+  wrapField(body, 'Название', title);
+
+  const from = document.createElement('input');
+  from.type = 'date';
+  from.value = existing ? existing.dateFrom : todayIso();
+  wrapField(body, 'Начало', from);
+
+  const to = document.createElement('input');
+  to.type = 'date';
+  to.value = existing ? existing.dateTo : todayIso();
+  wrapField(body, 'Окончание', to);
+
+  const fee = document.createElement('input');
+  fee.type = 'number'; fee.min = '0'; fee.step = '100';
+  fee.value = existing ? String(existing.fee) : '0';
+  wrapField(body, 'Взнос, ₽ — 0, если без взноса', fee);
+
+  const size = document.createElement('input');
+  size.type = 'number'; size.min = '4'; size.max = '24';
+  size.value = existing ? String(existing.maxParticipants) : '16';
+  wrapField(body, 'Сколько участников', size);
+
+  const ntrpMin = document.createElement('input');
+  ntrpMin.type = 'number'; ntrpMin.min = '1'; ntrpMin.max = '7'; ntrpMin.step = '0.5';
+  ntrpMin.value = existing && existing.ntrpMin != null ? String(existing.ntrpMin) : '';
+  wrapField(body, 'NTRP от — пусто, если без ограничения', ntrpMin);
+
+  const ntrpMax = document.createElement('input');
+  ntrpMax.type = 'number'; ntrpMax.min = '1'; ntrpMax.max = '7'; ntrpMax.step = '0.5';
+  ntrpMax.value = existing && existing.ntrpMax != null ? String(existing.ntrpMax) : '';
+  wrapField(body, 'NTRP до', ntrpMax);
+
+  // Три пресета вместо голого числа групп: «одна группа» и «групп нет»
+  // читаются людьми как разные турниры, хотя движок у них один.
+  const shape = document.createElement('select');
+  shape.appendChild(opt('groups', 'Группы, потом плей-офф'));
+  shape.appendChild(opt('rr', 'Круговой: все со всеми, потом плей-офф'));
+  shape.appendChild(opt('ko', 'Сразу навылет, без групп'));
+  const prevCount = existing ? existing.format.groupCount : 4;
+  shape.value = prevCount === 0 ? 'ko' : (prevCount === 1 ? 'rr' : 'groups');
+  wrapField(body, 'Формат', shape);
+
+  const groups = document.createElement('input');
+  groups.type = 'number'; groups.min = '2'; groups.max = '6';
+  groups.value = String(prevCount > 1 ? prevCount : 4);
+  const groupsField = wrapFieldNode(body, 'Сколько групп', groups);
+
+  const advance = document.createElement('input');
+  advance.type = 'number'; advance.min = '1'; advance.max = '8';
+  advance.value = existing ? String(existing.format.advance) : '2';
+  const advanceField = wrapFieldNode(body, 'Сколько выходит из группы', advance);
+
+  const consolation = document.createElement('select');
+  consolation.appendChild(opt('no', 'Нет'));
+  consolation.appendChild(opt('yes', 'Да, остальные играют свою сетку'));
+  consolation.value = existing && existing.format.consolation ? 'yes' : 'no';
+  const consolationField = wrapFieldNode(body, 'Утешительная сетка', consolation);
+
+  const third = document.createElement('select');
+  third.appendChild(opt('yes', 'Играется'));
+  third.appendChild(opt('no', 'Не играется'));
+  third.value = existing && existing.format.thirdPlace === false ? 'no' : 'yes';
+  const thirdField = wrapFieldNode(body, 'Матч за третье место', third);
+
+  const mode = document.createElement('select');
+  Object.keys(T_SCORING).forEach(k => mode.appendChild(opt(k, T_SCORING[k])));
+  mode.value = existing ? existing.scoring.mode : 'set1';
+  wrapField(body, 'Матч играется до', mode);
+
+  const decider = document.createElement('select');
+  decider.appendChild(opt('tb10', 'Тай-брейк до 10'));
+  decider.appendChild(opt('set', 'Полный третий сет'));
+  decider.value = existing ? existing.scoring.decider : 'tb10';
+  const deciderField = wrapFieldNode(body, 'При 1:1 по сетам играется', decider);
+
+  const note = document.createElement('textarea');
+  note.rows = 3;
+  note.value = existing ? existing.note : '';
+  note.placeholder = 'Время начала, как оплачивается взнос, что взять с собой';
+  wrapField(body, 'Подробности — необязательно', note);
+
+  const closed = document.createElement('select');
+  closed.appendChild(opt('open', 'Открыта'));
+  closed.appendChild(opt('closed', 'Закрыта'));
+  closed.value = existing && existing.signupsClosed ? 'closed' : 'open';
+  wrapField(body, 'Запись', closed);
+
+  function syncShape() {
+    const withGroups = shape.value !== 'ko';
+    groupsField.style.display = shape.value === 'groups' ? '' : 'none';
+    advanceField.style.display = withGroups ? '' : 'none';
+    consolationField.style.display = withGroups ? '' : 'none';
+    deciderField.style.display = mode.value === 'set2' ? '' : 'none';
+    // Бронзу разыгрывают только там, где есть полуфиналы: у кругового
+    // без плей-офф места расставляет таблица.
+    thirdField.style.display = shape.value === 'rr' && Number(advance.value) < 4 ? 'none' : '';
+  }
+  shape.addEventListener('change', syncShape);
+  mode.addEventListener('change', syncShape);
+  syncShape();
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn(existing ? 'Сохранить' : 'Создать', 'btn', () => {
+    if (title.value.trim().length < 2 || !from.value) { toast('Заполните название и дату'); return; }
+    const groupCount = shape.value === 'ko' ? 0 : (shape.value === 'rr' ? 1 : Number(groups.value));
+    const payload = {
+      title: title.value,
+      dateFrom: from.value,
+      dateTo: to.value || from.value,
+      fee: Number(fee.value) || 0,
+      maxParticipants: Number(size.value),
+      ntrpMin: ntrpMin.value === '' ? null : Number(ntrpMin.value),
+      ntrpMax: ntrpMax.value === '' ? null : Number(ntrpMax.value),
+      format: {
+        groupCount,
+        advance: Number(advance.value),
+        consolation: groupCount > 0 && consolation.value === 'yes',
+        thirdPlace: third.value === 'yes',
+      },
+      scoring: { mode: mode.value, decider: decider.value },
+      note: note.value,
+      signupsClosed: closed.value === 'closed',
+    };
+    if (existing) payload.id = existing.id;
+    closeModal();
+    act(() => api('adminSaveTournament', payload), existing ? 'Турнир изменён' : 'Турнир создан');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => title.focus(), 50);
+}
+
+// ============================================================
 // Вкладка: Статистика
 // ============================================================
 //
@@ -5141,9 +5900,16 @@ function textField(parent, label, value) {
   wrapField(parent, label, i); return i;
 }
 function wrapField(parent, label, input) {
+  wrapFieldNode(parent, label, input);
+}
+
+// То же самое, но возвращает само поле: форме турнира надо прятать
+// часть полей, когда формат их не касается.
+function wrapFieldNode(parent, label, input) {
   const f = el('label', 'field');
   f.innerHTML = '<span>' + escapeHtml(label) + '</span>';
   f.appendChild(input); parent.appendChild(f);
+  return f;
 }
 
 // ============================================================

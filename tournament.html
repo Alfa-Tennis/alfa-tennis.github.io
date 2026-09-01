@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Та же политика, что на остальных страницах, и по той же причине:
+     заголовки ответа задаёт GitHub Pages, а не мы. 'unsafe-inline'
+     неизбежен — страница обязана оставаться одним самодостаточным
+     файлом. Смысл политики в connect-src и img-src: увезти данные на
+     чужой хост нельзя, даже если инъекция однажды случится. Локальный
+     стенд подставляет свой адрес в connect-src сам, файл при этом не
+     меняется (tools/dev-server.js). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://functions.yandexcloud.net; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Турнирная сетка — теннисный центр «Альфа»</title>
+<meta name="description" content="Турнирная сетка, группы и результаты матчей теннисного центра «Альфа», Краснодар.">
+<!-- Иконку вкладки подставляет tools/embed-logo.js из assets/favicon.svg. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPCEtLSDQmNC60L7QvdC60LAg0LLQutC70LDQtNC60LguINCm0LXQu9GL0Lkg0LvQvtCz0L7RgtC40L8g0LIg0YjQtdGB0YLQvdCw0LTRhtCw0YLQuCDQv9C40LrRgdC10LvRj9GFINC/0YDQtdCy0YDQsNGJ0LDQtdGC0YHRjyDQsgogICAgINC60LDRiNGDLCDQv9C+0Y3RgtC+0LzRgyDQstC30Y/RgiDQtdCz0L4g0LXQtNC40L3RgdGC0LLQtdC90L3Ri9C5INGD0LfQvdCw0LLQsNC10LzRi9C5INGN0LvQtdC80LXQvdGCIOKAlCDQu9Cw0LnQvNC+0LLRi9C5INC80Y/RhwogICAgINGB0L4g0YjQstCw0LzQuCDigJQg0L3QsCDRhNC40YDQvNC10L3QvdC+0Lwg0YHQuNC90LXQvC4g0KbQstC10YLQsCDRgtC1INC20LUsINGH0YLQviDQsiDQt9C90LDQutC1OiAjM0Y2Q0EzINC4CiAgICAgI0E0REIwMCwg0YLQsNC6INCy0LrQu9Cw0LTQutCwINGH0LjRgtCw0LXRgtGB0Y8g0LrQsNC6INC/0YDQvtC00L7Qu9C20LXQvdC40LUg0YHQsNC50YLQsC4KICAgICDQn9GD0YLRjCDQvNGP0YfQsCDRgdC60L7Qv9C40YDQvtCy0LDQvSDQuNC3IGFzc2V0cy9sb2dvLnN2ZyDQsdC10Lcg0LjQt9C80LXQvdC10L3QuNC5INC4INGC0L7Qu9GM0LrQvgogICAgINGB0LzQsNGB0YjRgtCw0LHQuNGA0L7QstCw0L06INC/0LXRgNC10YDQuNGB0L7QstCw0L3QvdGL0Lkg0L7RgiDRgNGD0LrQuCDQvNGP0Ycg0L7RgtC70LjRh9Cw0LvRgdGPINCx0Ysg0L7RgiDQt9C90LDQutCwLiAtLT4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMzRjZDQTMiLz4KPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoOS41IDEwKSBzY2FsZSgxLjM5KSB0cmFuc2xhdGUoLTE2NS4xMjYgMCkiPgo8cGF0aCBkPSJNMTgxLjA0NSAwQzE4NC4zOTQgMCAxODcuNTAyIDEuMDM0NSAxOTAuMDY2IDIuODAxM0MxOTAuMzIyIDIuOTc3NDMgMTkwLjM2NyAzLjMzMjkyIDE5MC4xNzkgMy41ODAxOEMxODYuMzUzIDguNjE5ODYgMTg1LjUyIDEzLjg1NDQgMTg2LjIwMyAxOC40NTE0QzE4Ni43ODkgMjIuMzk0MyAxODguNDc5IDI1LjgxMTIgMTkwLjIyMiAyOC4yNDQyQzE5MC4zOTkgMjguNDkxOSAxOTAuMzUxIDI4LjgzODMgMTkwLjEwMSAyOS4wMTE4QzE4Ny41MyAzMC43OTM0IDE4NC40MSAzMS44MzggMTgxLjA0NSAzMS44MzhDMTc3LjI5MiAzMS44MzggMTczLjg0MyAzMC41MzgyIDE3MS4xMjEgMjguMzY1NEMxNzAuODkxIDI4LjE4MTYgMTcwLjg2IDI3Ljg0NjkgMTcxLjAzNyAyNy42MTE0QzE3NC44IDIyLjYwMTUgMTc1LjYyIDE3LjQwNTMgMTc0Ljk0MSAxMi44Mzc3QzE3NC40MTcgOS4zMTAxMSAxNzMuMDA5IDYuMjAzMjEgMTcxLjQ3MSAzLjg0NTIzQzE3MS4zMTMgMy42MDM0MSAxNzEuMzYxIDMuMjc5MjIgMTcxLjU5MyAzLjEwNzYxQzE3NC4yMzYgMS4xNTQzNCAxNzcuNTA2IDAgMTgxLjA0NSAwWk0xOTMuMjUzIDYuODE0ODRDMTkzLjQ2MSA2LjUxODQ2IDE5My44OTUgNi41MTY0OSAxOTQuMTAzIDYuODEzMjVDMTk1LjkwNiA5LjM5MzU0IDE5Ni45NjQgMTIuNTMyNSAxOTYuOTY0IDE1LjkxOUMxOTYuOTY0IDE5LjI3ODYgMTk1LjkyMiAyMi4zOTQxIDE5NC4xNDUgMjQuOTYyNkMxOTMuOTM0IDI1LjI2NzcgMTkzLjQ4OCAyNS4yNTkyIDE5My4yODcgMjQuOTQ3MkMxOTIuMDc5IDIzLjA3MDUgMTkwLjk2IDIwLjU4NjkgMTkwLjU0NiAxNy44MDZDMTkwLjA1MiAxNC40ODEgMTkwLjU1IDEwLjY2ODEgMTkzLjI1MyA2LjgxNDg0Wk0xNjcuNjEgNy4zNzU1OEMxNjcuODIxIDcuMDQzODkgMTY4LjMgNy4wNjA0MiAxNjguNDkxIDcuNDA0MjlDMTY5LjQ0MSA5LjExNTc3IDE3MC4yNTkgMTEuMTk4OSAxNzAuNTk4IDEzLjQ4MzFDMTcxLjA3MyAxNi42NzY3IDE3MC42MzEgMjAuMzIgMTY4LjIgMjQuMDE3M0MxNjcuOTg5IDI0LjMzODMgMTY3LjUyMiAyNC4zMjkgMTY3LjMyNyAyMy45OTgyQzE2NS45MjkgMjEuNjI5OCAxNjUuMTI2IDE4Ljg2ODQgMTY1LjEyNiAxNS45MTlDMTY1LjEyNiAxMi43NzUyIDE2Ni4wMzcgOS44NDM5NyAxNjcuNjEgNy4zNzU1OFoiIGZpbGw9IiNBNERCMDAiLz4KPC9nPgo8L3N2Zz4K">
+<meta name="theme-color" content="#3F6CA3">
+<style>
+/* Палитра та же, что на клиентской странице: сетка — продолжение сайта,
+   а не отдельный продукт. */
+:root {
+  --ink: #22272C;
+  --ink-soft: #5F6B72;
+  --line: #DDE3E5;
+  --bg: #F2F4F5;
+  --surface: #FFFFFF;
+
+  --court: #3F6CA3;
+  --court-dk: #2F5480;
+  --court-tint: #E8F0F9;
+  --court-line: #C6D9EE;
+
+  --ball: #A4DB00;
+  --ball-dk: #4C6600;
+  --ball-tint: #F0F8D8;
+
+  /* Счёт в крестовине: выигрыш зелёным, проигрыш красным. Оливковый
+     --ball-dk тут не работал — он тёмный и читался как «просто текст». */
+  --win: #159B45;
+  --lose: #D4372F;
+  --pass: #159B45;
+  --pass-tint: #E7F6EC;
+
+  --warn: #C98A14;
+  --warn-tint: #FDF3DE;
+  --danger: #B23B3B;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(34,39,44,.06), 0 8px 24px rgba(34,39,44,.07);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--court-dk); }
+button { font: inherit; }
+
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 16px 48px; }
+
+.hero { background: linear-gradient(160deg, #1E3A5F 0%, #2C4F7C 100%); color: #fff; padding: 18px 16px 22px; }
+.hero-inner { max-width: 980px; margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+.logo { width: 78px; height: 48px; border-radius: 10px; background: #fff; padding: 4px 7px; flex: 0 0 auto; }
+.logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.hero h1 { margin: 0; font-size: 20px; line-height: 1.2; }
+.hero .sub { margin: 2px 0 0; font-size: 14px; color: rgba(255,255,255,.75); }
+.hero a { color: #fff; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px; margin-top: 16px;
+}
+.card h2 { margin: 0 0 10px; font-size: 17px; }
+.card h2 .tag { font-weight: 400; font-size: 14px; color: var(--ink-soft); }
+
+.pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 13px; }
+.pill.ok { background: var(--ball-tint); color: var(--ball-dk); }
+.pill.wait { background: var(--warn-tint); color: var(--warn); }
+.pill.grey { background: #EEF1F2; color: var(--ink-soft); }
+.pill.me { background: var(--court-tint); color: var(--court-dk); }
+
+.meta { color: var(--ink-soft); font-size: 14px; }
+.empty { color: var(--ink-soft); font-size: 14px; padding: 10px 0; }
+
+.acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.btn {
+  appearance: none; border: 0; border-radius: 999px; padding: 9px 16px; cursor: pointer;
+  background: var(--court); color: #fff;
+}
+.btn:hover { background: var(--court-dk); }
+.btn.sec { background: var(--court-tint); color: var(--court-dk); }
+.btn.sec:hover { background: var(--court-line); }
+
+/* ---------- Таблицы групп ---------- */
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 460px; }
+th { text-align: left; font-weight: 600; color: var(--ink-soft); font-size: 13px;
+  padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px; border-bottom: 1px solid #EEF1F2; }
+/* Выходящие в плей-офф. Бледной заливки было мало — её попросту не
+   замечали, поэтому к фону добавлена полоса слева. */
+tr.up td { background: var(--pass-tint); }
+tr.up td.pl:first-child { box-shadow: inset 3px 0 0 var(--pass); }
+tr.off td { color: var(--ink-soft); text-decoration: line-through; }
+tr.mine td b { color: var(--court-dk); }
+
+/* ---------- Крестовина группы ---------- */
+table.cross { min-width: 0; }
+table.cross th, table.cross td { text-align: center; padding: 6px 4px; }
+table.cross th.who, table.cross td.who { text-align: left; white-space: nowrap; padding-left: 8px; }
+table.cross th.pl, table.cross td.pl { width: 30px; color: var(--ink-soft); }
+table.cross th.sc, table.cross td.sc { min-width: 54px; font-variant-numeric: tabular-nums; }
+/* Клетка «сам с собой» — заштрихована, как в бумажных протоколах. */
+table.cross td.sc.self {
+  background: repeating-linear-gradient(-45deg, #F2F4F5 0 5px, #E7EBEC 5px 10px);
+}
+table.cross .w { color: var(--win); font-weight: 700; }
+table.cross .l { color: var(--lose); }
+table.cross .pend { color: var(--line); }
+table.cross td.pts { background: #F7F9F8; }
+table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-soft); font-size: 13px; }
+.diff { font-weight: 700; }
+.diff.plus { color: var(--win); }
+.diff.minus { color: var(--lose); }
+.diff.zero { color: var(--ink-soft); }
+/* Номер участника рядом с именем — тот же, что был на мяче. */
+table.cross .no {
+  display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px;
+  border-radius: 999px; background: var(--court-tint); color: var(--court-dk);
+  font-size: 12px; font-weight: 600; text-align: center;
+}
+
+/* ---------- Матчи ---------- */
+.match {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid #EEF1F2;
+}
+.match:last-child { border-bottom: 0; }
+.match .who { flex: 1; min-width: 200px; }
+.match .win { font-weight: 600; }
+.match .score { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.medal { font-size: 18px; margin-right: 4px; }
+.round-title { font-size: 13px; color: var(--ink-soft); margin-top: 14px; text-transform: lowercase; }
+
+/* Сетка плей-офф колонками по кругам. На телефоне уезжает вбок, а не
+   ломается: сетка на восемь в один экран не влезает никак. */
+.bracket { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 6px; }
+.bracket .col { min-width: 220px; flex: 1 0 220px; display: flex; flex-direction: column;
+  justify-content: space-around; gap: 10px; }
+.bracket .col h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.slot {
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface);
+}
+.slot .side { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; font-size: 14px; }
+.slot .side + .side { border-top: 1px solid #EEF1F2; }
+.slot .side.win { background: var(--pass-tint); font-weight: 600; box-shadow: inset 3px 0 0 var(--pass); }
+.slot .side.win .score { color: var(--win); font-weight: 700; }
+.slot .side.empty { color: var(--ink-soft); }
+
+/* ---------- Церемония жеребьёвки ---------- */
+.stage {
+  position: fixed; inset: 0; z-index: 60; display: none;
+  background: linear-gradient(160deg, #16283F 0%, #24405F 100%); color: #fff;
+  padding: 18px; overflow: auto;
+}
+.stage.on { display: block; }
+.stage-inner { max-width: 980px; margin: 0 auto; }
+.stage h2 { margin: 0; font-size: 22px; }
+.stage .sub { color: rgba(255,255,255,.72); font-size: 14px; margin-top: 2px; }
+
+.pots { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 18px; }
+.pot { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 10px; }
+.pot h3 { margin: 0 0 8px; font-size: 14px; color: rgba(255,255,255,.8); font-weight: 600; }
+.cell {
+  border-radius: 8px; padding: 7px 10px; font-size: 14px; min-height: 34px;
+  background: rgba(255,255,255,.05); border: 1px dashed rgba(255,255,255,.18);
+  margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+  transition: background .25s, border-color .25s;
+}
+.cell.filled { background: rgba(164,219,0,.16); border: 1px solid rgba(164,219,0,.5); border-style: solid; }
+/* Вспышка в момент, когда мяч сел в ячейку: без неё глазу непонятно,
+   куда именно он приземлился. */
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.06); } 100% { transform: scale(1); } }
+.cell.hit { animation: pop .35s ease-out; }
+
+/* Мяч. Тот же фирменный лайм, что у знака клуба. */
+.ball {
+  width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto;
+  background: radial-gradient(circle at 32% 28%, #C9F53F 0%, var(--ball) 55%, #86B300 100%);
+  box-shadow: inset 0 -2px 4px rgba(0,0,0,.18);
+  position: relative;
+}
+/* Две дуги «швов» — мяч без них читается как жёлтый кружок. */
+.ball::before, .ball::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.75); border-color: transparent;
+}
+.ball::before { border-left-color: rgba(255,255,255,.75); transform: rotate(-18deg); }
+.ball::after { border-right-color: rgba(255,255,255,.75); transform: rotate(-18deg); }
+/* Номер участника на мяче — по нему следят за собой, когда имена
+   погасли. Поверх швов, поэтому z-index. */
+.ball .num {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #2C3A08; z-index: 1;
+}
+
+.drum {
+  margin-top: 20px; background: rgba(0,0,0,.18); border-radius: 14px; padding: 12px;
+  display: flex; flex-wrap: wrap; gap: 8px; min-height: 62px; align-items: center;
+}
+.chip {
+  display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 6px;
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px; font-size: 14px; white-space: nowrap;
+  transition: padding .45s ease, gap .45s ease;
+}
+/* Имена сбрасываются в барабан и пропадают: дальше мячи неотличимы, и
+   по очереди в барабане нельзя угадать, кого вытянут следующим. Раньше
+   чипы стояли в порядке вытягивания — очередь читалась заранее. */
+.chip .nm {
+  display: inline-block; overflow: hidden; max-width: 240px;
+  transition: max-width .45s ease, opacity .3s ease;
+}
+.drum.blind .chip { padding: 5px 6px; gap: 0; }
+.drum.blind .chip .nm { max-width: 0; opacity: 0; }
+.chip.gone { opacity: .18; }
+/* Барабан крутит мячи, пока выбирает следующего. */
+@keyframes shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  25% { transform: translate(-2px, 1px) rotate(-1.2deg); }
+  75% { transform: translate(2px, -1px) rotate(1.2deg); }
+}
+.drum.rolling { animation: shake .16s linear infinite; }
+
+/* Летящий мяч живёт в своём слое: он не должен двигать разметку. */
+.flier {
+  position: fixed; z-index: 70; display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px 5px 6px; background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.3); border-radius: 999px; color: #fff;
+  font-size: 14px; white-space: nowrap; pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+
+.stage .acts { margin-top: 20px; }
+.stage .btn.sec { background: rgba(255,255,255,.14); color: #fff; }
+.stage .btn.sec:hover { background: rgba(255,255,255,.24); }
+.seedline { margin-top: 14px; font-size: 12px; color: rgba(255,255,255,.5); word-break: break-all; }
+
+/* Люди, которым движение мешает, получают тот же результат без полёта. */
+@media (prefers-reduced-motion: reduce) {
+  .drum.rolling { animation: none; }
+  .cell.hit { animation: none; }
+  .flier { transition: none !important; }
+}
+
+/* ---------- Печать ---------- */
+/* Сетку вешают на стенд. Всё, что нельзя нажать на бумаге, с неё
+   убирается, а карточки разворачиваются в плоские таблицы. */
+@media print {
+  body { background: #fff; }
+  .hero, .acts, .stage, .noprint { display: none !important; }
+  .wrap { max-width: none; padding: 0; }
+  .card { box-shadow: none; border: 0; border-top: 1px solid #999; border-radius: 0;
+    margin: 0; padding: 8px 0; break-inside: avoid; }
+  .bracket { overflow: visible; }
+  .bracket .col { min-width: 0; flex: 1; }
+  table { min-width: 0; font-size: 12px; }
+  .print-head { display: block !important; }
+}
+.print-head { display: none; font-size: 13px; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<header class="hero noprint">
+  <div class="hero-inner">
+    <div class="logo"><img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDQ0IiBoZWlnaHQ9IjI2MyIgdmlld0JveD0iMCAwIDQ0NCAyNjMiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik00NDMuMTI3IDIyMC4yNTFDNDQzLjgzNiAyMjEuNzA4IDQ0Mi43NzkgMjIzLjQwNiA0NDEuMTY0IDIyMy40MDZINDI2LjQ3OUM0MjUuNjM3IDIyMy40MDYgNDI0Ljg3IDIyMi45MjEgNDI0LjUwNyAyMjIuMTU4TDQxOC40MiAyMDkuMzZDNDE4LjA1OCAyMDguNTk3IDQxNy4yOTEgMjA4LjExMiA0MTYuNDQ5IDIwOC4xMTJIMzgyLjgzNEMzODEuOTkyIDIwOC4xMTIgMzgxLjIyNSAyMDguNTk3IDM4MC44NjMgMjA5LjM2TDM3NC43NzYgMjIyLjE1OEMzNzQuNDEzIDIyMi45MjEgMzczLjY0NiAyMjMuNDA2IDM3Mi44MDQgMjIzLjQwNkgzNTguMTE5QzM1Ni41MDQgMjIzLjQwNiAzNTUuNDQ3IDIyMS43MDggMzU2LjE1NiAyMjAuMjUxTDM4Ny42NCAxNTUuNTY0QzM4OC4wMDYgMTU0LjgxMSAzODguNzY4IDE1NC4zMzQgMzg5LjYwMyAxNTQuMzM0SDQwOS42OEM0MTAuNTE1IDE1NC4zMzQgNDExLjI3NyAxNTQuODExIDQxMS42NDMgMTU1LjU2NEw0NDMuMTI3IDIyMC4yNTFaTTM5OS42NDEgMTcwLjgxM0MzOTkuNDAxIDE3MC44MTMgMzk5LjE4MiAxNzAuOTUxIDM5OS4wNzggMTcxLjE2OEwzODcuODczIDE5NC42MDlDMzg3LjE3NyAxOTYuMDY1IDM4OC4yMzQgMTk3Ljc1MSAzODkuODQyIDE5Ny43NTFINDA5LjQ0MUM0MTEuMDQ5IDE5Ny43NTEgNDEyLjEwNiAxOTYuMDY1IDQxMS40MSAxOTQuNjA5TDQwMC4yMDUgMTcxLjE2OEM0MDAuMTAxIDE3MC45NTEgMzk5Ljg4MiAxNzAuODEzIDM5OS42NDEgMTcwLjgxM1YxNzAuODEzWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMzI5LjY4MSAxNjIuMDE5QzMzNi41ODkgMTYyLjAxOSAzNDIuNDc4IDE2My4xNjggMzQ3LjM0NiAxNjUuNDY1QzM1Mi4yODEgMTY3LjY5NiAzNTUuOTk4IDE3MC44NDcgMzU4LjQ5OCAxNzQuOTE2QzM2MC45OTggMTc4LjkxOSAzNjIuMjQ4IDE4My40OCAzNjIuMjQ4IDE4OC42QzM2Mi4yNDggMTkzLjcxOSAzNjAuOTk4IDE5OC4zMTMgMzU4LjQ5OCAyMDIuMzgyQzM1NS45OTggMjA2LjM4NSAzNTIuMjgxIDIwOS41MzYgMzQ3LjM0NiAyMTEuODMzQzM0Mi40NzggMjE0LjA2NCAzMzYuNTg5IDIxNS4xOCAzMjkuNjgxIDIxNS4xOEgzMTguNTUxQzMxNy4zNCAyMTUuMTggMzE2LjM1OCAyMTYuMTU5IDMxNi4zNTggMjE3LjM2OFYyMjIuODM3QzMxNi4zNTggMjI0LjA0NSAzMTUuMzc2IDIyNS4wMjUgMzE0LjE2NSAyMjUuMDI1SDMwMC43ODdDMjk5LjU3NiAyMjUuMDI1IDI5OC41OTQgMjI0LjA0NSAyOTguNTk0IDIyMi44MzdWMjE3LjM2OEMyOTguNTk0IDIxNi4xNTkgMjk3LjYxMiAyMTUuMTggMjk2LjQwMSAyMTUuMThIMjg1LjI3MUMyNzguMzYzIDIxNS4xOCAyNzIuNDQyIDIxNC4wNjQgMjY3LjUwNyAyMTEuODMzQzI2Mi42MzkgMjA5LjUzNiAyNTguOTU0IDIwNi4zODUgMjU2LjQ1NCAyMDIuMzgyQzI1My45NTQgMTk4LjMxMyAyNTIuNzA0IDE5My43MTkgMjUyLjcwNCAxODguNkMyNTIuNzA0IDE4My40OCAyNTMuOTU0IDE3OC45MTkgMjU2LjQ1NCAxNzQuOTE2QzI1OC45NTQgMTcwLjg0NyAyNjIuNjM5IDE2Ny42OTYgMjY3LjUwNyAxNjUuNDY1QzI3Mi40NDIgMTYzLjE2OCAyNzguMzYzIDE2Mi4wMTkgMjg1LjI3MSAxNjIuMDE5SDI5Ni40MDFDMjk3LjYxMiAxNjIuMDE5IDI5OC41OTQgMTYxLjA0IDI5OC41OTQgMTU5LjgzMlYxNTQuMzYyQzI5OC41OTQgMTUzLjE1NCAyOTkuNTc2IDE1Mi4xNzUgMzAwLjc4NyAxNTIuMTc1SDMxNC4xNjVDMzE1LjM3NiAxNTIuMTc1IDMxNi4zNTggMTUzLjE1NCAzMTYuMzU4IDE1NC4zNjJWMTU5LjgzMkMzMTYuMzU4IDE2MS4wNCAzMTcuMzQgMTYyLjAxOSAzMTguNTUxIDE2Mi4wMTlIMzI5LjY4MVpNMjk2LjQwMSAyMDAuOTA1QzI5Ny42MTIgMjAwLjkwNSAyOTguNTk0IDE5OS45MjYgMjk4LjU5NCAxOTguNzE4VjE3OC40ODJDMjk4LjU5NCAxNzcuMjczIDI5Ny42MTIgMTc2LjI5NCAyOTYuNDAxIDE3Ni4yOTRIMjg1Ljc2NUMyODEuMjI1IDE3Ni4yOTQgMjc3LjcwNSAxNzcuNDEgMjc1LjIwNSAxNzkuNjQxQzI3Mi43MDUgMTgxLjg3MyAyNzEuNDU1IDE4NC44NTkgMjcxLjQ1NSAxODguNkMyNzEuNDU1IDE5Mi4zNDEgMjcyLjcwNSAxOTUuMzI3IDI3NS4yMDUgMTk3LjU1OEMyNzcuNzA1IDE5OS43OSAyODEuMjI1IDIwMC45MDUgMjg1Ljc2NSAyMDAuOTA1SDI5Ni40MDFaTTMyOS4xODggMjAwLjkwNUMzMzMuNzI3IDIwMC45MDUgMzM3LjI0NyAxOTkuNzkgMzM5Ljc0NyAxOTcuNTU4QzM0Mi4yNDggMTk1LjMyNyAzNDMuNDk4IDE5Mi4zNDEgMzQzLjQ5OCAxODguNkMzNDMuNDk4IDE4NC44NTkgMzQyLjI0OCAxODEuODczIDMzOS43NDcgMTc5LjY0MUMzMzcuMjQ3IDE3Ny40MSAzMzMuNzI3IDE3Ni4yOTQgMzI5LjE4OCAxNzYuMjk0SDMxOC41NTFDMzE3LjM0IDE3Ni4yOTQgMzE2LjM1OCAxNzcuMjczIDMxNi4zNTggMTc4LjQ4MlYxOTguNzE4QzMxNi4zNTggMTk5LjkyNiAzMTcuMzQgMjAwLjkwNSAzMTguNTUxIDIwMC45MDVIMzI5LjE4OFoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTE3OC4xMDcgMjIzLjQwNkMxNzYuODk4IDIyMy40MDYgMTc1LjkxOCAyMjIuNDI1IDE3NS45MTggMjIxLjIxNFYxNTYuNTI3QzE3NS45MTggMTU1LjMxNiAxNzYuODk4IDE1NC4zMzQgMTc4LjEwNyAxNTQuMzM0SDE5MS40NjFDMTkyLjY3IDE1NC4zMzQgMTkzLjY1IDE1NS4zMTYgMTkzLjY1IDE1Ni41MjdWMTc0LjgzNkMxOTMuNjUgMTc2LjA0NyAxOTQuNjMgMTc3LjAyOSAxOTUuODM5IDE3Ny4wMjlIMjE5LjI2MkMyMjkuMzc2IDE3Ny4wMjkgMjM2Ljg5NSAxNzkuMDY4IDI0MS44MjEgMTgzLjE0N0MyNDYuODEyIDE4Ny4yMjYgMjQ5LjMwNyAxOTIuOTE2IDI0OS4zMDcgMjAwLjIxOEMyNDkuMzA3IDIwNy41MiAyNDYuODEyIDIxMy4yMSAyNDEuODIxIDIxNy4yODhDMjM2Ljg5NSAyMjEuMzY3IDIyOS4zNzYgMjIzLjQwNiAyMTkuMjYyIDIyMy40MDZIMTc4LjEwN1pNMjE4Ljc2OSAyMDkuMDk4QzIyMi43MSAyMDkuMDk4IDIyNS42NjUgMjA4LjMwOSAyMjcuNjM1IDIwNi43M0MyMjkuNjA1IDIwNS4xNTEgMjMwLjU5MSAyMDIuOTgxIDIzMC41OTEgMjAwLjIxOEMyMzAuNTkxIDE5Ny40NTUgMjI5LjYwNSAxOTUuMjg0IDIyNy42MzUgMTkzLjcwNUMyMjUuNjY1IDE5Mi4xMjYgMjIyLjcxIDE5MS4zMzcgMjE4Ljc2OSAxOTEuMzM3SDE5NS44MzlDMTk0LjYzIDE5MS4zMzcgMTkzLjY1IDE5Mi4zMTkgMTkzLjY1IDE5My41M1YyMDYuOTA2QzE5My42NSAyMDguMTE3IDE5NC42MyAyMDkuMDk4IDE5NS44MzkgMjA5LjA5OEgyMTguNzY5WiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNODcuNzMzNCAyMjAuMjUxQzg4LjQ0NjggMjIxLjcwOCA4Ny4zODM3IDIyMy40MDYgODUuNzU4NiAyMjMuNDA2SDcwLjk4MjVDNzAuMTM1NiAyMjMuNDA2IDY5LjM2NCAyMjIuOTIxIDY4Ljk5OTEgMjIyLjE1OEw2Mi44NzQ1IDIwOS4zNkM2Mi41MDk2IDIwOC41OTcgNjEuNzM4IDIwOC4xMTIgNjAuODkxIDIwOC4xMTJIMjcuMDY4MkMyNi4yMjEzIDIwOC4xMTIgMjUuNDQ5NyAyMDguNTk3IDI1LjA4NDggMjA5LjM2TDE4Ljk2MDIgMjIyLjE1OEMxOC41OTUzIDIyMi45MjEgMTcuODIzNyAyMjMuNDA2IDE2Ljk3NjcgMjIzLjQwNkgyLjIwMDY4QzAuNTc1NjAxIDIyMy40MDYgLTAuNDg3NTE5IDIyMS43MDggMC4yMjU4NTkgMjIwLjI1MUwzMS45MDQxIDE1NS41NjRDMzIuMjcyNyAxNTQuODExIDMzLjAzOTEgMTU0LjMzNCAzMy44Nzg5IDE1NC4zMzRINTQuMDgwNEM1NC45MjAyIDE1NC4zMzQgNTUuNjg2NSAxNTQuODExIDU2LjA1NTIgMTU1LjU2NEw4Ny43MzM0IDIyMC4yNTFaTTQzLjk3OTYgMTcwLjgxM0M0My43Mzc4IDE3MC44MTMgNDMuNTE3NSAxNzAuOTUxIDQzLjQxMjggMTcxLjE2OUwzMi4xMzgzIDE5NC42MDlDMzEuNDM4MSAxOTYuMDY1IDMyLjUwMTUgMTk3Ljc1MSAzNC4xMTk4IDE5Ny43NTFINTMuODM5NEM1NS40NTc3IDE5Ny43NTEgNTYuNTIxMSAxOTYuMDY1IDU1LjgyMSAxOTQuNjA5TDQ0LjU0NjQgMTcxLjE2OUM0NC40NDE4IDE3MC45NTEgNDQuMjIxNCAxNzAuODEzIDQzLjk3OTYgMTcwLjgxM1YxNzAuODEzWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMTc4Ljk5NSA1Ny42NDU4QzE2OS41IDQ0Ljk5OTYgMTU4IDM2LjQ5OTYgMTM5IDI3LjQ5OTZDMTM2LjUzOCAyNi40NzU0IDEzNC43NjYgMjkuMzUwNiAxMzYuOTA1IDMwLjk0NTFDMTczLjcyOSA1OC4zOTIgMTc3LjYwOSA5MC4zMjc4IDE3OC42OCAxMTAuNzA0QzE3OC43NDEgMTExLjg3IDE3OS43IDExMi43ODEgMTgwLjg2NSAxMTIuNzgxSDE4My43MDVDMTg0Ljg1OSAxMTIuNzgxIDE4NS44MTQgMTExLjg2NiAxODUuOTA2IDExMC43MTJDMTg5LjU1NCA2NC45OTEgMjE4LjIyNyAzMy4xMjgxIDI0MyAxNS40OTk1QzI0NS45NDYgMTIuNzMwNSAyNDIuOTgxIDkuODk3NjggMjQwLjUgMTAuOTk5N0MyMTQuMTk1IDIyLjY4MDkgMTk2LjEwOCA0MC4xNzk0IDE4My4xOTQgNTguMTQ1NEMxODIgNTkuNDk5NiAxODAuMTU2IDU5LjE5MTEgMTc4Ljk5NSA1Ny42NDU4WiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMTY1LjQ2OSAxNTQuMzMzQzE2Ni42ODIgMTU0LjMzMyAxNjcuNjY1IDE1NS4zMTUgMTY3LjY2NiAxNTYuNTI2VjIyMS4yMTNDMTY3LjY2NiAyMjIuNDI0IDE2Ni42ODIgMjIzLjQwNiAxNjUuNDY5IDIyMy40MDZIMTUyLjA3NUMxNTAuODYyIDIyMy40MDYgMTQ5Ljg3OCAyMjIuNDI0IDE0OS44NzggMjIxLjIxM1YxNzEuODIxQzE0OS44NzggMTcwLjYxIDE0OC44OTYgMTY5LjYyOCAxNDcuNjgzIDE2OS42MjhIMTI0LjQ0NEMxMjMuNDkxIDE2OS42MjggMTIyLjY3MSAxNzAuMjk5IDEyMi40ODMgMTcxLjIzM0wxMTAuMzA1IDIyMS43NjRDMTEwLjA4NSAyMjIuNzc3IDEwOS4xODQgMjIzLjUgMTA4LjE0MyAyMjMuNUg5NC40NTc2QzkzLjA3MDQgMjIzLjUgOTIuMDI1NyAyMjIuMjQzIDkyLjI4NDcgMjIwLjg4NkwxMDYuODA0IDE1Ni41MzhDMTA2Ljg4MyAxNTYuMTI0IDEwNy4wNjcgMTU1Ljc2OSAxMDcuMzE5IDE1NS40ODdDMTA3LjY5MSAxNTQuNzk5IDEwOC40MTggMTU0LjMzMyAxMDkuMjUyIDE1NC4zMzNIMTY1LjQ2OVoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTE4MS4wNDUgMEMxODQuMzk0IDAgMTg3LjUwMiAxLjAzNDUgMTkwLjA2NiAyLjgwMTNDMTkwLjMyMiAyLjk3NzQzIDE5MC4zNjcgMy4zMzI5MiAxOTAuMTc5IDMuNTgwMThDMTg2LjM1MyA4LjYxOTg2IDE4NS41MiAxMy44NTQ0IDE4Ni4yMDMgMTguNDUxNEMxODYuNzg5IDIyLjM5NDMgMTg4LjQ3OSAyNS44MTEyIDE5MC4yMjIgMjguMjQ0MkMxOTAuMzk5IDI4LjQ5MTkgMTkwLjM1MSAyOC44MzgzIDE5MC4xMDEgMjkuMDExOEMxODcuNTMgMzAuNzkzNCAxODQuNDEgMzEuODM4IDE4MS4wNDUgMzEuODM4QzE3Ny4yOTIgMzEuODM4IDE3My44NDMgMzAuNTM4MiAxNzEuMTIxIDI4LjM2NTRDMTcwLjg5MSAyOC4xODE2IDE3MC44NiAyNy44NDY5IDE3MS4wMzcgMjcuNjExNEMxNzQuOCAyMi42MDE1IDE3NS42MiAxNy40MDUzIDE3NC45NDEgMTIuODM3N0MxNzQuNDE3IDkuMzEwMTEgMTczLjAwOSA2LjIwMzIxIDE3MS40NzEgMy44NDUyM0MxNzEuMzEzIDMuNjAzNDEgMTcxLjM2MSAzLjI3OTIyIDE3MS41OTMgMy4xMDc2MUMxNzQuMjM2IDEuMTU0MzQgMTc3LjUwNiAwIDE4MS4wNDUgMFpNMTkzLjI1MyA2LjgxNDg0QzE5My40NjEgNi41MTg0NiAxOTMuODk1IDYuNTE2NDkgMTk0LjEwMyA2LjgxMzI1QzE5NS45MDYgOS4zOTM1NCAxOTYuOTY0IDEyLjUzMjUgMTk2Ljk2NCAxNS45MTlDMTk2Ljk2NCAxOS4yNzg2IDE5NS45MjIgMjIuMzk0MSAxOTQuMTQ1IDI0Ljk2MjZDMTkzLjkzNCAyNS4yNjc3IDE5My40ODggMjUuMjU5MiAxOTMuMjg3IDI0Ljk0NzJDMTkyLjA3OSAyMy4wNzA1IDE5MC45NiAyMC41ODY5IDE5MC41NDYgMTcuODA2QzE5MC4wNTIgMTQuNDgxIDE5MC41NSAxMC42NjgxIDE5My4yNTMgNi44MTQ4NFpNMTY3LjYxIDcuMzc1NThDMTY3LjgyMSA3LjA0Mzg5IDE2OC4zIDcuMDYwNDIgMTY4LjQ5MSA3LjQwNDI5QzE2OS40NDEgOS4xMTU3NyAxNzAuMjU5IDExLjE5ODkgMTcwLjU5OCAxMy40ODMxQzE3MS4wNzMgMTYuNjc2NyAxNzAuNjMxIDIwLjMyIDE2OC4yIDI0LjAxNzNDMTY3Ljk4OSAyNC4zMzgzIDE2Ny41MjIgMjQuMzI5IDE2Ny4zMjcgMjMuOTk4MkMxNjUuOTI5IDIxLjYyOTggMTY1LjEyNiAxOC44Njg0IDE2NS4xMjYgMTUuOTE5QzE2NS4xMjYgMTIuNzc1MiAxNjYuMDM3IDkuODQzOTcgMTY3LjYxIDcuMzc1NThaIiBmaWxsPSIjQTREQjAwIi8+CjxwYXRoIGQ9Ik0zOTcuMzkzIDI0NC43MTFDMzk5LjE2NyAyNDQuNzExIDQwMC41MTUgMjQ1LjExMiA0MDEuNDM1IDI0NS45MTRDNDAyLjM1NSAyNDYuNzAyIDQwMi44MTUgMjQ3Ljc4IDQwMi44MTUgMjQ5LjE0N0M0MDIuODE1IDI1MC41MTQgNDAyLjM1NSAyNTEuNTk5IDQwMS40MzUgMjUyLjQwMUM0MDAuNTE1IDI1My4xODkgMzk5LjE2NyAyNTMuNTg0IDM5Ny4zOTMgMjUzLjU4NEgzOTEuNTc2VjI1OC41MTNIMzg5LjYwNFYyNDQuNzExSDM5Ny4zOTNaTTM5Ny4zOTMgMjUxLjcxMUMzOTguNDg0IDI1MS43MTEgMzk5LjMxMiAyNTEuNDggMzk5Ljg3NyAyNTEuMDJDNDAwLjQ1NSAyNTAuNTQ3IDQwMC43NDUgMjQ5LjkyMyA0MDAuNzQ1IDI0OS4xNDdDNDAwLjc0NSAyNDguMzcyIDQwMC40NTUgMjQ3Ljc1NCAzOTkuODc3IDI0Ny4yOTRDMzk5LjMxMiAyNDYuODIxIDM5OC40ODQgMjQ2LjU4NCAzOTcuMzkzIDI0Ni41ODRIMzkxLjU3NlYyNTEuNzExSDM5Ny4zOTNaIiBmaWxsPSIjM0Y2Q0EzIi8+CjxwYXRoIGQ9Ik0zNjUuODQyIDI0NC43MTFIMzc4Ljg1NVYyNDYuNTg0SDM3My4zMzRWMjU4LjUxM0gzNzEuMzYzVjI0Ni41ODRIMzY1Ljg0MlYyNDQuNzExWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMzUzLjEzMiAyNTAuNjI2VjI0NC43MTFIMzU1LjEwNFYyNTguNTEzSDM1My4xMzJWMjUyLjQ5OUgzNDMuNjY4VjI1OC41MTNIMzQxLjY5NlYyNDQuNzExSDM0My42NjhWMjUwLjYyNkgzNTMuMTMyWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMzIwLjM5NyAyNTIuNDk5VjI1Ni42NEgzMzAuMjU1VjI1OC41MTNIMzE4LjQyNVYyNDQuNzExSDMyOS44NjFWMjQ2LjU4NEgzMjAuMzk3VjI1MC42MjZIMzI5LjA3MlYyNTIuNDk5SDMyMC4zOTdaIiBmaWxsPSIjM0Y2Q0EzIi8+CjxwYXRoIGQ9Ik0zMDcuNDggMjYyLjI1OUgzMDUuNTA4VjI1OC41MTNIMjkyLjU5NFYyNDQuNzExSDI5NC41NjVWMjU2LjY0SDMwMy42MzVWMjQ0LjcxMUgzMDUuNjA3VjI1Ni42NEgzMDcuNDhWMjYyLjI1OVoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTI1NS44MjMgMjU4LjUxNEgyNTIuOTY0VjI0NC43MTJIMjU0LjkzNlYyNTYuNDQzSDI1NS4wMzRMMjYzLjExOCAyNDQuNzEySDI2NS45NzdWMjU4LjUxNEgyNjQuMDA1VjI0Ni43ODJIMjYzLjkwN0wyNTUuODIzIDI1OC41MTRaTTI1OS40NzEgMjQzLjMzMkMyNTguMTgyIDI0My4zMzIgMjU3LjIwMyAyNDMuMDU1IDI1Ni41MzMgMjQyLjUwM0MyNTUuODYyIDI0MS45MzggMjU1LjUyNyAyNDEuMTk2IDI1NS41MjcgMjQwLjI3NUgyNTcuMzAyQzI1Ny4zMDIgMjQxLjI2MSAyNTguMDI1IDI0MS43NTQgMjU5LjQ3MSAyNDEuNzU0QzI2MC45MTYgMjQxLjc1NCAyNjEuNjM5IDI0MS4yNjEgMjYxLjYzOSAyNDAuMjc1SDI2My40MTRDMjYzLjQxNCAyNDEuMTk2IDI2My4wNzkgMjQxLjkzOCAyNjIuNDA4IDI0Mi41MDNDMjYxLjczOCAyNDMuMDU1IDI2MC43NTkgMjQzLjMzMiAyNTkuNDcxIDI0My4zMzJaIiBmaWxsPSIjM0Y2Q0EzIi8+CjxwYXRoIGQ9Ik0yMjQuNzY1IDI1OC41MTNWMjQ0LjcxMUgyMjYuNzM2VjI0OS44MzdIMjMxLjk2MUMyMzMuNzg5IDI0OS44MzcgMjM1LjE0OSAyNTAuMjE5IDIzNi4wNDMgMjUwLjk4MUMyMzYuOTM3IDI1MS43NDMgMjM3LjM4NCAyNTIuODA4IDIzNy4zODQgMjU0LjE3NUMyMzcuMzg0IDI1NS41NDIgMjM2LjkzNyAyNTYuNjA3IDIzNi4wNDMgMjU3LjM2OUMyMzUuMTQ5IDI1OC4xMzIgMjMzLjc4OSAyNTguNTEzIDIzMS45NjEgMjU4LjUxM0gyMjQuNzY1Wk0yNDAuOTMzIDI1OC41MTNIMjM4Ljk2MVYyNDQuNzExSDI0MC45MzNWMjU4LjUxM1pNMjMxLjk2MSAyNTYuNjRDMjMzLjEwNSAyNTYuNjQgMjMzLjk0NiAyNTYuNDIzIDIzNC40ODUgMjU1Ljk4OUMyMzUuMDM3IDI1NS41NTUgMjM1LjMxMyAyNTQuOTUxIDIzNS4zMTMgMjU0LjE3NUMyMzUuMzEzIDI1My40IDIzNS4wMzcgMjUyLjc5NSAyMzQuNDg1IDI1Mi4zNjFDMjMzLjk0NiAyNTEuOTI3IDIzMy4xMDUgMjUxLjcxMSAyMzEuOTYxIDI1MS43MTFIMjI2LjczNlYyNTYuNjRIMjMxLjk2MVoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTIxMC43NzMgMjUwLjYyNlYyNDQuNzExSDIxMi43NDVWMjU4LjUxM0gyMTAuNzczVjI1Mi40OTlIMjAxLjMwOVYyNTguNTEzSDE5OS4zMzdWMjQ0LjcxMUgyMDEuMzA5VjI1MC42MjZIMjEwLjc3M1oiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTE4MS42ODUgMjU4LjcxMUMxNzkuOTUgMjU4LjcxMSAxNzguNDUyIDI1OC40MDkgMTc3LjE5IDI1Ny44MDRDMTc1LjkyOCAyNTcuMTg2IDE3NC45NjIgMjU2LjMzOCAxNzQuMjkyIDI1NS4yNkMxNzMuNjM0IDI1NC4xODMgMTczLjMwNiAyNTIuOTY3IDE3My4zMDYgMjUxLjYxM0MxNzMuMzA2IDI1MC4yNDYgMTczLjY0MSAyNDkuMDMgMTc0LjMxMSAyNDcuOTY1QzE3NC45OTUgMjQ2Ljg4NyAxNzUuOTk0IDI0Ni4wNDYgMTc3LjMwOCAyNDUuNDQxQzE3OC42MzYgMjQ0LjgyNCAxODAuMjI2IDI0NC41MTUgMTgyLjA4IDI0NC41MTVDMTgzLjIzNyAyNDQuNTE1IDE4NC4zMjEgMjQ0LjY2NiAxODUuMzMzIDI0NC45NjhDMTg2LjM1OCAyNDUuMjcgMTg3LjE0NyAyNDUuNjEyIDE4Ny42OTkgMjQ1Ljk5M1YyNDguMDY0QzE4Ny4xNzMgMjQ3LjYxNyAxODYuMzk4IDI0Ny4yMDkgMTg1LjM3MyAyNDYuODQxQzE4NC4zNiAyNDYuNDczIDE4My4yNjMgMjQ2LjI4OSAxODIuMDggMjQ2LjI4OUMxODAuNjczIDI0Ni4yODkgMTc5LjQ2NCAyNDYuNTI2IDE3OC40NTIgMjQ2Ljk5OUMxNzcuNDUzIDI0Ny40NTkgMTc2LjY5IDI0OC4wOTcgMTc2LjE2NSAyNDguOTEyQzE3NS42MzkgMjQ5LjcxMyAxNzUuMzc2IDI1MC42MTQgMTc1LjM3NiAyNTEuNjEzQzE3NS4zNzYgMjUyLjU5OSAxNzUuNjI2IDI1My40OTkgMTc2LjEyNSAyNTQuMzE0QzE3Ni42MzggMjU1LjEyOSAxNzcuMzc0IDI1NS43NzMgMTc4LjMzNCAyNTYuMjQ2QzE3OS4yOTMgMjU2LjcwNiAxODAuNDEgMjU2LjkzNiAxODEuNjg1IDI1Ni45MzZDMTgyLjc5IDI1Ni45MzYgMTgzLjgyOCAyNTYuNzk4IDE4NC44MDEgMjU2LjUyMkMxODUuNzg3IDI1Ni4yMzMgMTg2LjU1NiAyNTUuOTE4IDE4Ny4xMDggMjU1LjU3NlYyNTcuNTg3QzE4Ni41NjkgMjU3Ljg3NiAxODUuODA2IDI1OC4xMzkgMTg0LjgyIDI1OC4zNzZDMTgzLjgzNSAyNTguNTk5IDE4Mi43OSAyNTguNzExIDE4MS42ODUgMjU4LjcxMVoiIGZpbGw9IiMzRjZDQTMiLz4KPHBhdGggZD0iTTE1MS40MTkgMjU4LjUxM0gxNDguNTZWMjQ0LjcxMUgxNTAuNTMxVjI1Ni40NDNIMTUwLjYzTDE1OC43MTQgMjQ0LjcxMUgxNjEuNTczVjI1OC41MTNIMTU5LjYwMVYyNDYuNzgxSDE1OS41MDNMMTUxLjQxOSAyNTguNTEzWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMTM0LjU2OCAyNTAuNjI2VjI0NC43MTFIMTM2LjUzOVYyNTguNTEzSDEzNC41NjhWMjUyLjQ5OUgxMjUuMTA0VjI1OC41MTNIMTIzLjEzMlYyNDQuNzExSDEyNS4xMDRWMjUwLjYyNkgxMzQuNTY4WiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMTA5LjE0IDI1MC42MjZWMjQ0LjcxMUgxMTEuMTEyVjI1OC41MTNIMTA5LjE0VjI1Mi40OTlIOTkuNjc1OFYyNTguNTEzSDk3LjcwNDFWMjQ0LjcxMUg5OS42NzU4VjI1MC42MjZIMTA5LjE0WiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNNzYuNDA1MyAyNTIuNDk5VjI1Ni42NEg4Ni4yNjM4VjI1OC41MTNINzQuNDMzNlYyNDQuNzExSDg1Ljg2OTVWMjQ2LjU4NEg3Ni40MDUzVjI1MC42MjZIODUuMDgwOFYyNTIuNDk5SDc2LjQwNTNaIiBmaWxsPSIjM0Y2Q0EzIi8+CjxwYXRoIGQ9Ik01MC42NzA5IDI0NC43MTFINjMuNjg0MlYyNDYuNTg0SDU4LjE2MzRWMjU4LjUxM0g1Ni4xOTE3VjI0Ni41ODRINTAuNjcwOVYyNDQuNzExWiIgZmlsbD0iIzNGNkNBMyIvPgo8cGF0aCBkPSJNMzU1LjI4NSAyLjA2MDMzQzM1Ny44ODcgMS40NjEwOCAzNTkuMDg4IDUuNDk2OTIgMzU2LjY1OSA2LjYwODE4QzMwOS4yOCAyOC4yODE1IDI1OS4wMzYgNjguNDMxNiAyNTMuNzI5IDEzOC4wNzRDMjUzLjY0MSAxMzkuMjI2IDI1Mi42ODggMTQwLjE0NCAyNTEuNTM1IDE0MC4xNDRIMjQ2LjMzNEMyNDUuMTcxIDE0MC4xNDQgMjQ0LjIxNiAxMzkuMjUzIDI0NC4xMjYgMTM4LjA5MUMyNDIuNzUyIDEyMC4zODIgMjMzLjY4NiA5MC41MjA1IDIxMi44NCA2MS4yODM0QzIxMi4zNDIgNjAuNTg0OSAyMTIuMzMzIDU5LjY0MjYgMjEyLjgzNyA1OC45NDg2QzIxNS43MTIgNTQuOTkyNSAyMTguOTA2IDUxLjA4MTUgMjIzLjE0NCA0Ny4yMDY1QzIyMy45MDQgNDYuNTEyIDIyNS4wNyA0Ni41Mzk5IDIyNS44MSA0Ny4yNTU3QzIzMy4wNDIgNTQuMjU0MiAyMzguOTE2IDYxLjEwMTcgMjQ1Ljg4MSA3MS4xODE0QzI0Ni43MjUgNzIuNzU1NCAyNDkuMDE1IDcyLjc5NzUgMjQ5Ljg5OCA3MS4yNDQ5QzI3NCAzOCAzMDMuNSAxNy41IDM1NS4yODUgMi4wNjAzM1oiIGZpbGw9IiMzRjZDQTMiLz4KPC9zdmc+Cg==" alt="Логотип теннисного центра «Альфа»"></div>
+    <div>
+      <h1 id="heroTitle">Турнирная сетка</h1>
+      <p class="sub">Теннисный центр «Альфа», Краснодар · <a href="index.html">к бронированию</a></p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="view">
+  <div class="card"><div class="empty">Загружаем турнир…</div></div>
+</main>
+
+<div class="stage" id="stage" aria-hidden="true">
+  <div class="stage-inner">
+    <h2 id="stageTitle">Жеребьёвка</h2>
+    <div class="sub" id="stageSub"></div>
+    <div class="pots" id="pots"></div>
+    <div class="drum" id="drum"></div>
+    <div class="acts" id="stageActs"></div>
+    <div class="seedline" id="seedLine"></div>
+  </div>
+</div>
+
+<script>
+const API_URL = 'https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt';
+
+const TOKEN_KEY = 'alfa_token';
+// Обращение к localStorage может выбросить исключение — приватный режим,
+// отключённое хранилище. Без обёртки это уронило бы всю страницу, хотя
+// сетка никакого хранилища не требует.
+const store = {
+  get(key) { try { return localStorage.getItem(key); } catch (e) { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* переживём */ } },
+};
+
+const state = { id: null, t: null };
+
+function el(tag, cls) { const d = document.createElement(tag); if (cls) d.className = cls; return d; }
+function txt(tag, cls, text) { const d = el(tag, cls); d.textContent = text; return d; }
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+function longDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  if (!m) return String(iso || '');
+  return Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1];
+}
+
+function datesText(t) {
+  return t.dateFrom === t.dateTo ? longDate(t.dateFrom) : longDate(t.dateFrom) + ' — ' + longDate(t.dateTo);
+}
+
+const STATUS = {
+  signup: ['wait', 'идёт запись'],
+  groups: ['ok', 'групповой этап'],
+  playoff: ['ok', 'плей-офф'],
+  finished: ['grey', 'завершён'],
+};
+
+const SCORING = { set1: 'один сет', set2: 'два сета', proset8: 'про-сет до 8' };
+
+async function api(action, payload) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ action }, payload)),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body.error || 'request-failed');
+    err.code = body.error || 'request-failed';
+    throw err;
+  }
+  return body;
+}
+
+// ---------- Отрисовка ----------
+
+function participant(t, id) {
+  return (t.participants || []).find(p => p.id === id) || null;
+}
+function nameOf(t, id) {
+  const p = participant(t, id);
+  return p ? p.name : '—';
+}
+
+function render() {
+  const view = document.getElementById('view');
+  view.innerHTML = '';
+  const t = state.t;
+
+  document.getElementById('heroTitle').textContent = t.title;
+  document.title = t.title + ' — теннисный центр «Альфа»';
+
+  const head = el('div', 'card');
+  const st = STATUS[t.status] || ['grey', t.status];
+  head.innerHTML = '<h2>' + escapeHtml(t.title)
+    + ' <span class="pill ' + st[0] + '">' + escapeHtml(st[1]) + '</span></h2>'
+    + '<div class="meta">' + escapeHtml(datesText(t))
+    + ' · ' + escapeHtml(t.level)
+    + ' · матч: ' + escapeHtml(SCORING[t.scoring.mode] || '')
+    + (t.fee ? ' · взнос ' + t.fee + ' ₽' : '')
+    + ' · участников: ' + t.taken + '</div>'
+    + (t.note ? '<div class="meta">' + escapeHtml(t.note) + '</div>' : '')
+    + '<div class="print-head">Теннисный центр «Альфа», Краснодар</div>';
+
+  const acts = el('div', 'acts noprint');
+  // Сетку открывают отдельной вкладкой и из панели, и с сайта, поэтому
+  // возврат нужен явный: «назад» в истории тут может вести в пустоту.
+  acts.appendChild(button('← Назад', 'btn sec', () => {
+    if (history.length > 1) history.back(); else location.href = 'index.html';
+  }));
+  if (t.drawnAt) {
+    acts.appendChild(button('Показать жеребьёвку', 'btn sec', () => playCeremony(false)));
+  }
+  acts.appendChild(button('На печать', 'btn sec', () => window.print()));
+  head.appendChild(acts);
+  view.appendChild(head);
+
+  // Итоги турнира — первым делом после шапки: за ними и приходят, когда
+  // всё сыграно.
+  if (t.podium && t.podium.length) {
+    const board = el('div', 'card');
+    board.innerHTML = '<h2>Итоги</h2>';
+    const medals = ['🥇', '🥈', '🥉'];
+    t.podium.forEach(row => {
+      const line = el('div', 'match');
+      line.innerHTML = '<div class="who"><span class="medal">' + medals[row.place - 1] + '</span> '
+        + '<b>' + escapeHtml(row.name || nameOf(t, row.participantId)) + '</b></div>'
+        + '<div class="score">' + row.place + ' место</div>';
+      board.appendChild(line);
+    });
+    view.appendChild(board);
+  }
+
+  if (!t.drawnAt) {
+    const wait = el('div', 'card');
+    wait.innerHTML = '<h2>Состав <span class="tag">' + t.taken + ' из ' + t.maxParticipants + '</span></h2>';
+    if (!t.participants.length) {
+      wait.appendChild(txt('div', 'empty', 'Пока никто не записан.'));
+    }
+    t.participants.forEach(p => {
+      const row = el('div', 'match');
+      row.innerHTML = '<div class="who"><b>' + p.number + '.</b> ' + escapeHtml(p.name)
+        + (p.seeded ? ' <span class="pill ok">сеяный</span>' : '')
+        + (p.mine ? ' <span class="pill me">это вы</span>' : '') + '</div>';
+      wait.appendChild(row);
+    });
+    wait.appendChild(txt('div', 'empty',
+      'Жеребьёвки ещё не было — группы появятся здесь сразу после неё. '
+      + 'Номер слева — ваш номер на мяче: по нему и следите за жеребьёвкой.'));
+    view.appendChild(wait);
+    return;
+  }
+
+  (t.groups || []).forEach(g => renderGroup(view, t, g));
+  renderBracket(view, t, t.main, 'Плей-офф');
+  renderThird(view, t);
+  renderBracket(view, t, t.consolation, 'Утешительная сетка');
+}
+
+function button(label, cls, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = cls; b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// Группа — крестовина: строки и столбцы это одни и те же игроки, в
+// клетке счёт их встречи. Так таблицу групп рисуют везде, к ней все
+// привыкли, и она заметно компактнее списка пар: у кругового на
+// шестнадцать человек список — это сто двадцать строк, а крестовина
+// помещается на один экран.
+//
+// Столбцы подписаны номерами участников — теми же, что были на мячах.
+function renderGroup(view, t, g) {
+  const card = el('div', 'card');
+  const left = g.matches.filter(m => !m.winner).length;
+  card.innerHTML = '<h2>Группа ' + escapeHtml(g.key)
+    + ' <span class="tag">' + (left ? 'не сыграно ' + left + ' из ' + g.matches.length
+      : 'все матчи сыграны') + '</span></h2>';
+
+  const advance = t.format.groupCount > 0 ? t.format.advance : 0;
+  const members = g.table.map(row => participant(t, row.participantId)).filter(Boolean);
+
+  const scroll = el('div', 'scroll');
+  const table = document.createElement('table');
+  table.className = 'cross';
+
+  let head = '<thead><tr><th class="pl">#</th><th class="who">Игрок</th>';
+  members.forEach(p => { head += '<th class="sc">' + p.number + '</th>'; });
+  head += '<th class="agg">Очки</th><th class="agg">Сеты</th><th class="agg">Геймы</th>'
+    + '<th class="pl">Место</th></tr></thead>';
+  table.innerHTML = head;
+
+  const tbody = document.createElement('tbody');
+  g.table.forEach(row => {
+    const p = participant(t, row.participantId);
+    const tr = document.createElement('tr');
+    const cls = [];
+    if (row.status === 'withdrawn') cls.push('off');
+    else if (advance && row.place <= advance) cls.push('up');
+    if (p && p.mine) cls.push('mine');
+    tr.className = cls.join(' ');
+
+    let html = '<td class="pl">' + (row.place || '—') + '</td>'
+      + '<td class="who"><span class="no">' + (p ? p.number : '') + '</span> '
+      + escapeHtml(row.name) + '</td>';
+    members.forEach(op => {
+      if (!p || op.id === p.id) { html += '<td class="sc self"></td>'; return; }
+      html += '<td class="sc">' + crossCell(t, g, p.id, op.id) + '</td>';
+    });
+    html += '<td class="pts"><b>' + row.points + '</b></td>'
+      + '<td class="agg">' + row.setsWon + ':' + row.setsLost + ' ' + diffTag(row.setDiff) + '</td>'
+      + '<td class="agg">' + row.gamesWon + ':' + row.gamesLost + ' ' + diffTag(row.gameDiff) + '</td>'
+      + '<td class="pl">' + (row.place || '—') + '</td>';
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  scroll.appendChild(table);
+  card.appendChild(scroll);
+
+  const notes = [];
+  if (advance) {
+    notes.push(advance === 1 ? 'В плей-офф выходит победитель группы.'
+      : 'В плей-офф выходят первые ' + advance + '.');
+  }
+  notes.push('Места при равенстве очков: разница сетов, потом геймы, потом личная встреча.');
+  card.appendChild(txt('div', 'empty', notes.join(' ')));
+
+  view.appendChild(card);
+}
+
+// Разница со знаком: именно по ней решается место при равных очках,
+// поэтому она подписана отдельно и цветом — плюс зелёный, минус красный.
+function diffTag(d) {
+  const v = Number(d) || 0;
+  if (!v) return '<span class="diff zero">0</span>';
+  return '<span class="diff ' + (v > 0 ? 'plus' : 'minus') + '">'
+    + (v > 0 ? '+' : '−') + Math.abs(v) + '</span>';
+}
+
+// Клетка крестовины: счёт глазами того, чья это строка.
+function crossCell(t, g, meId, rivalId) {
+  const m = g.matches.find(x => (x.a === meId && x.b === rivalId) || (x.a === rivalId && x.b === meId));
+  if (!m || !m.winner) return '<span class="pend">—</span>';
+  const iAmA = m.a === meId;
+  const won = (m.winner === 'a') === iAmA;
+  if (m.walkover) return '<span class="' + (won ? 'w' : 'l') + '">' + (won ? '+' : '−') + '</span>';
+  const sets = (m.sets || []).map(s => (iAmA ? s[0] + ':' + s[1] : s[1] + ':' + s[0])).join(' ');
+  return '<span class="' + (won ? 'w' : 'l') + '">' + escapeHtml(sets) + '</span>';
+}
+
+// Матч за третье место — отдельной карточкой: он никуда не ведёт и в
+// колонки сетки не встраивается.
+function renderThird(view, t) {
+  const m = t.third;
+  if (!m) return;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Матч за третье место</h2>';
+  if (!m.a && !m.b) {
+    card.appendChild(txt('div', 'empty', 'Играют проигравшие в полуфиналах.'));
+  } else {
+    card.appendChild(bracketSlot(t, m));
+  }
+  view.appendChild(card);
+}
+
+function renderBracket(view, t, bracket, title) {
+  if (!bracket) return;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
+
+  const box = el('div', 'bracket');
+  bracket.rounds.forEach(r => {
+    const col = el('div', 'col');
+    col.innerHTML = '<h3>' + escapeHtml(r.label) + '</h3>';
+    r.matches.forEach(m => col.appendChild(bracketSlot(t, m)));
+    box.appendChild(col);
+  });
+  card.appendChild(box);
+  view.appendChild(card);
+}
+
+function bracketSlot(t, m) {
+  const slot = el('div', 'slot');
+  [['a', m.a], ['b', m.b]].forEach(([side, id]) => {
+    const line = el('div', 'side' + (m.winner === side ? ' win' : '') + (id ? '' : ' empty'));
+    const p = id ? participant(t, id) : null;
+    const label = el('span');
+    label.textContent = p ? p.name : 'ждём соперника';
+    line.appendChild(label);
+    const sc = el('span', 'score');
+    if (m.winner) {
+      sc.textContent = m.walkover
+        ? (m.winner === side ? 'проход' : '')
+        : (m.sets || []).map(s => s[side === 'a' ? 0 : 1]).join(' ');
+    }
+    line.appendChild(sc);
+    slot.appendChild(line);
+  });
+  return slot;
+}
+
+// ============================================================
+// Церемония жеребьёвки
+// ============================================================
+//
+// Случайность здесь не рождается — она уже произошла на сервере и
+// сохранена вместе с зерном. Страница только проигрывает готовый
+// порядок: иначе «показать заново» выдавало бы каждый раз новую
+// раскладку, и вся затея потеряла бы смысл.
+//
+// Синхронного показа у всех сразу нет: у функции один запрос на
+// экземпляр и нет ни вебсокетов, ни опроса по таймеру. Поэтому
+// церемония играет сама один раз у того, кто ещё не видел эту
+// жеребьёвку, а остальным остаётся кнопка «Показать жеребьёвку» —
+// её и нажимают на клубном экране.
+
+const SEEN_PREFIX = 'alfa_draw_seen_';
+const SOUND_KEY = 'alfa_draw_sound';
+
+let ceremony = { running: false, skip: false };
+
+function seenKey(t) { return SEEN_PREFIX + t.id + '_' + t.drawSeed; }
+
+function soundOn() { return store.get(SOUND_KEY) === '1'; }
+
+// Щелчок мяча синтезом, без единого файла: страница обязана оставаться
+// самодостаточной, а короткий удар звучит одинаково у всех.
+let audio = null;
+function knock() {
+  if (!soundOn()) return;
+  try {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    const now = audio.currentTime;
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.09);
+    gain.gain.setValueAtTime(0.16, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(now); osc.stop(now + 0.13);
+  } catch (e) { /* звук — украшение, без него всё работает */ }
+}
+
+function wait(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function reducedMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// Куда какие ячейки: в турнире с группами — по группам, в сетке
+// навылет — по местам в первом круге.
+function ceremonyPots(t) {
+  if (t.format.groupCount > 0) {
+    const keys = [];
+    (t.drawOrder || []).forEach(o => { if (keys.indexOf(o.group) < 0) keys.push(o.group); });
+    keys.sort();
+    return keys.map(key => ({
+      key,
+      title: 'Группа ' + key,
+      slots: (t.drawOrder || []).filter(o => o.group === key).length,
+    }));
+  }
+  return [{ key: null, title: 'Сетка', slots: (t.drawOrder || []).length }];
+}
+
+function buildStage(t) {
+  document.getElementById('stageTitle').textContent = 'Жеребьёвка';
+  document.getElementById('stageSub').textContent = t.title + ' · ' + datesText(t);
+  document.getElementById('seedLine').textContent = 'зерно жеребьёвки: ' + (t.drawSeed || '');
+
+  const pots = document.getElementById('pots');
+  pots.innerHTML = '';
+  const cells = new Map();
+  ceremonyPots(t).forEach(pot => {
+    const box = el('div', 'pot');
+    box.innerHTML = '<h3>' + escapeHtml(pot.title) + '</h3>';
+    for (let i = 0; i < pot.slots; i++) {
+      const cell = el('div', 'cell');
+      cell.appendChild(el('div', 'ball'));
+      cell.appendChild(txt('span', '', '…'));
+      box.appendChild(cell);
+      cells.set((pot.key || '') + ':' + i, cell);
+    }
+    pots.appendChild(box);
+  });
+
+  // В барабан кладём всех записавшихся по номерам — это список
+  // участников, а не очередь на вытягивание. Порядок, в котором их
+  // разыграли, здесь не читается вовсе.
+  //
+  // Номер на мяче остаётся видным и после того, как имена погаснут:
+  // следить за своим номером проще, чем выхватывать фамилию из
+  // мелькающих, а кто под номером — на экране уже не написано.
+  const drum = document.getElementById('drum');
+  drum.classList.remove('blind');
+  drum.innerHTML = '';
+  const balls = new Map();
+  (t.participants || [])
+    .slice()
+    .sort((a, b) => a.number - b.number)
+    .forEach(p => {
+      const chip = el('div', 'chip');
+      const ball = el('div', 'ball');
+      ball.appendChild(txt('span', 'num', String(p.number)));
+      chip.appendChild(ball);
+      chip.appendChild(txt('span', 'nm', p.name));
+      drum.appendChild(chip);
+      balls.set(p.id, chip);
+    });
+
+  return { cells, balls, drum };
+}
+
+function stageButtons(t, phase) {
+  const acts = document.getElementById('stageActs');
+  acts.innerHTML = '';
+  if (phase === 'running') {
+    acts.appendChild(button('Пропустить', 'btn sec', () => { ceremony.skip = true; }));
+  } else {
+    acts.appendChild(button('Показать заново', 'btn sec', () => playCeremony(false)));
+    acts.appendChild(button('К сетке', 'btn', closeStage));
+  }
+  acts.appendChild(button(soundOn() ? 'Звук: включён' : 'Звук: выключен', 'btn sec', (e) => {
+    store.set(SOUND_KEY, soundOn() ? '0' : '1');
+    e.target.textContent = soundOn() ? 'Звук: включён' : 'Звук: выключен';
+    if (soundOn()) knock();
+  }));
+}
+
+function closeStage() {
+  ceremony.skip = true;
+  document.getElementById('stage').classList.remove('on');
+  document.getElementById('stage').setAttribute('aria-hidden', 'true');
+}
+
+// Полёт мяча из барабана в ячейку. На мяче номер — по нему и следят за
+// собой, — а имя появляется при посадке.
+//
+// Перебора имён в полёте нет намеренно: номер уже виден, то есть кого
+// вытянули, известно с первой секунды. Мелькающие рядом с этим номером
+// чужие фамилии — враньё, которое ничего не добавляет.
+async function flyBall(t, from, to, finalName, number) {
+  const a = from.getBoundingClientRect();
+  const b = to.getBoundingClientRect();
+
+  const flier = el('div', 'flier');
+  const ball = el('div', 'ball');
+  // Номер виден с первой секунды, имя — нет. Свой номер каждый знает, и
+  // вопрос «мой или не мой» решается раньше, чем проявится фамилия.
+  if (number) ball.appendChild(txt('span', 'num', String(number)));
+  flier.appendChild(ball);
+  const label = txt('span', '', '');
+  flier.appendChild(label);
+  flier.style.left = a.left + 'px';
+  flier.style.top = a.top + 'px';
+  document.body.appendChild(flier);
+
+  const dx = b.left - a.left + 6;
+  const dy = b.top - a.top + 3;
+  const fast = ceremony.skip || reducedMotion();
+  const duration = fast ? 0 : 820;
+
+  if (!fast) {
+    flier.style.transition = 'transform ' + duration + 'ms cubic-bezier(.22,.7,.3,1)';
+    // Кадр, чтобы браузер зафиксировал начальное положение до перехода.
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    flier.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
+    await wait(duration - 140);
+    label.textContent = finalName;
+    await wait(140);
+  }
+
+  flier.remove();
+}
+
+async function playCeremony(auto) {
+  const t = state.t;
+  if (!t || !t.drawOrder || !t.drawOrder.length || ceremony.running) return;
+
+  ceremony.running = true;
+  ceremony.skip = false;
+  const stage = document.getElementById('stage');
+  stage.classList.add('on');
+  stage.setAttribute('aria-hidden', 'false');
+  stageButtons(t, 'running');
+
+  const { cells, balls, drum } = buildStage(t);
+  const slotIndex = new Map();
+  const stageSub = document.getElementById('stageSub');
+  const subText = stageSub.textContent;
+
+  // Имена для перебора в полёте — только те, кого ещё не вытянули.
+
+  // Сначала все записавшиеся видны списком, потом ссыпаются в барабан:
+  // имена гаснут, остаются одинаковые мячи. Дальше по фамилиям в
+  // барабане ничего не прочитать — этого и не хватало.
+  if (!ceremony.skip) {
+    stageSub.textContent = subText + ' · участников: ' + balls.size;
+    await wait(reducedMotion() ? 700 : 1400);
+    drum.classList.add('blind');
+    if (!reducedMotion()) {
+      drum.classList.add('rolling');
+      await wait(900);
+      drum.classList.remove('rolling');
+    } else {
+      await wait(400);
+    }
+    stageSub.textContent = subText;
+  } else {
+    drum.classList.add('blind');
+  }
+
+  try {
+    for (const item of t.drawOrder) {
+      const who = participant(t, item.participantId);
+      const name = nameOf(t, item.participantId);
+      const key = item.group || '';
+      const idx = slotIndex.get(key) || 0;
+      slotIndex.set(key, idx + 1);
+      const cell = cells.get(key + ':' + idx);
+      if (!cell) continue;
+
+      // Улетает именно тот мяч, чей номер вытянули: в барабане они
+      // стоят по номерам, а не по очереди розыгрыша, поэтому кто
+      // следующий — по нему всё равно не угадать.
+      const pick = balls.get(item.participantId) || null;
+
+      if (!ceremony.skip && !reducedMotion()) {
+        drum.classList.add('rolling');
+        await wait(300);
+        drum.classList.remove('rolling');
+      } else if (!ceremony.skip) {
+        // Барабан не трясём, но паузу перед выдачей оставляем: без неё
+        // имена высыпаются подряд и читаются как список.
+        await wait(180);
+      }
+
+      if (pick) pick.classList.add('gone');
+      await flyBall(t, pick || drum, cell, name, who ? who.number : null);
+      if (pick) pick.remove();
+
+      cell.classList.add('filled', 'hit');
+      if (who) cell.firstChild.appendChild(txt('span', 'num', String(who.number)));
+      cell.lastChild.textContent = name;
+      knock();
+      // «Пропустить» — это мгновенно, и только оно. У того, кто просил
+      // убрать движение, церемония остаётся церемонией: без полёта и
+      // мельтешения имён, но имена появляются по одному, а не разом.
+      // Иначе жеребьёвка для него превращается в готовую таблицу — то
+      // есть ровно в то, от чего уходили.
+      if (!ceremony.skip) await wait(reducedMotion() ? 520 : 260);
+      cell.classList.remove('hit');
+    }
+  } finally {
+    ceremony.running = false;
+    stageButtons(t, 'done');
+    store.set(seenKey(t), '1');
+    void auto;
+  }
+}
+
+// ---------- Запуск ----------
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeStage(); });
+
+async function load() {
+  const params = new URLSearchParams(location.search);
+  state.id = params.get('t') || '';
+  const view = document.getElementById('view');
+
+  if (!state.id) {
+    view.innerHTML = '<div class="card"><h2>Турнир не указан</h2>'
+      + '<div class="empty">Ссылка на сетку выглядит так: tournament.html?t=…<br>'
+      + 'Её выдаёт панель клуба и рассылает организатор.</div></div>';
+    return;
+  }
+
+  try {
+    // Токен необязателен: без него сетка видна всем, просто имена
+    // сокращены до фамилии одной буквой, а свои строки не помечаются.
+    const res = await api('tournamentCard', { id: state.id, token: store.get(TOKEN_KEY) || undefined });
+    state.t = res.tournament;
+  } catch (e) {
+    view.innerHTML = '<div class="card"><h2>'
+      + (e.code === 'tournament-not-found' ? 'Такого турнира нет' : 'Не удалось загрузить')
+      + '</h2><div class="empty">'
+      + (e.code === 'tournament-not-found'
+        ? 'Возможно, турнир удалили или ссылка устарела.'
+        : 'Проверьте связь и обновите страницу.')
+      + '</div></div>';
+    return;
+  }
+
+  render();
+
+  // Жеребьёвку показываем сама собой ровно один раз — тому, кто эту
+  // раскладку ещё не видел. Дальше только по кнопке: повторный показ
+  // при каждом заходе быстро превратился бы из праздника в помеху.
+  if (state.t.drawnAt && !store.get(seenKey(state.t))) playCeremony(true);
+}
+
+load();
+</script>
+</body>
+</html>

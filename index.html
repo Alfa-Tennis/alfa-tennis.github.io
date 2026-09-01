@@ -523,6 +523,8 @@ const state = {
   view: 'home',
   landing: null,       // ответ getLanding: афиша и всё, что на главной
   openPlay: null,      // ответ openPlayList: открытые тренировки
+  tournaments: [],     // перечень турниров; сетка живёт на своей странице
+  tournament: null,    // открытая карточка турнира, читается по кнопке
   auth: null,          // { token, client }
   mine: null,          // ответ myBookings
   passHistory: null,   // операции по абонементу; читаются по кнопке
@@ -666,6 +668,12 @@ const ERRORS = {
   'token-revoked': 'Нужно войти заново.',
   'unauthorized': 'Нужно войти заново.',
   'booking-not-found': 'Бронь не найдена.',
+  'tournament-not-found': 'Турнир не найден — возможно, его удалили.',
+  'already-in': 'Вы уже записаны на этот турнир.',
+  'not-in': 'Вас нет в составе этого турнира.',
+  'signups-closed': 'Запись на турнир закрыта.',
+  'draw-done': 'Жеребьёвка уже прошла — состав закрыт. Позвоните в центр.',
+  'not-registered': 'На турнир записываются только клиенты центра.',
   'not-linked': 'Telegram не привязан к учётке. Откройте бота центра и поделитесь номером.',
   'bad-init-data': 'Telegram не подтвердил вход. Откройте страницу заново.',
   'declined': 'Вход отклонён в Telegram.',
@@ -748,7 +756,7 @@ async function request(payload, retries) {
 // запросов по отдельности.
 const SAFE_TO_REPEAT = [
   'bootstrap', 'getConfig', 'getAvailability', 'getLanding', 'openPlayList',
-  'me', 'myBookings',
+  'me', 'myBookings', 'tournamentList', 'tournamentCard',
 ];
 
 async function api(action, body) {
@@ -836,6 +844,7 @@ async function load() {
   state.dataAt = Date.now();
   state.landing = boot.landing;
   state.openPlay = boot.openPlay;
+  state.tournaments = boot.tournaments || [];
   state.date = state.data.today;
 
   // Ссылка из объявления в чате клуба: «освободилось время в субботу
@@ -1097,6 +1106,13 @@ function renderHome() {
   if (openPlaySessions().length) {
     view.appendChild(txt('div', 'section-title', 'Открытые тренировки'));
     view.appendChild(homeOpenPlay());
+  }
+
+  // Турниры выше афиши по той же причине, что и тренировки: на афишу
+  // смотрят, а сюда записываются.
+  if (openTournaments().length) {
+    view.appendChild(txt('div', 'section-title', 'Турниры центра'));
+    view.appendChild(homeTournaments());
   }
 
   view.appendChild(txt('div', 'section-title', 'Афиша турниров'));
@@ -2831,6 +2847,167 @@ function homeOpenPlay() {
   return card;
 }
 
+// ---------- Турниры ----------
+//
+// На главной живёт только перечень и запись. Сетка, таблицы и
+// церемония жеребьёвки — на своей странице (tournament.html): она
+// открывается по ссылке и печатается, а тащить её сюда значило бы
+// удвоить и без того немаленький файл.
+
+const T_STATUS_LABEL = {
+  signup: ['wait', 'идёт запись'],
+  groups: ['ok', 'групповой этап'],
+  playoff: ['ok', 'плей-офф'],
+  finished: ['grey', 'завершён'],
+};
+
+// Завершённые не показываем: главная — про то, куда можно попасть.
+// Идущий турнир остаётся, чтобы участники ходили за сеткой отсюда.
+function openTournaments() {
+  return (state.tournaments || []).filter(t => t.status !== 'finished');
+}
+
+// Турнир идёт день или месяцы, поэтому дата тут без «сегодня/завтра»:
+// «сегодня — 14 ноя» читается как ошибка.
+function tournamentDay(iso) {
+  const d = new Date(iso + 'T00:00:00Z');
+  return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+}
+
+function tournamentDates(t) {
+  return t.dateFrom === t.dateTo ? tournamentDay(t.dateFrom)
+    : tournamentDay(t.dateFrom) + ' — ' + tournamentDay(t.dateTo);
+}
+
+function homeTournaments() {
+  const card = el('div', 'card');
+  openTournaments().slice(0, 6).forEach(t => {
+    const st = T_STATUS_LABEL[t.status] || ['grey', ''];
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(t.title)
+      + ' <span class="pill ' + st[0] + '">' + escapeHtml(st[1]) + '</span></div>'
+      + '<div class="t2">' + escapeHtml(tournamentDates(t) + ' · ' + t.level)
+      + ' · ' + t.taken + ' из ' + t.maxParticipants
+      + (t.fee ? ' · взнос ' + money(t.fee) : ' · без взноса') + '</div>';
+    it.appendChild(btn('Подробнее', 'btn sm sec', () => openTournamentCard(t.id)));
+    card.appendChild(it);
+  });
+  return card;
+}
+
+async function openTournamentCard(id) {
+  try {
+    const res = await api('tournamentCard', { id });
+    state.tournament = res.tournament;
+  } catch (e) {
+    toast(errorText(e.code), 4000);
+    return;
+  }
+  showTournamentCard();
+}
+
+function showTournamentCard() {
+  const t = state.tournament;
+  const body = el('div');
+  const st = T_STATUS_LABEL[t.status] || ['grey', ''];
+  body.innerHTML = '<h3>' + escapeHtml(t.title)
+    + ' <span class="pill ' + st[0] + '">' + escapeHtml(st[1]) + '</span></h3>'
+    + '<div class="m-sub">' + escapeHtml(tournamentDates(t)) + ' · ' + escapeHtml(t.level)
+    + '<br>Матч играется до: ' + escapeHtml(T_SCORING_LABEL[t.scoring.mode] || '')
+    + (t.fee ? '<br>Взнос ' + escapeHtml(money(t.fee)) + ', оплата на месте' : '<br>Без взноса')
+    + '</div>'
+    + (t.note ? '<div class="notice">' + escapeHtml(t.note) + '</div>' : '');
+
+  const list = el('div');
+  list.innerHTML = '<div class="t2">Записались (' + t.taken + ' из ' + t.maxParticipants + '):</div>';
+  if (!t.participants.length) {
+    list.appendChild(txt('div', 't2', 'Пока никого. Будете первым.'));
+  }
+  t.participants.forEach(p => {
+    list.appendChild(txt('div', 't1', p.name + (p.mine ? ' — это вы' : '')));
+  });
+  body.appendChild(list);
+
+  const waiting = t.waitlist.some(p => p.mine);
+  if (waiting) {
+    body.appendChild(txt('div', 'notice',
+      'Вы в листе ожидания: центр посмотрит заявку и решит сам. Мест это пока не занимает.'));
+  }
+
+  const acts = el('div', 'm-acts');
+
+  if (t.drawnAt) {
+    const link = document.createElement('a');
+    link.className = 'btn sec';
+    link.href = 'tournament.html?t=' + encodeURIComponent(t.id);
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = 'Сетка и результаты';
+    acts.appendChild(link);
+  }
+
+  if (t.mine && !t.drawnAt) {
+    acts.appendChild(btn('Отменить запись', 'btn danger', () => leaveTournament(t)));
+  } else if (t.mine) {
+    body.appendChild(txt('div', 'notice',
+      'Жеребьёвка проведена — сняться самому уже нельзя. Если не сможете играть, '
+      + 'позвоните в центр: вас заменят или снимут с турнира.'));
+  } else if (t.drawnAt) {
+    body.appendChild(txt('div', 'notice', 'Запись закрыта: жеребьёвка уже прошла.'));
+  } else if (t.signupsClosed) {
+    body.appendChild(txt('div', 'notice', 'Запись закрыта. Позвоните в центр, если хотите попасть.'));
+  } else {
+    acts.appendChild(btn('Записаться', 'btn', () => joinTournament(t)));
+  }
+
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+const T_SCORING_LABEL = { set1: 'один сет', set2: 'два сета', proset8: 'про-сет до 8' };
+
+async function joinTournament(t) {
+  if (!state.auth || !state.auth.client) { openAuth('login'); return; }
+  try {
+    const res = await api('joinTournament', { id: t.id });
+    state.tournament = res.tournament;
+    await refreshTournaments();
+    showTournamentCard();
+    // Уровень здесь строгий, в отличие от тренировок: так решил центр.
+    // Отказом это не считается — заявку смотрит владелец.
+    toast(res.placed === 'waitlist'
+      ? (res.reason === 'level'
+        ? 'Ваш уровень вне диапазона турнира — заявка ушла на рассмотрение'
+        : 'Мест уже нет — вы в листе ожидания')
+      : 'Вы записаны на турнир', 4500);
+  } catch (e) {
+    toast(errorText(e.code), 4000);
+  }
+}
+
+async function leaveTournament(t) {
+  try {
+    const res = await api('leaveTournament', { id: t.id });
+    state.tournament = res.tournament;
+    await refreshTournaments();
+    showTournamentCard();
+    toast('Запись отменена');
+  } catch (e) {
+    toast(errorText(e.code), 4000);
+  }
+}
+
+// Перечень приезжает первым экраном, но после записи он устарел —
+// перечитываем только его, а не весь экран.
+async function refreshTournaments() {
+  try {
+    const res = await api('tournamentList', {});
+    state.tournaments = res.tournaments || [];
+    if (state.view === 'home') renderHome();
+  } catch (e) { /* список не критичен: карточка уже обновлена */ }
+}
+
 function onBusyClick(courtId, slot, date) {
   const day = date || state.date;
   const block = busyAt(day, courtId, slot);
@@ -3393,6 +3570,16 @@ function renderProfile() {
     + '<div class="t2">' + escapeHtml(client.phone) + '</div>'));
 
   if (client.rating != null) c1.appendChild(ratingCard(client.rating));
+
+  // Сыгранные турниры клуба. Считаются только те, что прошли здесь и
+  // через эту систему, — своя история, а не чужой рейтинг.
+  if (client.tournamentsPlayed) {
+    c1.appendChild(html('div', 'item',
+      '<div class="t1">Сыграно турниров центра: ' + client.tournamentsPlayed + '</div>'
+      + (client.tournamentsWon
+        ? '<div class="t2">Побед: ' + client.tournamentsWon + '</div>'
+        : '')));
+  }
 
   const fName = el('label', 'field');
   fName.innerHTML = '<span>Имя и фамилия</span>';
