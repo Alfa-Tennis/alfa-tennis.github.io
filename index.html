@@ -472,10 +472,10 @@ footer a { color: var(--court-dk); }
 
   <footer>
     <p id="footerRules">Бронирование от 1 часа, шаг 30 минут.</p>
-    <!-- Политику обязаны видеть все, а не только те, кто дошёл до формы
-         регистрации: закон требует её опубликовать, а не показать по
-         случаю. -->
-    <p><a href="/privacy.html">Политика обработки персональных данных</a></p>
+    <!-- Оба документа обязаны видеть все, а не только те, кто дошёл до
+         формы регистрации: политику закон требует именно опубликовать, а
+         правила — то, на что человек ссылается в споре. -->
+    <p><a href="/terms.html">Правила бронирования</a> · <a href="/privacy.html">Политика обработки персональных данных</a></p>
   </footer>
 </main>
 
@@ -2117,7 +2117,12 @@ function openAuth(mode) {
 
     const note = el('div', 'empty');
     note.style.marginTop = '10px';
-    note.textContent = 'Работает, если Telegram уже привязан к учётке. Если нет — бот подскажет, что нажать.';
+    // Про «если не открывается» — не перестраховка: Telegram в России с
+    // февраля 2026 работает с ограничениями, и человек, у которого он еле
+    // грузится, должен видеть, что вход по телефону от мессенджера не
+    // зависит вовсе. Иначе он решит, что сайт тоже сломан.
+    note.textContent = 'Работает, если Telegram уже привязан к учётке. Если нет — бот подскажет, '
+      + 'что нажать. А если Telegram не открывается — вход и регистрация по телефону выше работают без него.';
     tgBox.appendChild(note);
   }
 
@@ -2333,16 +2338,19 @@ function consentBox() {
   const cb = document.createElement('input');
   cb.type = 'checkbox';
 
-  const text = document.createElement('span');
-  text.appendChild(document.createTextNode('Я согласен на обработку моих персональных данных в соответствии с '));
-  const a = document.createElement('a');
-  a.href = '/privacy.html';
-  a.target = '_blank';
-  a.rel = 'noopener';
-  a.textContent = 'политикой центра';
   // Клик по ссылке не должен переключать галочку: метка ловит его первой.
-  a.addEventListener('click', (e) => e.stopPropagation());
-  text.appendChild(a);
+  const doc = (href, label) => {
+    const a = document.createElement('a');
+    a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = label;
+    a.addEventListener('click', (e) => e.stopPropagation());
+    return a;
+  };
+
+  const text = document.createElement('span');
+  text.appendChild(document.createTextNode('Я принимаю '));
+  text.appendChild(doc('/terms.html', 'правила бронирования'));
+  text.appendChild(document.createTextNode(' и согласен на обработку моих персональных данных в соответствии с '));
+  text.appendChild(doc('/privacy.html', 'политикой центра'));
   text.appendChild(document.createTextNode('.'));
 
   box.appendChild(cb);
