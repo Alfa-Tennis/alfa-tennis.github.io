@@ -318,6 +318,12 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .tg-or::before, .tg-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .tg-code { font-size: 32px; font-weight: 700; letter-spacing: .22em; text-align: center;
   background: var(--court-tint); border-radius: 10px; padding: 14px 10px 14px 18px; margin: 14px 0; }
+/* Команда для бота на случай, когда ссылка не доехала: её выделяют и
+   копируют целиком, поэтому перенос по любому месту, а не по словам. */
+.tg-cmd-note { margin-top: 10px; }
+.tg-cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; user-select: all;
+  background: #fff; border: 1px solid var(--warn-line); border-radius: 8px;
+  padding: 8px 10px; margin: 6px 0 10px; word-break: break-all; }
 
 .summary { background: var(--court-tint); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
 .summary .s-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; padding: 2px 0; }
@@ -2126,8 +2132,8 @@ function openAuth(mode) {
       // Открываем соседней вкладкой, а не переходом: эта должна остаться
       // на месте и дождаться подтверждения. На телефоне ссылка отдаётся
       // приложению Telegram, и вкладка тоже никуда не девается.
-      const opened = window.open(tgStart.url, '_blank', 'noopener');
-      showTgWaiting(!opened);
+      window.open(tgStart.url, '_blank', 'noopener');
+      showTgWaiting();
     });
     tgBox.appendChild(go);
 
@@ -2144,21 +2150,15 @@ function openAuth(mode) {
 
   // Панель ожидания. Она же — единственное место, где человеку показан код
   // сверки: сверять его с сообщением бота и есть защита от чужой ссылки.
-  function showTgWaiting(popupBlocked) {
+  function showTgWaiting() {
     const body = el('div');
     body.innerHTML = '<h3>Подтвердите вход в Telegram</h3>'
       + '<div class="m-sub">Бот прислал три кнопки с кодами. Нажмите ту, где этот код:</div>'
       + '<div class="tg-code">' + escapeHtml(tgStart.confirmCode) + '</div>';
 
-    if (popupBlocked) {
-      const warn = el('div', 'notice');
-      warn.innerHTML = 'Браузер не дал открыть Telegram. '
-        + '<a href="' + escapeHtml(tgStart.url) + '" target="_blank" rel="noopener">Откройте бота вручную</a>.';
-      body.appendChild(warn);
-    }
-
     const status = txt('div', 'empty', 'Ждём подтверждения…');
     body.appendChild(status);
+    body.appendChild(tgFallback());
 
     const acts = el('div', 'm-acts');
     acts.appendChild(btn('Войти по паролю', 'btn sec', () => openAuth('login')));
@@ -2166,6 +2166,48 @@ function openAuth(mode) {
 
     showModal(body);
     pollTgLogin(body, status);
+  }
+
+  // Запасной путь, когда ссылка до Telegram не доехала. Показываем его
+  // всегда, а не по неудаче window.open: с 'noopener' тот по стандарту
+  // возвращает null и в успехе, и в отказе — судить по нему нельзя, а
+  // прежняя плашка «браузер не дал открыть» врала на каждом входе.
+  //
+  // Не доехать ссылка может тихо. На компьютере без установленного
+  // Telegram обработчика у tg:// нет, страница t.me ничего больше не
+  // предлагает, и переход просто ничем не кончается: бот молчит, потому
+  // что ему нечего было отвечать. Поэтому здесь и лежит команда целиком —
+  // отправленная руками, она равна переходу по ссылке.
+  function tgFallback() {
+    const box = el('div', 'notice');
+    const web = 'https://web.telegram.org/a/#?tgaddr=' + encodeURIComponent(
+      'tg://resolve?domain=' + state.config.club.botUsername + '&start=' + tgStart.code);
+
+    box.innerHTML = 'Telegram не открылся? '
+      + '<a href="' + escapeHtml(tgStart.url) + '" target="_blank" rel="noopener">Открыть в приложении</a>'
+      + ' или <a href="' + escapeHtml(web) + '" target="_blank" rel="noopener">в Telegram Web</a>.'
+      + '<div class="tg-cmd-note">Если и там пусто — отправьте боту это сообщение:</div>';
+
+    const cmd = txt('div', 'tg-cmd', '/start ' + tgStart.code);
+    box.appendChild(cmd);
+
+    box.appendChild(btn('Скопировать', 'btn sec sm', () => {
+      // Копирование могут запретить, и это не повод оставлять человека ни
+      // с чем: тогда просто выделяем строку — останется нажать Ctrl+C.
+      const fallback = () => {
+        const range = document.createRange();
+        range.selectNodeContents(cmd);
+        const sel = window.getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+        toast('Выделено — скопируйте и отправьте боту');
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd.textContent)
+          .then(() => toast('Скопировано — вставьте боту в Telegram'), fallback);
+      } else fallback();
+    }));
+
+    return box;
   }
 
   // Панель жива, пока она и есть содержимое открытого окна. Закрыли окно
