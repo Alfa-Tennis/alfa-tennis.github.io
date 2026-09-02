@@ -2875,8 +2875,12 @@ function tournamentDay(iso) {
 }
 
 function tournamentDates(t) {
-  return t.dateFrom === t.dateTo ? tournamentDay(t.dateFrom)
+  const days = t.dateFrom === t.dateTo ? tournamentDay(t.dateFrom)
     : tournamentDay(t.dateFrom) + ' — ' + tournamentDay(t.dateTo);
+  // Время показываем только у однодневного: у многодневного кругового
+  // его нет — там играют когда договорятся.
+  if (t.dateFrom !== t.dateTo || !t.timeFrom) return days;
+  return days + ', ' + fmtTime(t.timeFrom) + (t.timeTo ? '–' + fmtTime(t.timeTo) : '');
 }
 
 function homeTournaments() {
@@ -2954,8 +2958,12 @@ function showTournamentCard() {
       + 'позвоните в центр: вас заменят или снимут с турнира.'));
   } else if (t.drawnAt) {
     body.appendChild(txt('div', 'notice', 'Запись закрыта: жеребьёвка уже прошла.'));
-  } else if (t.signupsClosed) {
-    body.appendChild(txt('div', 'notice', 'Запись закрыта. Позвоните в центр, если хотите попасть.'));
+  } else if (t.signupsClosed || t.signupsClosedNow) {
+    // Запись закрывается и сама — за сутки до старта. Человеку это
+    // объясняем, иначе кнопка просто исчезает без причины.
+    body.appendChild(txt('div', 'notice', t.signupsClosed
+      ? 'Запись закрыта. Позвоните в центр, если хотите попасть.'
+      : 'Запись закрылась за сутки до турнира. Позвоните в центр, если хотите попасть.'));
   } else {
     acts.appendChild(btn('Записаться', 'btn', () => joinTournament(t)));
   }
@@ -3554,6 +3562,52 @@ function ratingCard(value) {
   return box;
 }
 
+// Игровой уровень в кабинете. Слово «NTRP» здесь не пишем нигде: игроки
+// знают эту аббревиатуру по чужим системам, где она значит не совсем то
+// же самое, а уровень тут — свой, клубный.
+//
+// Дробное число стоит рядом с делением не для красоты. Без него турнир,
+// который сдвинул человека внутри деления, выглядел бы как «уровень
+// изменился, а цифра прежняя» — то есть как поломка.
+function levelCard(client) {
+  const box = el('div', 'item');
+  const div = String(client.ntrp).replace('.', ',');
+  const fine = client.level != null && client.level !== client.ntrp
+    ? ' <span class="t2">· ' + String(client.level).replace('.', ',') + '</span>'
+    : '';
+  let inner = '<div class="t1">Игровой уровень: ' + div + fine + '</div>'
+    + '<div class="t2">Меняется по итогам турниров центра: учитываются соперники, '
+    + 'счёт и место. Не согласны с уровнем — скажите администратору.</div>';
+
+  // Дата записи в ленте — короткая: «12 окт». Год дописываем только для
+  // прошлых сезонов, иначе строка растёт без пользы.
+  const logDate = (iso) => {
+    const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(d)) return '';
+    const now = new Date();
+    return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()]
+      + (d.getUTCFullYear() === now.getUTCFullYear() ? '' : ' ' + d.getUTCFullYear());
+  };
+
+  const log = Array.isArray(client.levelLog) ? client.levelLog : [];
+  log.slice(0, 5).forEach(e => {
+    const when = e.at ? logDate(e.at) : '';
+    if (e.by === 'owner') {
+      inner += '<div class="t2">' + escapeHtml(when) + ' — уровень задан клубом: '
+        + (e.ntrpTo == null ? '—' : String(e.ntrpTo).replace('.', ',')) + '</div>';
+      return;
+    }
+    const moved = e.ntrpFrom !== e.ntrpTo
+      ? String(e.ntrpFrom).replace('.', ',') + ' → ' + String(e.ntrpTo).replace('.', ',')
+      : (e.delta > 0 ? '+' : '−') + String(Math.abs(e.delta).toFixed(2)).replace('.', ',');
+    inner += '<div class="t2">' + escapeHtml(when) + ' · ' + escapeHtml(e.title || 'турнир')
+      + ' — ' + moved + '</div>';
+  });
+
+  box.innerHTML = inner;
+  return box;
+}
+
 function renderProfile() {
   const view = document.getElementById('viewProfile');
   view.innerHTML = '';
@@ -3570,6 +3624,8 @@ function renderProfile() {
     + '<div class="t2">' + escapeHtml(client.phone) + '</div>'));
 
   if (client.rating != null) c1.appendChild(ratingCard(client.rating));
+
+  if (client.ntrp != null) c1.appendChild(levelCard(client));
 
   // Сыгранные турниры клуба. Считаются только те, что прошли здесь и
   // через эту систему, — своя история, а не чужой рейтинг.

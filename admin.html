@@ -548,6 +548,8 @@ const ERRORS = {
   'invalid-weekday': 'Выберите день недели.',
   'invalid-court': 'Выберите корт.',
   'invalid-reason': 'Напишите причину закрытия.',
+  'courts-not-requested': 'У турнира не выбрано «занять корты» — поправьте карточку.',
+  'invalid-time-range': 'Окончание игр должно быть позже начала.',
   'timeout': 'Сервер не ответил вовремя. Нажмите «Обновить» — обычно со второго раза проходит.',
   'server-unavailable': 'Сервер не отвечает. Проверьте интернет и нажмите «Обновить».',
   'date-in-past': 'Эта дата уже прошла.',
@@ -824,6 +826,7 @@ async function loadAll() {
     // шестнадцать человек — сто двадцать матчей, поэтому просим его
     // только когда он и правда открыт.
     tournamentId: state.tab === 'tournaments' ? (state.tournamentId || undefined) : undefined,
+    season: state.tab === 'tournaments' ? (state.season || undefined) : undefined,
   });
 
   // Имена оставлены прежними: ниже полторы сотни строк, которые ими
@@ -881,7 +884,9 @@ async function loadAll() {
     news: posts || null,
     openplay: sessions || null,
     tournaments: b.tournaments || null,
+    tourPoints: b.tourPoints || null,
     tournament: (b.tournament && b.tournament.tournament) || null,
+    courtsBlocked: !!(b.tournament && b.tournament.courtsBlocked),
     monthly: monthly || null,
     chats: chats || null,
     ledger: ledger || null,
@@ -1751,6 +1756,15 @@ function buildDayGrid(date, blocks) {
 // ============================================================
 
 function openBlock(b) {
+  // Закрытие под турнир правится только в карточке турнира: иначе время
+  // турнира и время закрытия разъедутся, и не понять, какое настоящее.
+  if (b.kind === 'closed' && b.exception && b.exception.tournamentId) {
+    state.tab = 'tournaments';
+    state.tournamentId = b.exception.tournamentId;
+    closeModal();
+    reload().catch(() => toast('Не удалось открыть турнир'));
+    return null;
+  }
   if (b.kind === 'closed') return openException(b.exception);
   if (b.kind === 'series' && !b.booking) return openSeriesOccurrence(b);
   // По тренировке из сетки открываем её состав, а не карточку брони:
@@ -2220,8 +2234,8 @@ const CLIENT_SORTS = [
   { id: 'name', label: 'по имени, А→Я' },
   { id: 'rating-asc', label: 'рейтинг: сначала низкий' },
   { id: 'rating-desc', label: 'рейтинг: сначала высокий' },
-  { id: 'ntrp-desc', label: 'уровень NTRP: сначала сильные' },
-  { id: 'ntrp-asc', label: 'уровень NTRP: сначала слабые' },
+  { id: 'ntrp-desc', label: 'игровой уровень: сначала сильные' },
+  { id: 'ntrp-asc', label: 'игровой уровень: сначала слабые' },
   { id: 'new', label: 'сначала новые' },
   { id: 'old', label: 'сначала давние' },
   { id: 'no-tg', label: 'сначала без Telegram' },
@@ -3058,7 +3072,7 @@ function showNtrpProposals(res) {
       });
       const span = document.createElement('span');
       span.innerHTML = '<b>' + escapeHtml(p.candidates[0].name) + '</b>'
-        + ' <span class="pill ok">NTRP ' + String(p.ntrp).replace('.', ',') + '</span>'
+        + ' <span class="pill ok">уровень ' + String(p.ntrp).replace('.', ',') + '</span>'
         + '<div class="t2">в файле: ' + escapeHtml(p.name + ' · ' + p.sheet)
         + (p.currentNtrp != null ? ' · сейчас ' + String(p.currentNtrp).replace('.', ',') : '')
         + '</div>';
@@ -3078,7 +3092,7 @@ function showNtrpProposals(res) {
     doubtful.forEach(p => {
       const row = el('div', 'item');
       row.innerHTML = '<div class="t1">' + escapeHtml(p.name)
-        + ' <span class="pill wait">NTRP ' + String(p.ntrp).replace('.', ',') + '</span></div>'
+        + ' <span class="pill wait">уровень ' + String(p.ntrp).replace('.', ',') + '</span></div>'
         + '<div class="t2">' + escapeHtml(p.sheet) + ' · кандидаты: '
         + escapeHtml(p.candidates.map(c => c.name + ' ' + fmtPhone(c.phone)).join(', ')) + '</div>';
       body.appendChild(row);
@@ -3106,7 +3120,7 @@ function showNtrpProposals(res) {
 function ntrpField(c) {
   const row = el('div', 'row');
   row.style.marginTop = '8px';
-  row.appendChild(txt('span', 't2', 'Уровень NTRP:'));
+  row.appendChild(txt('span', 't2', 'Игровой уровень:'));
 
   const sel = ntrpSelect(c.ntrp, '— не знаем —');
   sel.addEventListener('change', () => {
@@ -3114,7 +3128,23 @@ function ntrpField(c) {
       sel.value === '' ? 'Уровень снят' : 'Уровень сохранён');
   });
   row.appendChild(sel);
+
+  // Где человек внутри деления. Это не второй рейтинг, а уточнение к
+  // тому же числу: «в верхней части четвёрки, скоро следующее деление».
+  // Своей рукой владелец ставит деление — копилка встаёт на него.
+  if (c.level != null && c.ntrp != null && c.level !== c.ntrp) {
+    row.appendChild(txt('span', 't2', 'копилка ' + String(c.level).replace('.', ',')
+      + ' · ' + plural(c.levelMatches || 0, 'матч', 'матча', 'матчей')));
+  }
   return row;
+}
+
+function plural(n, one, few, many) {
+  const d10 = n % 10, d100 = n % 100;
+  let word = many;
+  if (d10 === 1 && d100 !== 11) word = one;
+  else if (d10 >= 2 && d10 <= 4 && (d100 < 12 || d100 > 14)) word = few;
+  return n + ' ' + word;
 }
 
 // ============================================================
@@ -3277,7 +3307,7 @@ function signupRow(s, p, num, inQueue) {
   const who = num + '. ' + p.name
     + (p.partnerName ? ' + ' + p.partnerName + ' (пара)' : '')
     + (p.phone ? ' · ' + fmtPhone(p.phone) : '')
-    + (p.ntrp ? ' · NTRP ' + String(p.ntrp).replace('.', ',') : '');
+    + (p.ntrp ? ' · уровень ' + String(p.ntrp).replace('.', ',') : '');
 
   row.innerHTML = (inQueue ? '<span class="pill grey">в очереди</span> ' : '')
     + escapeHtml(who)
@@ -3355,7 +3385,7 @@ function openSessionForm(session, preset, roster) {
   fTitle.appendChild(inpTitle); body.appendChild(fTitle);
 
   const fLevel = el('div', 'field');
-  fLevel.innerHTML = '<span>Уровень NTRP — пусто значит «любой»</span>';
+  fLevel.innerHTML = '<span>Игровой уровень — пусто значит «любой»</span>';
   const levelRow = el('div', 'row');
   const selMin = ntrpSelect(op ? op.ntrpMin : (preset ? preset.ntrpMin : null), 'от');
   const selMax = ntrpSelect(op ? op.ntrpMax : (preset ? preset.ntrpMax : null), 'до');
@@ -3448,7 +3478,7 @@ function openRivalForm(s) {
   fTitle.appendChild(inpTitle); body.appendChild(fTitle);
 
   const fLevel = el('div', 'field');
-  fLevel.innerHTML = '<span>Уровень NTRP — пусто значит «любой»</span>';
+  fLevel.innerHTML = '<span>Игровой уровень — пусто значит «любой»</span>';
   const levelRow = el('div', 'row');
   const selMin = ntrpSelect(null, 'от');
   const selMax = ntrpSelect(null, 'до');
@@ -4173,8 +4203,12 @@ const T_SCORING = {
 };
 
 function tournamentDates(t) {
-  return t.dateFrom === t.dateTo ? longDate(t.dateFrom)
+  const days = t.dateFrom === t.dateTo ? longDate(t.dateFrom)
     : longDate(t.dateFrom) + ' — ' + longDate(t.dateTo);
+  // Время показываем через fmtTime: клубные сутки уходят за полночь, и
+  // «25:00» человеку писать нельзя.
+  if (t.dateFrom !== t.dateTo || !t.timeFrom) return days;
+  return days + ', ' + fmtTime(t.timeFrom) + (t.timeTo ? '–' + fmtTime(t.timeTo) : '');
 }
 
 function renderTournaments(view) {
@@ -4230,6 +4264,82 @@ function renderTournaments(view) {
     acts.appendChild(btn('Новый турнир', 'btn sm', () => openTournamentForm(null)));
     card.appendChild(acts);
   }
+
+  renderTourPoints(view, canEdit);
+}
+
+// Зачёт очков — второй картой на той же вкладке. Устроен как таблицы
+// владельца в Excel: строка на человека, колонка на турнир, сумма
+// справа, места диапазонами при равенстве.
+function renderTourPoints(view, canEdit) {
+  const data = db.tourPoints;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Зачёт очков <span class="sub">по итогам турниров сезона</span></h2>';
+  view.appendChild(card);
+
+  if (!data) { card.appendChild(txt('div', 'empty', 'Загружаем зачёт…')); return; }
+
+  if ((data.seasons || []).length > 1) {
+    const sel = document.createElement('select');
+    data.seasons.forEach(s => sel.appendChild(opt(s, s + ' год')));
+    sel.value = data.season;
+    sel.addEventListener('change', () => {
+      state.season = sel.value;
+      reload().catch(() => toast('Не удалось загрузить зачёт'));
+    });
+    const row = el('div', 'row');
+    row.appendChild(txt('span', 't2', 'Сезон:'));
+    row.appendChild(sel);
+    card.appendChild(row);
+  }
+
+  if (!(data.tables || []).length) {
+    card.appendChild(txt('div', 'empty',
+      'Очков пока нет. Они начисляются, когда завершён турнир с выбранными '
+      + 'категорией и составом играющих.'));
+  }
+
+  (data.tables || []).forEach(table => {
+    const box = el('div', 'item');
+    box.appendChild(txt('div', 't1', table.label));
+
+    // Таблица уезжает вбок на телефоне: колонок столько, сколько
+    // турниров за сезон, и ужимать их нельзя — числа станут нечитаемы.
+    const scroll = el('div', 'cross-wrap');
+    let html = '<table class="tbl"><thead><tr><th>Место</th><th>Ф.И.О.</th>';
+    table.events.forEach(ev => {
+      html += '<th title="' + escapeHtml(ev.title) + '">' + escapeHtml(shortDate(ev.date)) + '</th>';
+    });
+    html += '<th>Сумма</th></tr></thead><tbody>';
+    table.rows.forEach(r => {
+      html += '<tr><td>' + escapeHtml(r.place) + '</td><td>' + escapeHtml(r.name) + '</td>';
+      table.events.forEach(ev => {
+        html += '<td>' + (r.scores[ev.id] == null ? '' : r.scores[ev.id]) + '</td>';
+      });
+      html += '<td><b>' + r.total + '</b></td></tr>';
+    });
+    html += '</tbody></table>';
+    scroll.innerHTML = html;
+    box.appendChild(scroll);
+    card.appendChild(box);
+  });
+
+  if (canEdit) {
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Пересобрать зачёт', 'btn sm sec', () => confirmDelete(
+      'Пересобрать зачёт?', 'Сезон ' + data.season,
+      'Очки будут посчитаны заново по всем турнирам. Нужно, если правили счёт '
+      + 'задним числом, меняли категорию турнира или начисление в настройках. '
+      + 'Потерять здесь нечего — зачёт всегда собирается из турниров.',
+      () => act(() => api('adminRebuildTourPoints', {}), 'Зачёт пересобран'))));
+    card.appendChild(acts);
+  }
+}
+
+// Дата турнира в шапке колонки — как у владельца в таблицах: «01.03».
+function shortDate(iso) {
+  const s = String(iso || '');
+  return s.length >= 10 ? s.slice(8, 10) + '.' + s.slice(5, 7) : s;
 }
 
 function renderTournamentCard(view) {
@@ -4289,11 +4399,55 @@ function renderTournamentCard(view) {
   if (canEdit && t.finished && !t.countedAt) {
     acts.appendChild(btn('Завершить турнир', 'btn sm', () => confirmFinish(t)));
   }
+  // Сводку могли закрыть не глядя, а счёт — поправить задним числом.
+  // Расчёт детерминированный, повторяется из текущих данных сколько
+  // угодно раз, поэтому кнопка остаётся, пока уровни не применены.
+  if (canEdit && t.countedAt && !t.levelAppliedAt) {
+    acts.appendChild(btn('Пересчитать уровни', 'btn sm', async () => {
+      const res = await act(() => api('adminLevelPreview', { id: t.id }));
+      if (res && res.levels) openLevels(t, res.levels);
+    }));
+  }
   head.appendChild(acts);
+
+  // Корты под турнир. Время правится здесь же, правкой карточки: время
+  // турнира и время закрытия — одно и то же, и разъезжаться им нельзя.
+  if (t.blockCourts && db.courtsBlocked) {
+    const where = t.blockCourtId == null ? 'Оба корта заняты' : courtName(t.blockCourtId) + ' занят';
+    head.appendChild(txt('div', 'empty', where + ' под турнир: '
+      + fmtTime(t.timeFrom) + '–' + fmtTime(t.timeTo) + '. Игр стало меньше — '
+      + 'нажмите «Изменить» и ужмите время, освободившееся вернётся в продажу.'));
+  }
+
+  // Закрытие не встало: в это время стояла чужая бронь. Убрали её —
+  // занять корты можно одной кнопкой, не заполняя форму заново.
+  if (canEdit && t.blockCourts && !db.courtsBlocked) {
+    const warn = el('div', 'notice');
+    warn.textContent = 'Корты под турнир не заняты — в это время стояла чужая бронь. '
+      + 'Перенесите или отмените её, и нажмите «Занять корты».';
+    head.appendChild(warn);
+    const row = el('div', 'acts');
+    row.appendChild(btn('Занять корты', 'btn sm', async () => {
+      try {
+        await api('adminTournamentCourts', { id: t.id });
+        await reload();
+        toast('Корты заняты под турнир');
+      } catch (e) {
+        if (e.code === 'bookings-clash') {
+          const who = ((e.data && e.data.bookings) || []).map(b => b.clientName || 'бронь').join(', ');
+          toast('Это время всё ещё занято: ' + who, 6000);
+        } else {
+          toast(errorText(e.code), 4000);
+        }
+      }
+    }));
+    head.appendChild(row);
+  }
 
   if (t.countedAt) {
     head.appendChild(txt('div', 'empty',
-      'Турнир завершён, сыгранное записано участникам в профиль.'));
+      'Турнир завершён, сыгранное записано участникам в профиль.'
+      + (t.levelAppliedAt ? ' Игровые уровни пересчитаны.' : ' Игровые уровни ещё не пересчитаны.')));
   }
 
   // Итоги — сразу под шапкой: за ними обращаются чаще всего, когда
@@ -4350,7 +4504,7 @@ function renderTournamentRoster(view, t, canEdit) {
       + (p.group ? ' <span class="pill grey">группа ' + escapeHtml(p.group) + '</span>' : '')
       + (p.status === 'withdrawn' ? ' <span class="pill bad">снялся</span>' : '')
       + (p.paid ? ' <span class="pill ok">взнос внесён</span>' : '') + '</div>'
-      + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'NTRP ' + String(p.ntrp).replace('.', ','))
+      + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
       + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
       + (p.replacedFrom ? ' · заменил: ' + escapeHtml(p.replacedFrom) : '') + '</div>';
 
@@ -4402,7 +4556,7 @@ function renderTournamentRoster(view, t, canEdit) {
     t.waitlist.forEach(p => {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(p.name) + '</div>'
-        + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'NTRP ' + String(p.ntrp).replace('.', ','))
+        + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
         + (p.waitReason === 'level' ? ' · не подходит по уровню' : ' · состав был полон')
         + (p.phone ? ' · ' + escapeHtml(p.phone) : '') + '</div>';
       const acts = el('div', 'acts');
@@ -4656,7 +4810,7 @@ function openPickClient(t, title, onPick) {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(c.name) + '</div>'
         + '<div class="t2">' + escapeHtml(c.phone || '')
-        + (c.ntrp == null ? ' · уровень неизвестен' : ' · NTRP ' + String(c.ntrp).replace('.', ',')) + '</div>';
+        + (c.ntrp == null ? ' · уровень неизвестен' : ' · уровень ' + String(c.ntrp).replace('.', ',')) + '</div>';
       it.addEventListener('click', () => { closeModal(); onPick(c.id); });
       list.appendChild(it);
     });
@@ -4671,18 +4825,81 @@ function openPickClient(t, title, onPick) {
   setTimeout(() => search.focus(), 50);
 }
 
+// Как лягут люди по группам: поровну, остаток по первым. Тот же расчёт,
+// что на сервере, — здесь он только для показа, решает всё равно сервер.
+function groupSizes(count, groupCount) {
+  if (!groupCount) return [];
+  const base = Math.floor(count / groupCount);
+  const extra = count % groupCount;
+  return Array.from({ length: groupCount }, (_, i) => base + (i < extra ? 1 : 0));
+}
+
 function confirmDraw(t) {
+  const count = t.taken;
   const body = el('div');
   body.innerHTML = '<h3>Провести жеребьёвку?</h3>'
-    + '<div class="m-sub">' + escapeHtml(t.title) + ' · ' + t.taken + ' участников</div>'
-    + '<div class="empty">Жеребьёвка проводится один раз. Пересдать её можно только сбросом, '
-    + 'и только пока не сыгран ни один матч.<br><br>'
-    + 'Сама раскладка появится на странице сетки — там её показывают людям.</div>';
+    + '<div class="m-sub">' + escapeHtml(t.title) + ' · записалось ' + count
+    + ' из ' + t.maxParticipants + '</div>';
+
+  const withGroups = t.format.groupCount > 0;
+  // Замысел карточки задаёт желаемый размер группы, а не жёсткое их
+  // число: четыре группы на шестнадцать мест — это «по четыре в группе».
+  // При одиннадцати записавшихся групп нужно три (4-4-3), иначе выйдет
+  // 3-3-3-2, и из двойки пройдут оба, сыграв один матч вместо трёх.
+  const target = Math.max(2, Math.ceil(t.maxParticipants / (t.format.groupCount || 1)));
+  const suggested = Math.max(1, Math.min(6, t.format.groupCount, Math.ceil(count / target)));
+
+  const groups = document.createElement('select');
+  for (let n = 1; n <= Math.min(6, Math.floor(count / 2)); n++) {
+    groups.appendChild(opt(String(n), n === 1 ? 'одна группа, все со всеми' : n + ' группы'));
+  }
+  groups.value = String(suggested);
+
+  const advance = document.createElement('select');
+  const note = el('div', 'empty');
+
+  function refresh() {
+    const g = Number(groups.value);
+    const sizes = groupSizes(count, g);
+    const smallest = Math.min.apply(null, sizes);
+
+    const keep = Number(advance.value);
+    advance.innerHTML = '';
+    for (let n = 1; n < Math.max(2, smallest); n++) {
+      advance.appendChild(opt(String(n), n === 1 ? 'по одному' : 'по ' + n));
+    }
+    advance.value = String(Math.min(keep || t.format.advance, Math.max(1, smallest - 1)));
+
+    const out = g * Number(advance.value);
+    const size = Math.pow(2, Math.ceil(Math.log2(Math.max(2, out))));
+    let text = 'Группы: ' + sizes.join(', ') + '. Выходит ' + out + ', сетка на ' + size + '.';
+    if (out < size) text += ' Недостающих доберём лучшими из невышедших.';
+    if (smallest <= Number(advance.value)) {
+      text += ' ⚠ Из группы в ' + smallest + ' выходят все — они сыграют меньше остальных.';
+    }
+    note.textContent = text;
+  }
+
+  if (withGroups) {
+    wrapField(body, 'Сколько групп', groups);
+    wrapField(body, 'Выходит из группы', advance);
+    body.appendChild(note);
+    groups.addEventListener('change', refresh);
+    advance.addEventListener('change', refresh);
+    refresh();
+  }
+
+  body.appendChild(txt('div', 'empty',
+    'Жеребьёвка проводится один раз. Пересдать её можно только сбросом, и только пока '
+    + 'не сыгран ни один матч. Сама раскладка появится на странице сетки — там её показывают людям.'));
+
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   acts.appendChild(btn('Разыграть', 'btn', () => {
     closeModal();
-    act(() => api('adminTournamentDraw', { id: t.id }), 'Жеребьёвка проведена');
+    act(() => api('adminTournamentDraw', Object.assign({ id: t.id },
+      withGroups ? { groupCount: Number(groups.value), advance: Number(advance.value) } : {})),
+    'Жеребьёвка проведена');
   }));
   body.appendChild(acts);
   showModal(body);
@@ -4693,15 +4910,152 @@ function confirmFinish(t) {
   body.innerHTML = '<h3>Завершить турнир?</h3>'
     + '<div class="m-sub">' + escapeHtml(t.title) + '</div>'
     + '<div class="empty">Всем, кто сыграл хотя бы матч, прибавится сыгранный турнир в профиль, '
-    + 'а победителю — победа. Начисляется один раз.</div>';
+    + 'а победителю — победа. Начисляется один раз. Следом откроется пересчёт игровых уровней — '
+    + 'он ничего не меняет, пока вы не согласитесь.</div>';
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
-  acts.appendChild(btn('Завершить', 'btn', () => {
+  acts.appendChild(btn('Завершить', 'btn', async () => {
     closeModal();
-    act(() => api('adminFinishTournament', { id: t.id }), 'Турнир завершён');
+    const res = await act(() => api('adminFinishTournament', { id: t.id }), 'Турнир завершён');
+    if (res && res.levels) openLevels(t, res.levels, res.points);
   }));
   body.appendChild(acts);
   showModal(body);
+}
+
+// ---------- Пересчёт игровых уровней ----------
+//
+// Считает сервер, здесь только показ и правка рукой. Числа из этого
+// окна назад не уходят: при «согласен» сервер пересчитывает всё заново,
+// а из формы принимает единственное — выбранное владельцем деление.
+
+const LEVEL_ERRORS = {
+  'doubles-paused': 'Парные турниры пока не влияют на игровой уровень.',
+  'no-anchor': 'Не от чего считать: уровень не известен ни у кого из участников, '
+    + 'и у турнира не задан диапазон.',
+  'no-matches': 'В турнире нет сыгранных матчей.',
+  disabled: 'Пересчёт уровней выключен в настройках.',
+};
+
+function levelNum(v) {
+  return v == null ? '—' : String(v).replace('.', ',');
+}
+
+function levelDelta(v) {
+  const s = (v > 0 ? '+' : (v < 0 ? '−' : '')) + String(Math.abs(v).toFixed(2)).replace('.', ',');
+  return v === 0 ? '0' : s;
+}
+
+// Очки, в отличие от уровня, подтверждать нечего: это строка из
+// таблицы по занятому месту. Поэтому они уже начислены, и в сводке
+// показываются справкой — чтобы владелец видел, что зачёт пополнился.
+const POINTS_ERRORS = {
+  'no-category': 'Очки не начислены: у турнира не выбрана категория.',
+  'no-gender': 'Очки не начислены: у турнира не указано, кто играет.',
+  'unknown-category': 'Очки не начислены: для этой категории в настройках нет множителя.',
+  disabled: 'Начисление очков выключено в настройках.',
+  'not-counted': 'Очки будут начислены после завершения турнира.',
+};
+
+function pointsNote(data) {
+  if (!data) return null;
+  if (data.error) return txt('div', 'empty', POINTS_ERRORS[data.error] || 'Очки не начислены.');
+  const total = (data.rows || []).reduce((a, r) => a + r.points, 0);
+  return txt('div', 'empty', 'Очки начислены в зачёт «' + data.label + '»: '
+    + plural(data.rows.length, 'участник', 'участника', 'участников') + ', '
+    + total + ' очков всего.');
+}
+
+function openLevels(t, data, pointsData) {
+  const body = el('div');
+  body.innerHTML = '<h3>Пересчёт игровых уровней</h3>'
+    + '<div class="m-sub">' + escapeHtml(t.title) + '</div>';
+
+  const note = pointsNote(pointsData);
+  if (note) body.appendChild(note);
+
+  if (data.error || !data.rows || !data.rows.length) {
+    body.innerHTML += '<div class="empty">'
+      + escapeHtml(LEVEL_ERRORS[data.error] || 'Двигать некого: никто не сыграл ни одного матча.')
+      + '</div>';
+    const only = el('div', 'm-acts');
+    only.appendChild(btn('Закрыть', 'btn sec', closeModal));
+    body.appendChild(only);
+    showModal(body);
+    return;
+  }
+
+  body.appendChild(txt('div', 'empty',
+    'Уровень копится непрерывно, а деление шкалы меняется, только когда копилка '
+    + 'перевалит за середину. Строку можно поправить рукой — тогда выбранное деление '
+    + 'станет новой точкой отсчёта.'));
+
+  // Правки владельца: id клиента → выбранное деление. Пусто значит
+  // «строку не трогали», это не то же самое, что «снять уровень».
+  const overrides = new Map();
+
+  const list = el('div');
+  list.style.maxHeight = '52vh';
+  list.style.overflowY = 'auto';
+
+  // Первые восемь развёрнуты, остальные под кнопкой: прятать их совсем
+  // нельзя — сдвиг записывается и им тоже.
+  const HEAD = 8;
+  const draw = (limit) => {
+    list.innerHTML = '';
+    data.rows.slice(0, limit).forEach(row => list.appendChild(levelRow(row, overrides)));
+    if (limit < data.rows.length) {
+      const more = btn('Показать остальных (' + (data.rows.length - limit) + ')', 'btn sm sec',
+        () => draw(data.rows.length));
+      more.style.marginTop = '8px';
+      list.appendChild(more);
+    }
+  };
+  draw(Math.min(HEAD, data.rows.length));
+  body.appendChild(list);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Позже', 'btn sec', closeModal));
+  acts.appendChild(btn('Согласен, внести поправки', 'btn', () => {
+    const payload = [];
+    overrides.forEach((v, clientId) => payload.push({ clientId, ntrp: v }));
+    closeModal();
+    act(() => api('adminApplyLevels', { id: t.id, overrides: payload }), 'Уровни обновлены');
+  }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+function levelRow(row, overrides) {
+  const wrap = el('div', 'card');
+  wrap.style.padding = '8px 10px';
+  wrap.style.marginTop = '6px';
+
+  const head = el('div', 'row');
+  head.appendChild(txt('strong', '', row.name || 'Без имени'));
+
+  const move = levelNum(row.ntrp) + ' → ' + levelNum(row.ntrpAfter)
+    + '  ' + levelDelta(row.delta)
+    + '  (' + levelNum(row.level) + ' → ' + levelNum(row.levelAfter) + ')';
+  head.appendChild(txt('span', row.divisionChanged ? 'pill ok' : 't2', move));
+  wrap.appendChild(head);
+
+  const why = row.reason + (row.capped === 'tournament'
+    ? ' · упёрлись в предел за турнир'
+    : (row.capped === 'year' ? ' · упёрлись в предел за год' : ''));
+  wrap.appendChild(txt('div', 't2', why));
+
+  const fix = el('div', 'row');
+  fix.style.marginTop = '4px';
+  fix.appendChild(txt('span', 't2', 'Поставить руками:'));
+  const sel = ntrpSelect(row.ntrpAfter, '— не трогать —');
+  sel.addEventListener('change', () => {
+    if (sel.value === '' || Number(sel.value) === row.ntrpAfter) overrides.delete(row.clientId);
+    else overrides.set(row.clientId, Number(sel.value));
+  });
+  fix.appendChild(sel);
+  wrap.appendChild(fix);
+  return wrap;
 }
 
 // Одна форма и на создание, и на правку — как у афиши.
@@ -4725,6 +5079,28 @@ function openTournamentForm(existing) {
   to.value = existing ? existing.dateTo : todayIso();
   wrapField(body, 'Окончание', to);
 
+  const timeFrom = document.createElement('input');
+  timeFrom.type = 'time';
+  timeFrom.value = existing && existing.timeFrom ? existing.timeFrom : '10:00';
+  wrapField(body, 'Начало игр', timeFrom);
+
+  const timeTo = document.createElement('input');
+  timeTo.type = 'time';
+  timeTo.value = existing && existing.timeTo ? existing.timeTo : '22:00';
+  wrapField(body, 'Окончание игр — до этого времени заняты корты', timeTo);
+
+  // Корты закрываются только у однодневного турнира. Многодневный
+  // круговой играют когда договорятся и бронируют сами — держать оба
+  // корта закрытыми месяц нельзя.
+  const block = document.createElement('select');
+  block.appendChild(opt('none', 'Не занимать корты'));
+  block.appendChild(opt('all', 'Занять оба корта'));
+  (db.courts || []).forEach(c => block.appendChild(opt(String(c.id), 'Занять только ' + c.name)));
+  block.value = existing && existing.blockCourts
+    ? (existing.blockCourtId == null ? 'all' : String(existing.blockCourtId))
+    : 'none';
+  const blockField = wrapFieldNode(body, 'Корты на время турнира', block);
+
   const fee = document.createElement('input');
   fee.type = 'number'; fee.min = '0'; fee.step = '100';
   fee.value = existing ? String(existing.fee) : '0';
@@ -4735,15 +5111,37 @@ function openTournamentForm(existing) {
   size.value = existing ? String(existing.maxParticipants) : '16';
   wrapField(body, 'Сколько участников', size);
 
+  // Пол, разряд и категория решают, в какой зачёт лягут очки: у
+  // владельца это отдельные листы Excel, здесь — отдельные таблицы.
+  // Незаполненные поля не мешают провести турнир, но очки за него не
+  // начислятся, и панель скажет об этом словами.
+  const gender = document.createElement('select');
+  gender.appendChild(opt('', '— не выбран, очки не начисляются —'));
+  gender.appendChild(opt('m', 'мужской'));
+  gender.appendChild(opt('w', 'женский'));
+  gender.appendChild(opt('mixed', 'микст'));
+  gender.value = existing && existing.gender ? existing.gender : '';
+  wrapField(body, 'Кто играет', gender);
+
+  // Категория и тип турнира — одно и то же: первая это мастерс, вторая
+  // тур, третья челленджер. Поэтому список один, и подписи к нему
+  // приходят с сервера, а не живут копией в панели.
+  const category = document.createElement('select');
+  category.appendChild(opt('', '— не выбрана, очки не начисляются —'));
+  ((db.tournaments && db.tournaments.categories) || []).forEach(c =>
+    category.appendChild(opt(String(c.id), c.label)));
+  category.value = existing && existing.category != null ? String(existing.category) : '';
+  wrapField(body, 'Категория турнира — от неё зависит начисление очков', category);
+
   const ntrpMin = document.createElement('input');
   ntrpMin.type = 'number'; ntrpMin.min = '1'; ntrpMin.max = '7'; ntrpMin.step = '0.5';
   ntrpMin.value = existing && existing.ntrpMin != null ? String(existing.ntrpMin) : '';
-  wrapField(body, 'NTRP от — пусто, если без ограничения', ntrpMin);
+  wrapField(body, 'Игровой уровень от — пусто, если без ограничения', ntrpMin);
 
   const ntrpMax = document.createElement('input');
   ntrpMax.type = 'number'; ntrpMax.min = '1'; ntrpMax.max = '7'; ntrpMax.step = '0.5';
   ntrpMax.value = existing && existing.ntrpMax != null ? String(existing.ntrpMax) : '';
-  wrapField(body, 'NTRP до', ntrpMax);
+  wrapField(body, 'Игровой уровень до', ntrpMax);
 
   // Три пресета вместо голого числа групп: «одна группа» и «групп нет»
   // читаются людьми как разные турниры, хотя движок у них один.
@@ -4802,6 +5200,10 @@ function openTournamentForm(existing) {
 
   function syncShape() {
     const withGroups = shape.value !== 'ko';
+    // Многодневный турнир корты не занимает — прячем выбор совсем,
+    // чтобы не обещать того, чего система не сделает.
+    const oneDay = !to.value || to.value === from.value;
+    blockField.style.display = oneDay ? '' : 'none';
     groupsField.style.display = shape.value === 'groups' ? '' : 'none';
     advanceField.style.display = withGroups ? '' : 'none';
     consolationField.style.display = withGroups ? '' : 'none';
@@ -4812,6 +5214,8 @@ function openTournamentForm(existing) {
   }
   shape.addEventListener('change', syncShape);
   mode.addEventListener('change', syncShape);
+  from.addEventListener('change', syncShape);
+  to.addEventListener('change', syncShape);
   syncShape();
 
   const acts = el('div', 'm-acts');
@@ -4823,6 +5227,12 @@ function openTournamentForm(existing) {
       title: title.value,
       dateFrom: from.value,
       dateTo: to.value || from.value,
+      timeFrom: timeFrom.value || null,
+      timeTo: timeTo.value || null,
+      blockCourts: block.value !== 'none',
+      blockCourtId: block.value === 'all' || block.value === 'none' ? null : Number(block.value),
+      gender: gender.value || null,
+      category: category.value === '' ? null : Number(category.value),
       fee: Number(fee.value) || 0,
       maxParticipants: Number(size.value),
       ntrpMin: ntrpMin.value === '' ? null : Number(ntrpMin.value),
@@ -4839,7 +5249,17 @@ function openTournamentForm(existing) {
     };
     if (existing) payload.id = existing.id;
     closeModal();
-    act(() => api('adminSaveTournament', payload), existing ? 'Турнир изменён' : 'Турнир создан');
+    act(async () => {
+      const res = await api('adminSaveTournament', payload);
+      // Турнир сохранился, а корты могли не закрыться: в это время уже
+      // стоит чья-то бронь. Сносить её молча система не должна, поэтому
+      // просто говорим об этом вслед за сообщением об успехе.
+      if (res && res.closure && res.closure.error === 'bookings-clash') {
+        const who = (res.closure.bookings || []).map(b => b.clientName || 'бронь').join(', ');
+        setTimeout(() => toast('Корты не закрыты — это время занято: ' + who, 6000), 1400);
+      }
+      return res;
+    }, existing ? 'Турнир изменён' : 'Турнир создан');
   }));
   body.appendChild(acts);
 
