@@ -4482,10 +4482,23 @@ function renderTournamentCard(view) {
   renderTournamentBracket(view, t, 'consolation', 'Утешительная сетка');
 }
 
+// Кто ещё не сдал взнос. Снявшегося считаем должником, только если он
+// успел сыграть: не вышедший на корт не должен ничего, а отыгравший
+// группу и ушедший — должен. Сколько с него взять — решает организатор,
+// наше дело показать, что человек в списке.
+function feeDebtors(t) {
+  if (!t.fee) return [];
+  return (t.participants || []).filter(p => !p.paid && (p.status !== 'withdrawn' || p.played));
+}
+
 function renderTournamentRoster(view, t, canEdit) {
   const card = el('div', 'card');
   card.innerHTML = '<h2>Состав <span class="sub">' + t.taken + ' из ' + t.maxParticipants + '</span></h2>';
   view.appendChild(card);
+
+  // Взносы сдают весь день по мере прихода, поэтому в списке отмечены обе
+  // стороны: и кто внёс, и с кого ещё причитается.
+  const debtors = new Set(feeDebtors(t).map(p => p.id));
 
   if (!t.participants.length) {
     card.appendChild(txt('div', 'empty', 'Пока никто не записан.'));
@@ -4497,13 +4510,21 @@ function renderTournamentRoster(view, t, canEdit) {
       + 'Отметьте сеяных: они разойдутся по разным группам, а в какую попадёт каждый — жребий.'));
   }
 
+  if (t.fee && t.participants.length) {
+    const due = debtors.size * t.fee;
+    card.appendChild(txt('div', 'empty', 'Взносы: собрано ' + t.feeTotal + ' из '
+      + (t.feeTotal + due) + ' ₽'
+      + (debtors.size ? ' · не сдали ' + debtors.size + ', ещё ' + due + ' ₽' : ' · сдали все')));
+  }
+
   t.participants.forEach(p => {
     const it = el('div', 'item' + (p.status === 'withdrawn' ? ' past' : ''));
     it.innerHTML = '<div class="t1"><b>' + p.number + '.</b> ' + escapeHtml(p.name)
       + (p.seeded ? ' <span class="pill ok">сеяный</span>' : '')
       + (p.group ? ' <span class="pill grey">группа ' + escapeHtml(p.group) + '</span>' : '')
       + (p.status === 'withdrawn' ? ' <span class="pill bad">снялся</span>' : '')
-      + (p.paid ? ' <span class="pill ok">взнос внесён</span>' : '') + '</div>'
+      + (p.paid ? ' <span class="pill ok">взнос внесён</span>'
+        : (debtors.has(p.id) ? ' <span class="pill bad">взнос не сдан</span>' : '')) + '</div>'
       + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
       + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
       + (p.replacedFrom ? ' · заменил: ' + escapeHtml(p.replacedFrom) : '') + '</div>';
@@ -4966,6 +4987,26 @@ function pointsNote(data) {
     + total + ' очков всего.');
 }
 
+// Долги по взносам в сводке. Турнир доигран, люди ещё не разошлись —
+// это последний момент, когда спросить проще, чем потом звонить.
+function feeDebtNote(t) {
+  const debt = feeDebtors(t);
+  if (!debt.length) return null;
+  const box = el('div', 'card');
+  box.style.padding = '8px 10px';
+  box.style.marginTop = '6px';
+  box.innerHTML = '<div class="t1"><span class="pill bad">взнос не сдан</span> '
+    + plural(debt.length, 'участник', 'участника', 'участников')
+    + ', ' + (debt.length * t.fee) + ' ₽</div>';
+  debt.forEach(p => {
+    box.appendChild(txt('div', 't2', p.name
+      + (p.phone ? ' · ' + p.phone : '')
+      + (p.status === 'withdrawn' ? ' · снялся, но сыграл' : '')));
+  });
+  box.appendChild(txt('div', 't2', 'Отметить можно в составе — кнопкой «Взнос внесён».'));
+  return box;
+}
+
 function openLevels(t, data, pointsData) {
   const body = el('div');
   body.innerHTML = '<h3>Пересчёт игровых уровней</h3>'
@@ -4973,6 +5014,9 @@ function openLevels(t, data, pointsData) {
 
   const note = pointsNote(pointsData);
   if (note) body.appendChild(note);
+
+  const debt = feeDebtNote(t);
+  if (debt) body.appendChild(debt);
 
   if (data.error || !data.rows || !data.rows.length) {
     body.innerHTML += '<div class="empty">'
