@@ -4202,6 +4202,12 @@ const T_SCORING = {
   proset8: 'про-сет до 8',
 };
 
+// Места словами — для подписи «Только третьи места» в настройке БЕТА.
+const PLACE_WORDS = {
+  2: 'вторые', 3: 'третьи', 4: 'четвёртые', 5: 'пятые',
+  6: 'шестые', 7: 'седьмые', 8: 'восьмые', 9: 'девятые',
+};
+
 function tournamentDates(t) {
   const days = t.dateFrom === t.dateTo ? longDate(t.dateFrom)
     : longDate(t.dateFrom) + ' — ' + longDate(t.dateTo);
@@ -4468,18 +4474,33 @@ function renderTournamentCard(view) {
 
   renderTournamentRoster(view, t, canEdit);
   (t.groups || []).forEach(g => renderTournamentGroup(view, t, g));
-  renderTournamentBracket(view, t, 'main', 'Плей-офф');
-  if (t.third) {
-    const card = el('div', 'card');
-    card.innerHTML = '<h2>Матч за третье место</h2>';
-    if (!t.third.a && !t.third.b) {
-      card.appendChild(txt('div', 'empty', 'Играют проигравшие в полуфиналах — ждём их.'));
-    } else {
-      card.appendChild(matchRow(t, t.third));
-    }
-    view.appendChild(card);
+  // Клуб зовёт сетки «АЛЬФА» и «БЕТА», и людям знакомы именно эти
+  // названия — в объявлениях турнира стоят они.
+  renderTournamentBracket(view, t, 'main', 'АЛЬФА', 'основная сетка');
+  renderThirdPlace(view, t, t.third, 'Матч за третье место АЛЬФА');
+  renderTournamentBracket(view, t, 'consolation', 'БЕТА', betaSub(t));
+  renderThirdPlace(view, t, t.consThird, 'Матч за третье место БЕТА');
+}
+
+// Кого собрали в БЕТА — подпись читается с настройки турнира, чтобы
+// администратор не гадал, почему четвёртых мест в сетке нет.
+function betaSub(t) {
+  const places = (t.format && t.format.consolationPlaces) || 0;
+  if (places === 1) return 'третьи места из групп';
+  if (places > 1) return 'места с третьего по ' + (2 + places) + '-е';
+  return 'кто не вышел из группы';
+}
+
+function renderThirdPlace(view, t, match, title) {
+  if (!match) return;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
+  if (!match.a && !match.b) {
+    card.appendChild(txt('div', 'empty', 'Играют проигравшие в полуфиналах — ждём их.'));
+  } else {
+    card.appendChild(matchRow(t, match));
   }
-  renderTournamentBracket(view, t, 'consolation', 'Утешительная сетка');
+  view.appendChild(card);
 }
 
 // Кто ещё не сдал взнос. Снявшегося считаем должником, только если он
@@ -4698,11 +4719,12 @@ function crossCellHtml(m, meId) {
   return '<span class="' + (won ? 'w' : 'l') + '">' + escapeHtml(sets) + '</span>';
 }
 
-function renderTournamentBracket(view, t, key, title) {
+function renderTournamentBracket(view, t, key, title, sub) {
   const bracket = t[key];
   if (!bracket) return;
   const card = el('div', 'card');
-  card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
+  card.innerHTML = '<h2>' + escapeHtml(title)
+    + (sub ? ' <span class="sub">' + escapeHtml(sub) + '</span>' : '') + '</h2>';
   view.appendChild(card);
 
   bracket.rounds.forEach(r => {
@@ -5207,11 +5229,17 @@ function openTournamentForm(existing) {
   advance.value = existing ? String(existing.format.advance) : '2';
   const advanceField = wrapFieldNode(body, 'Сколько выходит из группы', advance);
 
+  // Состав БЕТА. У турниров, созданных до этого выбора, поля в данных
+  // нет — им подставляем «все невышедшие», как они и играли, а новым
+  // предлагаем клубный порядок: одни третьи места.
   const consolation = document.createElement('select');
   consolation.appendChild(opt('no', 'Нет'));
-  consolation.appendChild(opt('yes', 'Да, остальные играют свою сетку'));
-  consolation.value = existing && existing.format.consolation ? 'yes' : 'no';
-  const consolationField = wrapFieldNode(body, 'Утешительная сетка', consolation);
+  consolation.appendChild(opt('next', 'Только третьи места'));
+  consolation.appendChild(opt('all', 'Все, кто не вышел из группы'));
+  consolation.value = existing
+    ? (existing.format.consolation ? (existing.format.consolationPlaces === 1 ? 'next' : 'all') : 'no')
+    : 'next';
+  const consolationField = wrapFieldNode(body, 'Сетка БЕТА', consolation);
 
   const third = document.createElement('select');
   third.appendChild(opt('yes', 'Играется'));
@@ -5251,12 +5279,19 @@ function openTournamentForm(existing) {
     groupsField.style.display = shape.value === 'groups' ? '' : 'none';
     advanceField.style.display = withGroups ? '' : 'none';
     consolationField.style.display = withGroups ? '' : 'none';
+    // Какие места уедут в БЕТА, зависит от того, сколько выходит из
+    // группы: при двоих это третьи, при одном — вторые.
+    consolation.options[1].textContent = 'Только '
+      + (PLACE_WORDS[Number(advance.value) + 1] || 'следующие') + ' места';
     deciderField.style.display = mode.value === 'set2' ? '' : 'none';
     // Бронзу разыгрывают только там, где есть полуфиналы: у кругового
     // без плей-офф места расставляет таблица.
     thirdField.style.display = shape.value === 'rr' && Number(advance.value) < 4 ? 'none' : '';
   }
   shape.addEventListener('change', syncShape);
+  // От числа выходящих зависят и подпись БЕТА, и то, есть ли вообще
+  // полуфиналы под матч за третье место.
+  advance.addEventListener('input', syncShape);
   mode.addEventListener('change', syncShape);
   from.addEventListener('change', syncShape);
   to.addEventListener('change', syncShape);
@@ -5284,7 +5319,8 @@ function openTournamentForm(existing) {
       format: {
         groupCount,
         advance: Number(advance.value),
-        consolation: groupCount > 0 && consolation.value === 'yes',
+        consolation: groupCount > 0 && consolation.value !== 'no',
+        consolationPlaces: consolation.value === 'next' ? 1 : 0,
         thirdPlace: third.value === 'yes',
       },
       scoring: { mode: mode.value, decider: decider.value },

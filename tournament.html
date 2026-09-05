@@ -441,9 +441,12 @@ function render() {
   }
 
   (t.groups || []).forEach(g => renderGroup(view, t, g));
-  renderBracket(view, t, t.main, 'Плей-офф');
-  renderThird(view, t);
-  renderBracket(view, t, t.consolation, 'Утешительная сетка');
+  // «АЛЬФА» и «БЕТА» — те же названия, что в объявлениях турнира: люди
+  // ищут на странице именно их, а не «плей-офф с утешительной».
+  renderBracket(view, t, t.main, 'АЛЬФА');
+  renderThird(view, t, t.third, 'Матч за третье место АЛЬФА');
+  renderBracket(view, t, t.consolation, 'БЕТА');
+  renderThird(view, t, t.consThird, 'Матч за третье место БЕТА');
 }
 
 function button(label, cls, onClick) {
@@ -541,11 +544,10 @@ function crossCell(t, g, meId, rivalId) {
 
 // Матч за третье место — отдельной карточкой: он никуда не ведёт и в
 // колонки сетки не встраивается.
-function renderThird(view, t) {
-  const m = t.third;
+function renderThird(view, t, m, title) {
   if (!m) return;
   const card = el('div', 'card');
-  card.innerHTML = '<h2>Матч за третье место</h2>';
+  card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
   if (!m.a && !m.b) {
     card.appendChild(txt('div', 'empty', 'Играют проигравшие в полуфиналах.'));
   } else {
