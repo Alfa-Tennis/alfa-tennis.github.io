@@ -4393,6 +4393,14 @@ function openCatalogForm(existing) {
   contactPhone.placeholder = '+7 961 515-70-11';
   wrapField(body, 'Телефон для записи — необязательно', contactPhone);
 
+  // Подсказка в поле «Что уточнить» на витрине. Раньше она была одна на
+  // весь каталог — про струну 1.25, — и в заявке на тренировку читалась
+  // как вопрос не по адресу. Пусто — нейтральная подсказка.
+  const commentHint = document.createElement('input');
+  commentHint.value = existing ? (existing.commentHint || '') : '';
+  commentHint.placeholder = 'например: удобное время или нужна струна 1.25';
+  wrapField(body, 'Подсказка в поле «Что уточнить» — необязательно', commentHint);
+
   // Варианты цены нужны стрингеру: перетяжка для своих, для сторонних и
   // срочная — это три цены одной услуги, а не три услуги.
   const optionsWrap = el('div');
@@ -4481,6 +4489,7 @@ function openCatalogForm(existing) {
       price: price.value === '' ? null : Number(price.value),
       priceNote: priceNote.value,
       contactPhone: contactPhone.value,
+      commentHint: commentHint.value,
       options: readOptionRows(rows),
       question: {
         name: qName.value,

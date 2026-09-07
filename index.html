@@ -1454,7 +1454,10 @@ function openRequest(item, option) {
   const fComment = el('label', 'field');
   fComment.innerHTML = '<span>Что уточнить — необязательно</span>';
   const comment = document.createElement('input');
-  comment.placeholder = 'Например: нужна струна 1.25';
+  // Подсказку задаёт владелец у каждой позиции: одна на весь каталог
+  // сбивала с толку — про струну 1.25 в заявке на тренировку человек
+  // читает как вопрос не по адресу. Не задана — нейтральная.
+  comment.placeholder = item.commentHint || 'Например: удобное время или вопрос';
   fComment.appendChild(comment); body.appendChild(fComment);
 
   // Вошедший согласие уже давал — оно записано в его карточке. С витрины
