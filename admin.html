@@ -562,6 +562,9 @@ const ERRORS = {
   'series-clash': 'В это время на корте уже стоит другая постоянная бронь.',
   'series-started': 'Эта бронь уже проводилась — её можно завершить, но не удалить.',
   'not-an-occurrence': 'В этот день занятия нет.',
+  'occurrence-finished': 'Это занятие уже прошло — менять его поздно.',
+  'invalid-coaching': 'Выберите вид тренировки из списка.',
+  'bad-color': 'Такого цвета в палитре нет — выберите из списка.',
   'exception-not-found': 'Закрытие не найдено — возможно, его только что сняли.',
   'invalid-rule': 'Проверьте скидочное окно: часы и цену.',
   'rule-outside-hours': 'Окно выходит за часы работы центра.',
@@ -838,6 +841,9 @@ async function loadAll() {
 
   const config = mapConfig(day.config);
   config.pricePerHour = pub.config.pricing.pricePerHour;
+  // Цены тренировок с тренером: по ним форма записи считает сумму.
+  config.coachIndividualPerHour = pub.config.pricing.coachIndividualPerHour;
+  config.coachSplitPerHour = pub.config.pricing.coachSplitPerHour;
   // Скидочные окна редактируются на вкладке настроек и показываются в
   // статистике — берём их из публичных настроек, других тарифов нет.
   config.rules = pub.config.pricing.rules || [];
@@ -891,6 +897,9 @@ async function loadAll() {
     chats: chats || null,
     ledger: ledger || null,
     waitlist: day.waitlist || [],
+    // Очередь по всем дням — только на вкладке «Заявки». На остальных
+    // приезжает та же очередь, но по открытому дню (waitlist выше).
+    waiting: b.waiting || null,
     series: day.series || [],
     seriesColors: day.seriesColors || [],
     exceptions: day.exceptions || [],
@@ -1031,6 +1040,23 @@ function seriesOn(dateIso) {
 // Всё, что занимает корты в этот день: брони, занятия постоянных
 // клиентов и закрытия. Постоянные разворачиваются на лету — в базе
 // лежит правило, а не тысяча записей.
+// Разовая правка занятия: «в этот понедельник до 13, а не до 14».
+// Хранится в самой серии списком moves — сервер считает занятость так же,
+// и сетка обязана спрашивать эту функцию, а не поля start/end.
+function seriesMoveOn(s, dateIso) {
+  return (Array.isArray(s && s.moves) ? s.moves : []).find(m => m && m.date === dateIso) || null;
+}
+
+function seriesSlotOn(s, dateIso) {
+  const move = seriesMoveOn(s, dateIso);
+  return {
+    start: move ? move.start : s.start,
+    end: move ? move.end : s.end,
+    courtId: move && move.courtId != null ? move.courtId : s.courtId,
+    moved: !!move,
+  };
+}
+
 function seriesColorOf(seriesId) {
   const s = seriesId ? db.series.find(x => x.id === seriesId) : null;
   return s && s.color ? s.color : null;
@@ -1064,11 +1090,12 @@ function dayBlocks(dateIso) {
   seriesOn(dateIso).forEach(s => {
     if (materialized.indexOf(s.id) !== -1) return;
     const cl = clientById(s.clientId);
+    const slot = seriesSlotOn(s, dateIso);
     out.push({
       kind: 'series', seriesId: s.id, color: s.color || null,
-      courtId: s.courtId, start: s.start, end: s.end,
+      courtId: slot.courtId, start: slot.start, end: slot.end, moved: slot.moved,
       clientName: s.title, clientPhone: cl ? cl.phone : '', clientId: s.clientId,
-      price: Math.round((timeToMinutes(s.end) - timeToMinutes(s.start)) / 60 * db.config.pricePerHour),
+      price: Math.round((timeToMinutes(slot.end) - timeToMinutes(slot.start)) / 60 * db.config.pricePerHour),
       status: 'confirmed', series: s, date: dateIso,
     });
   });
@@ -1144,7 +1171,7 @@ function visibleTabs() {
 // Разделы, которым нужны свои данные. Читаются при первом заходе на
 // вкладку, а не при каждом обновлении панели: экраны редкие, а лишний
 // запрос платят все.
-const LAZY = { settings: 'staff', events: 'events', catalog: 'catalog', openplay: 'openplay', stats: 'monthly', tournaments: 'tournaments' };
+const LAZY = { settings: 'staff', events: 'events', catalog: 'catalog', openplay: 'openplay', stats: 'monthly', tournaments: 'tournaments', requests: 'waiting' };
 
 // Высоту вкладок меряем, а не записываем числом: под ними паркуется
 // шапка сетки дня.
@@ -1720,8 +1747,11 @@ function buildDayGrid(date, blocks) {
 
     const div = el('div', 'blk ' + b.kind + (b.kind === 'series' && b.color ? ' c-' + b.color : ''));
     div.style.gridArea = (from + 2) + ' / ' + (colIdx + 2) + ' / span ' + (to - from);
+    // Тренировка со штатным тренером помечена в сетке своим значком:
+    // цена у неё другая, и у стойки это надо видеть, не открывая бронь.
     const label = b.kind === 'closed' ? '🔒 '
-      : (b.kind === 'series' ? '↻ ' : (b.kind === 'pending' ? '⏳ ' : (b.kind === 'openplay' ? '👥 ' : '')));
+      : (b.kind === 'series' ? '↻ ' : (b.kind === 'pending' ? '⏳ ' : (b.kind === 'openplay' ? '👥 '
+        : (b.coaching ? '🏅 ' : ''))));
     div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end)) + '</div>'
       + '<div class="b-n">' + label + escapeHtml(b.clientName) + (b.groupId ? ' ⇄' : '')
       + (b.kind === 'openplay' && b.openPlay
@@ -1785,8 +1815,10 @@ function openBooking(b) {
   const total = (b.price || 0) + (b.extrasTotal || 0);
 
   const info = el('div', 'item');
-  info.innerHTML = '<div class="t1">' + escapeHtml(b.clientName) + '</div>'
+  info.innerHTML = '<div class="t1">' + escapeHtml(b.clientName)
+    + (b.coaching ? ' <span class="pill ok">' + escapeHtml(b.coaching.name) + '</span>' : '') + '</div>'
     + '<div class="t2">' + escapeHtml(fmtPhone(b.clientPhone)) + ' · <b>' + money(total) + '</b>'
+    + (b.coaching ? ' <span class="pill grey">' + money(b.coaching.pricePerHour) + '/час с кортом</span>' : '')
     + (extras.length ? ' <span class="pill grey">корт ' + money(b.price) + '</span>' : '')
     + ' · ' + statusPill(b.status)
     + (b.groupId ? ' <span class="pill grey">с переходом</span>' : '')
@@ -1930,7 +1962,7 @@ function openMove(b) {
 function openNewBooking(date, courtId, start) {
   const body = el('div');
   body.innerHTML = '<h3>Записать на корт</h3><div class="m-sub">'
-    + escapeHtml(courtName(courtId) + ' · ' + longDate(date) + ' · с ' + start) + '</div>';
+    + escapeHtml(courtName(courtId) + ' · ' + longDate(date) + ' · с ' + fmtTime(start)) + '</div>';
 
   const fDur = el('label', 'field'); fDur.innerHTML = '<span>Длительность</span>';
   const selDur = document.createElement('select');
@@ -1957,9 +1989,28 @@ function openNewBooking(date, courtId, start) {
   guest.appendChild(fName); guest.appendChild(fPhone);
   body.appendChild(guest);
 
+  // Тренировка со штатным тренером. Цена у неё за час и уже вместе с
+  // кортом, поэтому аренду она не дополняет, а заменяет. Заводится
+  // только отсюда: тренер должен быть в центре в это время, и решает это
+  // администратор, а не сетка на сайте.
+  const fCoach = el('label', 'field'); fCoach.innerHTML = '<span>С тренером</span>';
+  const selCoach = document.createElement('select');
+  selCoach.appendChild(opt('', 'Нет — обычная аренда корта'));
+  selCoach.appendChild(opt('individual', 'Индивидуальная · ' + money(db.config.coachIndividualPerHour) + '/час'));
+  selCoach.appendChild(opt('split', 'Сплит · ' + money(db.config.coachSplitPerHour) + '/час'));
+  fCoach.appendChild(selCoach); body.appendChild(fCoach);
+
   const price = el('div', 'empty');
-  const updPrice = () => { price.textContent = 'К оплате: ' + money(Number(selDur.value) / 60 * db.config.pricePerHour); };
-  selDur.addEventListener('change', updPrice); updPrice();
+  const rateNow = () => (selCoach.value === 'individual' ? db.config.coachIndividualPerHour
+    : selCoach.value === 'split' ? db.config.coachSplitPerHour
+      : db.config.pricePerHour);
+  const updPrice = () => {
+    price.textContent = 'К оплате: ' + money(Number(selDur.value) / 60 * rateNow())
+      + (selCoach.value ? ' · тренировка вместе с кортом' : '');
+  };
+  selDur.addEventListener('change', updPrice);
+  selCoach.addEventListener('change', updPrice);
+  updPrice();
   body.appendChild(price);
 
   const acts = el('div', 'm-acts');
@@ -1977,6 +2028,7 @@ function openNewBooking(date, courtId, start) {
     // иначе база растёт молча.
     act(() => api('adminCreateBooking', {
       date, start, durationMinutes: dur, courtId, exactCourt: true,
+      coaching: selCoach.value || undefined,
       clientId: who.id || undefined,
       clientName: who.id ? undefined : inpName.value.trim(),
       clientPhone: who.id ? undefined : inpPhone.value.trim(),
@@ -2016,11 +2068,25 @@ function openSeriesOccurrence(b) {
     + '<div class="m-sub">' + escapeHtml(courtName(b.courtId) + ' · ' + longDate(b.date)) + '</div>';
 
   const info = el('div', 'item');
-  info.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title) + '</div>'
-    + '<div class="t2">Постоянная бронь, ' + seriesSchedule(s) + '. ' + escapeHtml(fmtPhone((clientById(s.clientId) || {}).phone || '')) + '</div>';
+  info.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title)
+    + (b.moved ? ' <span class="pill wait">поправлено на этот раз</span>' : '') + '</div>'
+    + '<div class="t2">Постоянная бронь, ' + seriesSchedule(s) + ', обычно '
+    + escapeHtml(fmtRange(s.start, s.end) + ' · ' + courtName(s.courtId)) + '. '
+    + escapeHtml(fmtPhone((clientById(s.clientId) || {}).phone || '')) + '</div>';
   body.appendChild(info);
 
   const acts = el('div', 'm-acts');
+  // Разовая правка — то, чего не хватало больше всего: группа уехала на
+  // соревнования, тренер отпустил на час раньше, время сдвинули на один
+  // вечер. Раньше на это была только отмена всей серии.
+  acts.appendChild(btn('Изменить это занятие', 'btn', () => openSeriesOccurrenceMove(b)));
+  if (b.moved) {
+    acts.appendChild(btn('Вернуть обычное время', 'btn sec', () => {
+      closeModal();
+      act(() => api('adminMoveSeriesOccurrence', { seriesId: s.id, date: b.date, reset: true }),
+        'Занятие вернулось к обычному времени');
+    }));
+  }
   // Снятое занятие освобождает время, которого в сетке обычно не бывает,
   // — и уходит объявлением: сначала тем, кто стоит в очереди, потом в
   // чат центра.
@@ -2037,6 +2103,57 @@ function openSeriesOccurrence(b) {
     if (done) openNewBooking(b.date, b.courtId, b.start);
   }));
   acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// Правка одного занятия. Форма та же, что у постоянной брони, но без
+// дней недели и дат: меняется ровно эта дата, остальные недели стоят
+// как стояли.
+function openSeriesOccurrenceMove(b) {
+  const s = b.series;
+  const body = el('div');
+  body.innerHTML = '<h3>Изменить это занятие</h3>'
+    + '<div class="m-sub">' + escapeHtml('↻ ' + s.title + ' · ' + longDate(b.date)) + '</div>';
+
+  const court = document.createElement('select');
+  db.courts.forEach(c => court.appendChild(opt(String(c.id), c.name)));
+  court.value = String(b.courtId);
+  wrapField(body, 'Корт', court);
+
+  const start = document.createElement('select');
+  startTimes().forEach(t => start.appendChild(opt(t, fmtTime(t))));
+  start.value = b.start;
+  wrapField(body, 'Начало', start);
+
+  const end = document.createElement('select');
+  wrapField(body, 'Окончание', end);
+  const fillEnds = (want) => {
+    const from = timeToMinutes(start.value) + db.config.slotStep;
+    const close = timeToMinutes(db.config.closeTime);
+    const keep = want || end.value;
+    end.innerHTML = '';
+    for (let m = from; m <= close; m += db.config.slotStep) {
+      end.appendChild(opt(minutesToTime(m), fmtTime(minutesToTime(m))));
+    }
+    end.value = keep && timeToMinutes(keep) >= from ? keep
+      : minutesToTime(Math.min(from + 60 - db.config.slotStep, close));
+  };
+  fillEnds(b.end);
+  start.addEventListener('change', () => fillEnds());
+
+  body.appendChild(txt('div', 'empty', 'Меняется только это занятие — остальные недели остаются как были. '
+    + 'Освободившееся время уйдёт тем, кто стоит в очереди, а потом объявлением в чат центра.'));
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Сохранить', 'btn', () => {
+    closeModal();
+    act(() => api('adminMoveSeriesOccurrence', {
+      seriesId: s.id, date: b.date,
+      start: start.value, end: end.value, courtId: Number(court.value),
+    }), 'Занятие изменено');
+  }));
+  acts.appendChild(btn('Назад', 'btn sec', () => openSeriesOccurrence(b)));
   body.appendChild(acts);
   showModal(body);
 }
@@ -2096,6 +2213,8 @@ function renderRequests(view) {
   });
   view.appendChild(c1);
 
+  view.appendChild(renderWaitingQueue());
+
   view.appendChild(renderRecentFeed());
 
   const c2 = el('div', 'card');
@@ -2152,6 +2271,52 @@ function renderRequests(view) {
     c3.appendChild(it);
   });
   view.appendChild(c3);
+}
+
+// Очередь ожидания — заявки на уже занятое время.
+//
+// На вкладке дня она тоже есть, но только по открытому дню: чтобы
+// увидеть всех ждущих, приходилось листать неделю день за днём. А это
+// несостоявшиеся продажи: время нередко можно освободить руками —
+// подвинуть чью-то бронь, снять занятие постоянной, — и решает это
+// администратор, а не бот, который просто ждёт, когда освободится само.
+function renderWaitingQueue() {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Ждут занятое время <span class="sub">очередь на освободившееся</span></h2>';
+
+  const rows = (db.waiting && db.waiting.waiting) || [];
+  if (!db.waiting) {
+    card.appendChild(txt('div', 'empty', 'Загружаем…'));
+    return card;
+  }
+  if (!rows.length) {
+    card.appendChild(txt('div', 'empty', 'Очереди нет — всё, что просили, доступно.'));
+    return card;
+  }
+
+  rows.forEach(w => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(w.clientName)
+      + ' · ' + escapeHtml(hoursText(w.durationMinutes) + ' в промежутке ' + fmtRange(w.start, w.end))
+      + (w.notifiedAt ? ' <span class="pill grey">уже предлагали</span>' : '')
+      + (w.hasTelegram ? '' : ' <span class="pill wait">без Telegram</span>') + '</div>'
+      + '<div class="t2">' + escapeHtml(longDate(w.date))
+      + ' · ' + escapeHtml(w.courtId == null ? 'любой корт' : courtName(w.courtId))
+      + (w.clientPhone ? ' · ' + escapeHtml(fmtPhone(w.clientPhone)) : '') + '</div>';
+
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Открыть день', 'btn sm sec', () => {
+      state.date = w.date; state.tab = 'day'; reload();
+    }));
+    it.appendChild(acts);
+    card.appendChild(it);
+  });
+
+  card.appendChild(txt('div', 'empty',
+    'Когда время освобождается, бот пишет этим людям первым — и только через полчаса '
+    + 'объявление уходит в чат центра. Освободить время можно и руками: перенести чужую '
+    + 'бронь или снять занятие постоянной в сетке дня.'));
+  return card;
 }
 
 // Лента «Что нового»: записались, перенесли, отменили. Обычная бронь на
@@ -2385,6 +2550,10 @@ function renderClients(view) {
     it.appendChild(note);
 
     const acts = el('div', 'acts');
+    // История посещений — первое, о чём спрашивают у стойки: «когда он у
+    // нас был последний раз». Считается из файлов дней по нажатию, а не
+    // возится в каждом списке клиентов.
+    acts.appendChild(btn('Посещения', 'btn sm sec', () => openClientVisits(c, null)));
     if (c.status === 'pending') {
       acts.appendChild(btn('Подтвердить', 'btn sm', () =>
         act(() => api('verifyClient', { clientId: c.id }), 'Клиент подтверждён')));
@@ -2448,6 +2617,92 @@ function passField(c) {
   wrap.appendChild(acts);
 
   return wrap;
+}
+
+// Чем кончился визит — теми же словами, что и в остальной панели.
+const VISIT_STATUS = {
+  confirmed: { label: 'сыграна', cls: 'ok' },
+  done: { label: 'сыграна', cls: 'ok' },
+  noshow: { label: 'не пришёл', cls: 'bad' },
+  cancelled: { label: 'отменена', cls: 'grey' },
+  pending: { label: 'ждёт подтверждения', cls: 'wait' },
+  expired: { label: 'не подтвердили вовремя', cls: 'grey' },
+};
+
+// История посещений одного человека. Месяц за раз — как журнал
+// абонемента: играют в одном месяце, а спрашивают об этом в другом.
+function openClientVisits(c, month) {
+  const body = el('div');
+  body.innerHTML = '<h3>Посещения</h3>'
+    + '<div class="m-sub">' + escapeHtml(c.name + ' · ' + fmtPhone(c.phone)
+      + ' · всего сыграно ' + c.completedCount) + '</div>';
+
+  const list = el('div');
+  list.appendChild(txt('div', 'empty', 'Считаем по дням…'));
+  body.appendChild(list);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+
+  api('adminClientVisits', month ? { clientId: c.id, month } : { clientId: c.id })
+    .then(r => {
+      list.innerHTML = '';
+
+      const sel = document.createElement('select');
+      (r.months || []).forEach(m => sel.appendChild(opt(m, monthLabel(m))));
+      sel.value = r.month;
+      sel.addEventListener('change', () => openClientVisits(c, sel.value));
+      const f = el('label', 'field'); f.innerHTML = '<span>Месяц</span>';
+      f.appendChild(sel);
+      list.appendChild(f);
+
+      const t = r.totals || {};
+      list.appendChild(txt('div', 't2', 'За месяц: сыграно ' + (t.played || 0)
+        + ' · ' + hoursText(t.minutes || 0)
+        + ' · ' + money(t.sum || 0)
+        + (t.cancelled ? ' · отмен ' + t.cancelled : '')
+        + (t.noShow ? ' · неявок ' + t.noShow : '')));
+
+      if (!r.visits.length) {
+        list.appendChild(txt('div', 'empty', 'В этом месяце визитов не было.'));
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.className = 'tbl';
+      table.innerHTML = '<tr><th>Когда</th><th>Время</th><th>Корт</th><th>Чем кончилось</th><th>Сумма</th></tr>';
+      r.visits.forEach(v => {
+        // Открытый месяц содержит и будущее — занятия постоянной брони
+        // видны на месяц вперёд. Подписывать их «сыграна» нельзя: игра
+        // ещё не состоялась, и в итоги месяца она не считается.
+        const st = !isPast(v.date, v.end) && (v.status === 'confirmed' || v.status === 'done')
+          ? { label: 'предстоит', cls: 'wait' }
+          : (VISIT_STATUS[v.status] || { label: v.status, cls: 'grey' });
+        const courts = [...new Set(v.courts)].map(courtName).join(' → ');
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + escapeHtml(shortDate(v.date) + ', ' + WD_SHORT[weekday(v.date)]) + '</td>'
+          + '<td>' + escapeHtml(fmtRange(v.start, v.end)) + '</td>'
+          + '<td>' + escapeHtml(courts) + '</td>'
+          + '<td><span class="pill ' + st.cls + '">' + st.label + '</span>'
+          + (v.cancelledLate ? ' <span class="pill bad">поздно</span>' : '')
+          + (v.kind === 'series' ? ' <span class="pill grey">↻ ' + escapeHtml(v.title || 'постоянная') + '</span>' : '')
+          + (v.coaching ? ' <span class="pill ok">' + escapeHtml(v.coaching.name) + '</span>' : '')
+          + '</td>'
+          + '<td>' + escapeHtml(money(v.total || 0)) + '</td>';
+        table.appendChild(tr);
+      });
+      list.appendChild(table);
+
+      list.appendChild(txt('div', 'empty',
+        'Считается по броням этого клиента и занятиям его постоянных броней. '
+        + 'Деньги здесь — начисленная стоимость, а не касса: наличные и переводы система не видит.'));
+    })
+    .catch(() => {
+      list.innerHTML = '';
+      list.appendChild(txt('div', 'empty', 'Не удалось собрать историю.'));
+    });
 }
 
 // Что за операция — одними словами и в журнале месяца, и в карточке.
@@ -2667,17 +2922,92 @@ async function resetPassword(c) {
 // Вкладка: Постоянные брони
 // ============================================================
 
+// Порядок серии в списке: по первому её дню недели, считая с
+// понедельника. Раньше сортировали по полю weekday — у серии на «вт и чт»
+// оно хранит только первый день по номеру Date.getUTCDay(), и группа на
+// «вс и ср» уезжала в начало списка.
+function seriesFirstDay(s) {
+  let best = 99;
+  seriesDays(s).forEach(d => {
+    const i = WD_ORDER.indexOf(d);
+    if (i !== -1 && i < best) best = i;
+  });
+  return best;
+}
+
 function renderSeries(view) {
+  const today = todayIso();
+  const all = db.series.slice();
+  const active = all.filter(s => !(!!(s.to && s.to < today) || s.active === false));
+  const endedCount = all.length - active.length;
+
+  // Фильтры чисто страничные: серии уже пришли в склейке целиком, и
+  // ходить за ними на сервер ради выбора дня незачем.
+  const query = (state.seriesQuery || '').trim().toLowerCase();
+  const digits = query.replace(/\D/g, '');
+  const visible = (state.seriesEnded ? all : active).filter(s => {
+    if (state.seriesDay != null && seriesDays(s).indexOf(state.seriesDay) === -1) return false;
+    if (!query) return true;
+    if ((s.title || '').toLowerCase().indexOf(query) !== -1) return true;
+    const cl = clientById(s.clientId);
+    if (!cl) return false;
+    if (cl.name.toLowerCase().indexOf(query) !== -1) return true;
+    return !!digits && String(cl.phone).indexOf(digits) !== -1;
+  }).sort((a, b) => (seriesFirstDay(a) - seriesFirstDay(b)) || a.start.localeCompare(b.start));
+
   const card = el('div', 'card');
   card.innerHTML = '<h2>Постоянные брони <span class="sub">повторяются каждую неделю</span></h2>';
 
-  if (!db.series.length) card.appendChild(txt('div', 'empty', 'Постоянных броней нет.'));
+  // Навигация: к десятку постоянных броней список ещё читается глазами,
+  // к сорока — уже нет, а именно столько их набирается за сезон.
+  const filters = el('div', 'acts');
+  const dayBtn = (label, value) => {
+    const b = btn(label, state.seriesDay === value ? 'btn sm' : 'btn sm sec', () => {
+      state.seriesDay = value;
+      render();
+    });
+    filters.appendChild(b);
+  };
+  dayBtn('Все', null);
+  WD_ORDER.forEach(i => dayBtn(WD_SHORT[i], i));
+  card.appendChild(filters);
 
-  const today = todayIso();
+  const search = document.createElement('input');
+  search.placeholder = 'Поиск по названию или клиенту';
+  search.value = state.seriesQuery || '';
+  search.style.cssText = 'width:100%;margin:8px 0;border:1px solid var(--line);border-radius:9px;padding:8px';
+  search.addEventListener('input', () => {
+    state.seriesQuery = search.value;
+    render();
+    // Перерисовка сбрасывает фокус, а человек продолжает печатать.
+    const again = view.querySelector('input[placeholder^="Поиск по названию"]');
+    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+  });
+  card.appendChild(search);
 
-  db.series.slice()
-    .sort((a, b) => (a.weekday - b.weekday) || a.start.localeCompare(b.start))
-    .forEach(s => {
+  if (endedCount) {
+    const row = el('div', 'acts');
+    row.appendChild(btn(state.seriesEnded ? 'Скрыть завершённые' : 'Показать завершённые (' + endedCount + ')',
+      'btn sm sec', () => { state.seriesEnded = !state.seriesEnded; render(); }));
+    card.appendChild(row);
+  }
+
+  if (!all.length) card.appendChild(txt('div', 'empty', 'Постоянных броней нет.'));
+  else if (!visible.length) card.appendChild(txt('div', 'empty', 'Под этот фильтр ничего не подходит.'));
+
+  let lastDay = null;
+  visible.forEach(s => {
+      // Заголовок дня недели — чтобы длинный список читался сверху вниз,
+      // а не выискивался глазами. Серия на нескольких днях стоит под
+      // первым из них: её расписание всё равно написано в карточке.
+      const first = seriesFirstDay(s);
+      if (state.seriesDay == null && first !== lastDay) {
+        lastDay = first;
+        const h = txt('div', 't2', WD_FULL[WD_ORDER[first]].toUpperCase());
+        h.style.cssText = 'margin:14px 0 2px;letter-spacing:.5px;color:var(--muted)';
+        card.appendChild(h);
+      }
+
       const cl = clientById(s.clientId);
       const ended = !!(s.to && s.to < today) || s.active === false;
       const it = el('div', 'item');
@@ -2703,6 +3033,23 @@ function renderSeries(view) {
           row.appendChild(btn(shortDate(d) + ' — вернуть', 'btn sm sec',
             () => act(() => api('adminSkipSeries', { seriesId: s.id, date: d, skip: false }),
               'Занятие вернулось в расписание')));
+        });
+        it.appendChild(row);
+      }
+
+      // Поправленные занятия — рядом со снятыми и по той же логике:
+      // видно, что именно расходится с обычным расписанием, и одним
+      // нажатием возвращается назад.
+      const moves = (s.moves || []).filter(m => m && m.date >= today);
+      if (moves.length) {
+        const row = el('div', 'acts');
+        row.appendChild(txt('span', 't2', 'Поправленные занятия:'));
+        moves.slice(0, 6).forEach(m => {
+          const where = m.courtId != null && m.courtId !== s.courtId ? ', ' + courtName(m.courtId) : '';
+          row.appendChild(btn(shortDate(m.date) + ' ' + fmtRange(m.start, m.end) + where + ' — вернуть',
+            'btn sm sec',
+            () => act(() => api('adminMoveSeriesOccurrence', { seriesId: s.id, date: m.date, reset: true }),
+              'Занятие вернулось к обычному времени')));
         });
         it.appendChild(row);
       }
@@ -2743,6 +3090,10 @@ function renderSeries(view) {
     + '<br><br><b>Пропустить одно занятие</b> — открыть нужный день в сетке и нажать на эту '
     + 'бронь: там кнопки «Снять это занятие» и «Записать вместо них». Время сразу '
     + 'становится свободным. Вернуть снятое занятие можно здесь же, в списке выше.'
+    + '<br><br><b>Поправить одно занятие</b> — там же, кнопка «Изменить это занятие»: '
+    + 'другое время, другая длительность, другой корт — только на эту дату. Остальные '
+    + 'недели остаются как были, а освободившийся кусок уходит в очередь и объявление. '
+    + 'Вернуть занятие к обычному времени можно из списка выше.'
     + '<br><br><b>Остановить совсем</b> — кнопка «Завершить» и дата последнего занятия. '
     + 'Всё, что было до неё, остаётся в истории и в отчётах; всё, что после, исчезает '
     + 'из расписания.'
@@ -2764,9 +3115,15 @@ function openSeriesForm(existing) {
   title.placeholder = 'Например: группа Петрова';
   wrapField(body, 'Название', title);
 
+  // «Любой» стоит первым и по умолчанию: администратору обычно всё
+  // равно, на каком из двух одинаковых кортов стоит группа, — важно,
+  // чтобы время было свободно. Корт при этом выбирается один раз, при
+  // заведении, и дальше не меняется: занятие, прыгающее между кортами
+  // от недели к неделе, не объяснить ни клиенту, ни себе.
   const court = document.createElement('select');
+  court.appendChild(opt('', 'Любой свободный'));
   db.courts.forEach(c => court.appendChild(opt(String(c.id), c.name)));
-  if (existing) court.value = String(existing.courtId);
+  court.value = existing ? String(existing.courtId) : '';
   wrapField(body, 'Корт', court);
 
   // Дней может быть несколько: одна группа ходит и во вторник, и в
@@ -2822,17 +3179,43 @@ function openSeriesForm(existing) {
 
   const picked = clientPicker(body, existing ? existing.clientId : null);
 
+  // Цвет выбирается здесь же, а не только у заведённой брони: в сетке
+  // цвет — это способ отличить детскую группу от тренерского времени
+  // взглядом, и назначать его отдельным заходом после создания глупо.
+  // Быстрый выбор в списке при этом остался — там он меняется одним
+  // нажатием, без формы.
+  const chosenColor = { id: existing && existing.color ? existing.color : 'grass' };
+  const colorField = el('div', 'field');
+  colorField.innerHTML = '<span>Цвет в сетке</span>';
+  const swatches = el('div', 'swatches');
+  (db.seriesColors || []).forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'swatch c-' + c.id + (chosenColor.id === c.id ? ' on' : '');
+    b.title = c.name;
+    b.addEventListener('click', () => {
+      chosenColor.id = c.id;
+      [...swatches.children].forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+    });
+    swatches.appendChild(b);
+  });
+  colorField.appendChild(swatches);
+  body.appendChild(colorField);
+
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   acts.appendChild(btn(existing ? 'Сохранить' : 'Завести', 'btn', async () => {
     if (title.value.trim().length < 2) { toast('Укажите название'); return; }
     if (!days.size) { toast('Выберите хотя бы один день недели'); return; }
     const payload = {
-      courtId: Number(court.value),
+      // Пусто — «любой»: корт подберёт сервер, он же и знает занятость.
+      courtId: court.value === '' ? null : Number(court.value),
       weekdays: WD_ORDER.filter(i => days.has(i)),
       start: start.value, end: end.value,
       title: title.value, from: from.value, to: to.value || null,
       clientId: picked.id,
+      color: chosenColor.id,
     };
     if (existing) payload.seriesId = existing.id;
     closeModal();
@@ -2950,7 +3333,7 @@ function showClashes(data) {
 
   (data.bookings || []).forEach(b => {
     const it = el('div', 'item');
-    it.innerHTML = '<div class="t1">' + escapeHtml(longDate(b.date) + ', ' + b.start + '–' + b.end) + '</div>'
+    it.innerHTML = '<div class="t1">' + escapeHtml(longDate(b.date) + ', ' + fmtRange(b.start, b.end)) + '</div>'
       + '<div class="t2">' + escapeHtml(courtName(b.courtId) + (b.who ? ' · ' + b.who : '')) + '</div>';
     body.appendChild(it);
   });
@@ -2958,7 +3341,7 @@ function showClashes(data) {
   (data.series || []).forEach(s => {
     const it = el('div', 'item');
     it.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title) + '</div>'
-      + '<div class="t2">' + escapeHtml(seriesSchedule(s, true) + ', ' + s.start + '–' + s.end) + '</div>';
+      + '<div class="t2">' + escapeHtml(seriesSchedule(s, true) + ', ' + fmtRange(s.start, s.end)) + '</div>';
     body.appendChild(it);
   });
 
@@ -5589,6 +5972,10 @@ function renderSettings(view) {
   else {
     [
       ['Цена за час', money(cfg.pricePerHour)],
+      // Администратор эти цены не правит, но называет их клиенту у
+      // стойки чаще владельца — видеть их он должен.
+      ['Индивидуальная тренировка', money(cfg.coachIndividualPerHour) + ' за час, с кортом'],
+      ['Сплит-тренировка', money(cfg.coachSplitPerHour) + ' за час, с кортом'],
       ['Часы работы', fmtRange(cfg.openTime, cfg.closeTime)],
       ['Шаг сетки', cfg.slotStep + ' мин'],
       ['Минимальная бронь', hoursText(cfg.minBookingMinutes)],
@@ -5683,6 +6070,13 @@ function renderSettingsForm(card, cfg) {
 
   const price = numField(card, 'Цена за час, ₽', cfg.pricePerHour);
 
+  // Тренировки со штатным тренером. Цена за час и уже вместе с кортом —
+  // так её и называют клиенту, поэтому в брони она заменяет аренду, а не
+  // складывается с ней.
+  const coachOne = numField(card, 'Индивидуальная тренировка, ₽ за час (с кортом)',
+    cfg.coachIndividualPerHour);
+  const coachSplit = numField(card, 'Сплит-тренировка, ₽ за час (с кортом)', cfg.coachSplitPerHour);
+
   // Часы — выбором из сетки, а не строкой: «до часу ночи» внутри живёт
   // как 25:00, и вводить это руками владелец не должен.
   const open = timeSelect(card, 'Центр открывается', cfg.openTime, 0, 12 * 60);
@@ -5738,7 +6132,11 @@ function renderSettingsForm(card, cfg) {
         allowCourtSwitch: draft.allowCourtSwitch,
         packCourts: draft.packCourts,
       },
-      pricing: { pricePerHour: Number(price.value) },
+      pricing: {
+        pricePerHour: Number(price.value),
+        coachIndividualPerHour: Number(coachOne.value),
+        coachSplitPerHour: Number(coachSplit.value),
+      },
     },
   }, 'Настройки сохранены')));
   card.appendChild(acts);
