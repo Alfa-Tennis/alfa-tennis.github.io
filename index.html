@@ -3595,16 +3595,29 @@ function ratingText(value) {
 // Рейтинг в кабинете: цифра без объяснения пугает, поэтому рядом стоит
 // то, из-за чего она меняется, и порог, ниже которого бронь идёт через
 // администратора.
-function ratingCard(value) {
+function ratingCard(value, locked) {
   const r = (state.config && state.config.rating) || {};
-  const box = el('div', 'rating-box');
-  const low = r.prepayBelow != null && value <= r.prepayBelow;
+  // Режим предоплаты держится до полного возврата, а не до перехода
+  // порога обратно: одна игра поднимает рейтинг на 0,05, и человек
+  // должен понимать, что этого мало — иначе «я же сыграл» превращается
+  // в разговор у стойки.
+  const clearAt = r.prepayClearAt;
+  const low = (r.prepayBelow != null && value <= r.prepayBelow)
+    || (locked && clearAt != null && value < clearAt);
 
+  const box = el('div', 'rating-box');
   box.innerHTML = ratingBall(value)
     + '<div class="rating-text"><div class="t1">Клиентский рейтинг</div>'
     + '<div class="t2">' + (low
       ? ratingText(r.prepayBelow) + ' и ниже — бронь подтверждает администратор.'
         + ' Он перезвонит, и за бронь потребуется предоплата.'
+        + (clearAt != null
+          // Порог пишем с десятыми: «до 4» читается как «до четвёрки с
+          // чем-нибудь», а нужно ровно 4,0.
+          ? ' Обычная запись вернётся, когда рейтинг поднимется до '
+            + Number(clearAt).toFixed(1).replace('.', ',') + ': состоявшаяся игра даёт +'
+            + ratingText(r.completed != null ? r.completed : 0.05) + '.'
+          : '')
       : 'Состоявшаяся игра поднимает его, неявка и поздняя отмена — опускают.')
     + '</div></div>';
   if (low) box.classList.add('low');
@@ -3678,7 +3691,7 @@ function renderProfile() {
   c1.appendChild(html('div', 'item', '<div class="t1">' + escapeHtml(client.name) + ' ' + statusPill + '</div>'
     + '<div class="t2">' + escapeHtml(client.phone) + '</div>'));
 
-  if (client.rating != null) c1.appendChild(ratingCard(client.rating));
+  if (client.rating != null) c1.appendChild(ratingCard(client.rating, client.prepayLock === true));
 
   if (client.ntrp != null) c1.appendChild(levelCard(client));
 

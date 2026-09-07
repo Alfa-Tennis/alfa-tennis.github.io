@@ -844,6 +844,9 @@ async function loadAll() {
   // Цены тренировок с тренером: по ним форма записи считает сумму.
   config.coachIndividualPerHour = pub.config.pricing.coachIndividualPerHour;
   config.coachSplitPerHour = pub.config.pricing.coachSplitPerHour;
+  // Пороги рейтинга — чтобы карточка клиента объясняла, до чего человеку
+  // подниматься, а не просто показывала красную метку.
+  config.rating = pub.config.rating || {};
   // Скидочные окна редактируются на вкладке настроек и показываются в
   // статистике — берём их из публичных настроек, других тарифов нет.
   config.rules = pub.config.pricing.rules || [];
@@ -1855,7 +1858,11 @@ function openBooking(b) {
     if (b.client.completedCount) parts.push('сыграно ' + b.client.completedCount);
     r.textContent = 'Рейтинг ' + String(b.client.rating).replace('.', ',')
       + (parts.length ? ' · ' + parts.join(', ') : '')
-      + (b.client.needsPrepay ? ' · нужна предоплата' : '');
+      + (b.client.needsPrepay
+        ? ' · нужна предоплата'
+          + (db.config.rating && db.config.rating.prepayClearAt != null
+            ? ' до рейтинга ' + Number(db.config.rating.prepayClearAt).toFixed(1).replace('.', ',') : '')
+        : '');
     body.appendChild(r);
   }
   if (b.clientNote) {
@@ -2512,7 +2519,13 @@ function renderClients(view) {
     // важно: у зарегистрировавшегося без Telegram напоминания не дошли,
     // а этот их и не ждал — и войти в свою учётку пока не может.
     if (c.createdByAdmin) flags.push('<span class="pill grey">с улицы</span>');
-    if (c.needsPrepay) flags.push('<span class="pill bad">только предоплата</span>');
+    // Метка есть — рядом сразу видно, до какого рейтинга человеку
+    // подниматься. Иначе у стойки не ответить на «а когда снимется».
+    if (c.needsPrepay) {
+      const clearAt = db.config.rating ? db.config.rating.prepayClearAt : null;
+      flags.push('<span class="pill bad">только предоплата'
+        + (clearAt != null ? ', до ' + Number(clearAt).toFixed(1).replace('.', ',') : '') + '</span>');
+    }
 
     const counters = [];
     if (c.noShowCount) counters.push('неявок ' + c.noShowCount);
