@@ -541,6 +541,9 @@ const ERRORS = {
   'too-old': 'Слишком давно: отметить неявку уже нельзя.',
   'already-cancelled': 'Бронь уже отменена.',
   'paid-by-pass': 'Эта бронь закрыта абонементом — часы за неё уже списаны.',
+  'invalid-points': 'Очки — целое число от нуля.',
+  'no-table': 'У турнира не выбраны пол или категория — зачёта у него нет.',
+  'tournament-not-found': 'Турнир не найден — возможно, его только что удалили.',
   'booking-not-found': 'Бронь не найдена — возможно, её только что изменили.',
   'client-not-found': 'Клиент не найден.',
   'outside-hours': 'Время выходит за часы работы центра.',
@@ -915,6 +918,9 @@ async function loadAll() {
     tournaments: b.tournaments || null,
     tourPoints: b.tourPoints || null,
     tournament: (b.tournament && b.tournament.tournament) || null,
+    // Очки сезона по зачёту этого турнира: сумма и отдельно перенесённое
+    // рукой. По ним же идёт сеяние, поэтому едут вместе с карточкой.
+    tournamentPoints: (b.tournament && b.tournament.points) || null,
     courtsBlocked: !!(b.tournament && b.tournament.courtsBlocked),
     monthly: monthly || null,
     chats: chats || null,
@@ -5051,7 +5057,10 @@ function renderTourPoints(view, canEdit) {
     const scroll = el('div', 'cross-wrap');
     let html = '<table class="tbl"><thead><tr><th>Место</th><th>Ф.И.О.</th>';
     table.events.forEach(ev => {
-      html += '<th title="' + escapeHtml(ev.title) + '">' + escapeHtml(shortDate(ev.date)) + '</th>';
+      // Перенос — не турнир, и датой его подписывать нечем: колонка
+      // называется словом.
+      html += '<th title="' + escapeHtml(ev.title) + '">'
+        + escapeHtml(ev.carry ? 'перенос' : shortDate(ev.date)) + '</th>';
     });
     html += '<th>Сумма</th></tr></thead><tbody>';
     table.rows.forEach(r => {
@@ -5064,6 +5073,19 @@ function renderTourPoints(view, canEdit) {
     html += '</tbody></table>';
     scroll.innerHTML = html;
     box.appendChild(scroll);
+
+    // Правка переноса и отсюда: в день турнира его ставят из состава, а
+    // «Иванову забыли пятнадцать очков» вспоминается в другой день.
+    if (canEdit && table.rows.length) {
+      const row = el('div', 'acts');
+      row.appendChild(txt('span', 't2', 'Поправить перенос:'));
+      table.rows.forEach(r => {
+        row.appendChild(btn(r.name, 'btn sm sec',
+          () => openCarryRowForm(data.season, table, r)));
+      });
+      box.appendChild(row);
+    }
+
     card.appendChild(box);
   });
 
@@ -5073,10 +5095,52 @@ function renderTourPoints(view, canEdit) {
       'Пересобрать зачёт?', 'Сезон ' + data.season,
       'Очки будут посчитаны заново по всем турнирам. Нужно, если правили счёт '
       + 'задним числом, меняли категорию турнира или начисление в настройках. '
-      + 'Потерять здесь нечего — зачёт всегда собирается из турниров.',
+      + 'Перенесённые руками очки останутся: они не выводятся из турниров, '
+      + 'и восстановить их было бы неоткуда.',
       () => act(() => api('adminRebuildTourPoints', {}), 'Зачёт пересобран'))));
     card.appendChild(acts);
+
+    card.appendChild(txt('div', 'empty',
+      'Колонка «перенос» — очки, набранные до сайта: сезон начался без него, и обнулять '
+      + 'людям набранное нельзя. Ставятся руками в составе турнира или кнопкой выше. '
+      + 'С нового сезона переносить нечего — система считает сама.'));
   }
+}
+
+// Правка переноса из самой таблицы зачёта: сезон и зачёт уже известны,
+// человек берётся строкой.
+function openCarryRowForm(season, table, row) {
+  const body = el('div');
+  body.innerHTML = '<h3>Перенос очков</h3>'
+    + '<div class="m-sub">' + escapeHtml(row.name + ' · ' + table.label) + '</div>'
+    + '<div class="empty">Очки, набранные до сайта. Заработанное на турнирах центра '
+    + 'прибавляется к ним само и этой правкой не меняется.</div>';
+
+  const carryEvent = (table.events || []).find(ev => ev.carry);
+  const now = carryEvent && row.scores[carryEvent.id] != null ? row.scores[carryEvent.id] : 0;
+
+  const value = document.createElement('input');
+  value.type = 'number';
+  value.min = '0';
+  value.step = '1';
+  value.value = String(now);
+  wrapField(body, 'Перенести очков', value);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Сохранить', 'btn', () => {
+    const n = Number(value.value);
+    if (!Number.isFinite(n) || n < 0) { toast('Очки — целое число от нуля'); return; }
+    closeModal();
+    act(() => api('adminSetCarryPoints', {
+      season, key: table.key, label: table.label,
+      clientId: row.clientId, points: Math.round(n),
+    }), 'Перенос сохранён');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => { value.focus(); value.select(); }, 50);
 }
 
 // Дата турнира в шапке колонки — как у владельца в таблицах: «01.03».
@@ -5249,6 +5313,92 @@ function feeDebtors(t) {
   return (t.participants || []).filter(p => !p.paid && (p.status !== 'withdrawn' || p.played));
 }
 
+// Очки участника по зачёту этого турнира: сумма за сезон и отдельно
+// перенесённое рукой. Пара один человек — одна запись; у пары ключа
+// нет, и очки ей не показываем (парного зачёта пока нет вовсе).
+function pointsOfPlayer(p) {
+  const box = db.tournamentPoints;
+  const id = (p.players || [])[0];
+  if (!box || !id || (p.players || []).length !== 1) return null;
+  const value = box.total ? box.total[id] : null;
+  return value == null ? 0 : value;
+}
+
+function carryOfPlayer(p) {
+  const box = db.tournamentPoints;
+  const id = (p.players || [])[0];
+  if (!box || !id || !box.carry) return 0;
+  return box.carry[id] || 0;
+}
+
+// Перенос очков из клубной таблицы.
+//
+// Сезон 2026 наполовину сыгран до сайта, и обнулять людям набранное
+// нельзя. Владелец переносит суммы руками — по одной на зачёт: у
+// челленджера и тура таблицы разные, даже если играют одни и те же
+// люди. С нового сезона переносить нечего.
+function openCarryForm(t, p) {
+  const box = db.tournamentPoints || {};
+  const body = el('div');
+  body.innerHTML = '<h3>Очки сезона</h3>'
+    + '<div class="m-sub">' + escapeHtml(p.name) + (box.label ? ' · ' + escapeHtml(box.label) : '') + '</div>'
+    + '<div class="empty">Столько очков человек набрал <b>до сайта</b>, по вашей таблице этого '
+    + 'зачёта. Заработанное на турнирах центра прибавляется к этому числу само. '
+    + 'У челленджера и тура зачёты разные — число ставится в тот, к которому относится '
+    + 'этот турнир.</div>';
+
+  const value = document.createElement('input');
+  value.type = 'number';
+  value.min = '0';
+  value.step = '1';
+  value.value = String(carryOfPlayer(p) || 0);
+  wrapField(body, 'Перенести очков', value);
+
+  const earned = (pointsOfPlayer(p) || 0) - (carryOfPlayer(p) || 0);
+  if (earned > 0) {
+    body.appendChild(txt('div', 'empty', 'На турнирах центра он уже набрал ' + earned
+      + ' — это число правкой не меняется.'));
+  }
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Сохранить', 'btn', () => {
+    const n = Number(value.value);
+    if (!Number.isFinite(n) || n < 0) { toast('Очки — целое число от нуля'); return; }
+    closeModal();
+    act(() => api('adminSetCarryPoints', {
+      tournamentId: t.id, clientId: (p.players || [])[0], points: Math.round(n),
+    }), 'Очки сезона сохранены');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => { value.focus(); value.select(); }, 50);
+}
+
+// Кто пойдёт сеяным, если жеребьёвку провести сейчас. Порядок тот же,
+// что на сервере (`runDraw`): галочка владельца, потом очки сезона,
+// потом игровой уровень. Здесь это только предпросмотр — жребий всё
+// равно раздаёт сервер, — но без него владелец узнаёт расклад уже
+// после жеребьёвки, когда переиграть можно лишь сбросом.
+function seedPreview(t) {
+  const active = (t.participants || []).filter(p => p.status !== 'withdrawn');
+  if (!active.length) return null;
+
+  const marked = active.filter(p => p.seeded);
+  if (marked.length) return { by: 'галочке', list: marked };
+
+  // В список идут только те, у кого признак вообще есть: у остальных
+  // порядок решает жребий, и называть их сеяными заранее — врать.
+  const scored = active.filter(p => (pointsOfPlayer(p) || 0) > 0)
+    .sort((a, b) => (pointsOfPlayer(b) || 0) - (pointsOfPlayer(a) || 0));
+  if (scored.length) return { by: 'очкам сезона', list: scored };
+
+  const known = active.filter(p => p.ntrp != null).sort((a, b) => b.ntrp - a.ntrp);
+  if (!known.length) return null;
+  return { by: 'игровому уровню', list: known };
+}
+
 function renderTournamentRoster(view, t, canEdit) {
   const card = el('div', 'card');
   card.innerHTML = '<h2>Состав <span class="sub">' + t.taken + ' из ' + t.maxParticipants + '</span></h2>';
@@ -5277,6 +5427,30 @@ function renderTournamentRoster(view, t, canEdit) {
     card.appendChild(txt('div', 'empty',
       'Номер — это место в списке записи, он же будет на мяче во время жеребьёвки. '
       + 'Отметьте сеяных: они разойдутся по разным группам, а в какую попадёт каждый — жребий.'));
+
+    // Кто пойдёт сеяным прямо сейчас. Сколько их — столько, сколько
+    // групп: в каждую попадает по одному из первой корзины.
+    const preview = seedPreview(t);
+    const groups = Math.max(1, Math.min(6, t.format.groupCount || 1,
+      Math.floor(t.taken / 2) || 1));
+    if (preview && t.format.groupCount > 0) {
+      const take = preview.list.slice(0, groups);
+      const names = take.map(p => p.name
+        + (preview.by === 'очкам сезона' ? ' (' + (pointsOfPlayer(p) || 0) + ')' : ''));
+      // Сеяных ровно столько, сколько групп: по одному в каждую. Если
+      // признак есть не у всех, остаток первой корзины разбирает жребий,
+      // и обещать тут конкретные имена нельзя.
+      const rest = groups - take.length;
+      card.appendChild(txt('div', 'empty', 'Сеяными пойдут по ' + preview.by + ': '
+        + names.join(', ')
+        + (rest > 0 ? ' — и ещё ' + rest + ' жребием, у остальных очков нет' : '')
+        + '. Отметка галочкой главнее очков, очки — главнее уровня.'));
+    }
+    if (db.tournamentPoints && !db.tournamentPoints.key) {
+      card.appendChild(txt('div', 'empty',
+        'У турнира не выбраны пол или категория — зачёта у него нет, очки не начислятся '
+        + 'и перенести их некуда. Поправьте карточку.'));
+    }
   }
 
   if (t.fee && t.participants.length) {
@@ -5296,6 +5470,13 @@ function renderTournamentRoster(view, t, canEdit) {
         : (debtors.has(p.id) ? ' <span class="pill bad">взнос не сдан</span>' : '')) + '</div>'
       + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
       + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
+      // Очки сезона — то, по чему пойдёт сеяние, если никого не отметили
+      // галочкой. Перенесённое рукой показываем отдельно: иначе не
+      // понять, что именно правишь, а что пришло с турниров.
+      + (pointsOfPlayer(p) != null
+        ? ' · очки сезона ' + pointsOfPlayer(p)
+          + (carryOfPlayer(p) ? ' (перенос ' + carryOfPlayer(p) + ')' : '')
+        : '')
       + (p.replacedFrom ? ' · заменил: ' + escapeHtml(p.replacedFrom) : '') + '</div>';
 
     const acts = el('div', 'acts');
@@ -5304,6 +5485,12 @@ function renderTournamentRoster(view, t, canEdit) {
         act(() => api('adminTournamentParticipant',
           { id: t.id, op: 'seed', participantId: p.id, seeded: !p.seeded }),
         p.seeded ? 'Больше не сеяный' : 'Отмечен сеяным')));
+    }
+    // Перенос очков из клубной таблицы: сезон начался без сайта, и у
+    // людей уже есть набранное. Правит владелец и только до жеребьёвки —
+    // после неё сеяние уже сыграло.
+    if (canEdit && !t.drawnAt && p.status !== 'withdrawn' && (p.players || []).length === 1) {
+      acts.appendChild(btn('Очки сезона', 'btn sm sec', () => openCarryForm(t, p)));
     }
     if (t.fee) {
       acts.appendChild(btn(p.paid ? 'Снять отметку взноса' : 'Взнос внесён', 'btn sm sec', () =>
