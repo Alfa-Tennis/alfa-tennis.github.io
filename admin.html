@@ -218,10 +218,21 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .c-slate { --sc: #5A6570; --sct: #CDD5DA; }
 .blk.series[class*=" c-"] { border-left-color: var(--sc); background: var(--sct); }
 
+/* Кнопка фильтра по цвету: квадратик того же тона перед подписью. Без
+   него в ряду «Детская группа · Тренер · Корпоративные» не понять, о
+   каком цвете речь, а подписи владелец даёт свои. */
+.btn.chip::before { content: ''; display: inline-block; width: 10px; height: 10px;
+  border-radius: 3px; margin-right: 6px; vertical-align: -1px;
+  background: var(--sct); border: 1px solid var(--sc); }
+
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .swatch { width: 30px; height: 30px; border-radius: 8px; cursor: pointer; padding: 0;
   background: var(--sct); border: 2px solid var(--sc); box-shadow: inset 0 0 0 2px #fff; }
 .swatch.on { box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--ink); }
+/* Строка легенды: квадратик, подпись, счётчик помеченных броней. */
+.legend-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.legend-row .swatch { flex: none; cursor: default; display: inline-block; }
+.legend-row .t3 { flex: none; min-width: 24px; text-align: right; }
 .blk.done { border-left-color: #9aa7a0; background: #E3E7E5; color: var(--ink-soft); }
 
 /* Перетаскивание. Курсор-крестик обещает возможность заранее — иначе о
@@ -244,8 +255,15 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 /* Куда именно перешли из сетки: без пометки на длинном списке дня
    приходится искать глазами то самое окно. */
 .item.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+/* Выбор из нескольких раскладок: строка целиком — кнопка. Радио тут
+   читалось бы хуже: у каждого варианта две строки текста. */
+.item.pick { cursor: pointer; }
+.item.pick.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
 .item .t1 { font-weight: 600; }
 .item .t2 { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+/* Текст, написанный человеком строками, — описание турнира и подобное:
+   разбивку сохраняем, иначе абзацы склеиваются в сплошную строку. */
+.pre { white-space: pre-line; }
 .item .acts { margin-top: 9px; display: flex; gap: 8px; flex-wrap: wrap; }
 .acts { margin-top: 9px; display: flex; gap: 8px; flex-wrap: wrap; }
 .section-title { font-size: 13px; font-weight: 600; color: var(--ink-soft);
@@ -522,6 +540,7 @@ const ERRORS = {
   'not-started': 'Игра ещё не началась — неявки пока нет.',
   'too-old': 'Слишком давно: отметить неявку уже нельзя.',
   'already-cancelled': 'Бронь уже отменена.',
+  'paid-by-pass': 'Эта бронь закрыта абонементом — часы за неё уже списаны.',
   'booking-not-found': 'Бронь не найдена — возможно, её только что изменили.',
   'client-not-found': 'Клиент не найден.',
   'outside-hours': 'Время выходит за часы работы центра.',
@@ -781,6 +800,7 @@ function mapClient(c) {
     // про дисциплину, а NTRP — про то, с кем человеку интересно играть.
     ntrp: c.ntrp == null ? null : c.ntrp,
     ratingEdits: c.ratingEdits || [],
+    nameEdits: c.nameEdits || [],
     notes: c.notes || '',
     createdAt: (c.createdAt || '').slice(0, 10),
     lastLoginAt: c.lastLoginAt || null,
@@ -903,6 +923,8 @@ async function loadAll() {
     // Очередь по всем дням — только на вкладке «Заявки». На остальных
     // приезжает та же очередь, но по открытому дню (waitlist выше).
     waiting: b.waiting || null,
+    // Неоплаченные сыгранные брони — та же вкладка «Заявки».
+    unpaid: b.unpaid || null,
     series: day.series || [],
     seriesColors: day.seriesColors || [],
     exceptions: day.exceptions || [],
@@ -1068,6 +1090,17 @@ function seriesColorOf(seriesId) {
 // Сетка получает сырой блок брони, а не карточку из вкладки
 // «Тренировки»: та читается только на своей вкладке и здесь её нет.
 // Поэтому места и имена считаем сами, из signups.
+// Сыгранная бронь, за которую никто не нажал «оплатил». Считается по
+// тем же правилам, что и список на вкладке «Заявки»: постоянные брони
+// и открытые тренировки сюда не попадают — по ним платят иначе.
+function unpaidDebt(b, dateIso) {
+  if (!b || b.kind === 'closed' || b.kind === 'series' || b.seriesId) return false;
+  if (b.openPlay || b.source === 'openplay') return false;
+  if (b.status !== 'confirmed') return false;
+  if (b.paidAt || b.passSpentAt) return false;
+  return isPast(dateIso || b.date, b.end);
+}
+
 function seatsTakenRaw(op) {
   return ((op && op.signups) || []).reduce((n, s) => n + (Number(s.seats) || 1), 0);
 }
@@ -1122,7 +1155,16 @@ function pendingBookings() {
 function pendingClients() { return db.clients.filter(c => c.status === 'pending'); }
 function requestCount() {
   const items = db.requests ? db.requests.open : 0;
-  return pendingBookings().length + pendingClients().length + items;
+  // Неоплаченные — тоже «требует решения»: пока бронь не закрыта
+  // деньгами или неявкой, день не досчитан.
+  //
+  // Полный список за месяц приезжает только на вкладке «Заявки» — тридцать
+  // файлов дней при каждом обновлении сетки того не стоят. Пока его нет,
+  // считаем по свежим: незакрытые сыгранные брони и так лежат в склейке
+  // (`review.played`), и значок не молчит с первого экрана.
+  const debts = db.unpaid ? db.unpaid.unpaid.length
+    : ((db.review && db.review.played) || []).filter(b => unpaidDebt(b, b.date)).length;
+  return pendingBookings().length + pendingClients().length + items + debts;
 }
 
 // ============================================================
@@ -1686,7 +1728,8 @@ function buildWeekGrid(dates) {
       div.style.gridArea = (from + 3) + ' / ' + (2 + di * courts.length + colIdx) + ' / span ' + (to - from);
       // В недельной клетке помещается одна строка: время занимает её
       // целиком, а имя дописывается только у окон от полутора часов.
-      div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end)) + '</div>'
+      div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end))
+        + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + '</div>'
         + ((to - from) >= 3 ? '<div class="b-n">' + escapeHtml(b.clientName) + '</div>' : '');
       div.title = fmtRange(b.start, b.end) + ' · ' + b.clientName;
       div.addEventListener('click', () => openBlock(b));
@@ -1755,10 +1798,20 @@ function buildDayGrid(date, blocks) {
     const label = b.kind === 'closed' ? '🔒 '
       : (b.kind === 'series' ? '↻ ' : (b.kind === 'pending' ? '⏳ ' : (b.kind === 'openplay' ? '👥 '
         : (b.coaching ? '🏅 ' : ''))));
-    div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end)) + '</div>'
+    div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end))
+      // Сыгранная бронь без отметки об оплате — долг: видно прямо в
+      // сетке, не открывая карточку. Своя отметка, а не цвет: цвета
+      // в сетке уже заняты постоянными бронями.
+      + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + '</div>'
       + '<div class="b-n">' + label + escapeHtml(b.clientName) + (b.groupId ? ' ⇄' : '')
       + (b.kind === 'openplay' && b.openPlay
-        ? ' · ' + seatsTakenRaw(b.openPlay) + '/' + b.openPlay.seats : '')
+        ? ' · ' + seatsTakenRaw(b.openPlay) + '/' + b.openPlay.seats
+          // Второй состав — со своим названием и своим счётом. Раньше в
+          // клетке стоял только первый, и было не видно, что на это
+          // время набираются две группы.
+          + (b.openPlay.alt ? ' / ' + escapeHtml(b.openPlay.alt.title)
+            + ' · ' + seatsTakenRaw(b.openPlay.alt) + '/' + b.openPlay.alt.seats : '')
+        : '')
       + '</div>'
       // Имена — только когда окно занимает от полутора часов: в клетке
       // на две строки они вытесняют время и название.
@@ -1874,6 +1927,45 @@ function openBooking(b) {
     const n = el('div', 'empty');
     n.textContent = 'Заявка просрочена — корт уже вернулся в общий доступ. Подтвердить нельзя.';
     body.appendChild(n);
+  }
+
+  // Деньги. Онлайн-кассы нет, платят на месте — значит, единственный
+  // след платежа это отметка администратора, и она обязана говорить,
+  // кто и когда её поставил: спор «я платил» разбирают по ней.
+  if (b.status !== 'cancelled') {
+    const payLine = el('div', 'empty');
+    if (b.passSpentAt) {
+      payLine.textContent = 'Оплачено абонементом — часы списаны ' + shortDateTime(b.passSpentAt) + '.';
+    } else if (b.paidAt) {
+      const who = clientById(b.paidBy);
+      payLine.textContent = 'Оплачено ' + (b.paidVia === 'transfer' ? 'переводом' : 'наличными')
+        + ' · ' + shortDateTime(b.paidAt) + (who ? ' · отметил ' + who.name : '');
+    } else {
+      payLine.textContent = finished ? 'Оплата не отмечена — бронь висит в списке «Не оплачено».'
+        : 'Оплата не отмечена. Отметить можно и заранее — если человек заплатил вперёд.';
+    }
+    body.appendChild(payLine);
+
+    const pay = el('div', 'acts');
+    if (!b.passSpentAt && !b.paidAt) {
+      pay.appendChild(btn('Оплатил наличными', 'btn sm', () => {
+        closeModal();
+        act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via: 'cash' }), 'Отмечено: наличными');
+      }));
+      pay.appendChild(btn('Оплатил переводом', 'btn sm', () => {
+        closeModal();
+        act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via: 'transfer' }), 'Отмечено: переводом');
+      }));
+    } else if (b.paidAt) {
+      // Снимает отметку любой администратор, а не только владелец: на
+      // стойке легко промахнуться, а звонок владельцу из-за каждого
+      // случайного нажатия — плохая цена за след.
+      pay.appendChild(btn('Снять отметку об оплате', 'btn sm sec', () => {
+        closeModal();
+        act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, paid: false }), 'Отметка снята');
+      }));
+    }
+    if (pay.children.length) body.appendChild(pay);
   }
 
   const acts = el('div', 'm-acts');
@@ -2220,6 +2312,8 @@ function renderRequests(view) {
   });
   view.appendChild(c1);
 
+  view.appendChild(renderUnpaid());
+
   view.appendChild(renderWaitingQueue());
 
   view.appendChild(renderRecentFeed());
@@ -2278,6 +2372,67 @@ function renderRequests(view) {
     c3.appendChild(it);
   });
   view.appendChild(c3);
+}
+
+// Неоплаченные брони — рабочая очередь смены.
+//
+// Онлайн-кассы у центра нет: платят на месте, наличными или переводом,
+// и единственный след платежа — нажатие администратора. Поэтому
+// сыгранная бронь висит здесь, пока её не закроют деньгами или
+// неявкой; иначе «кто-то ушёл не заплатив» выясняется через месяц по
+// статистике, когда спрашивать уже некого.
+//
+// Постоянных броней тут нет намеренно: отдельных записей на каждую
+// неделю у них не появляется, и платят по ним помесячно. Открытых
+// тренировок тоже — там платят участники по отдельности.
+function renderUnpaid() {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Не оплачено <span class="sub">сыгранные брони без отметки</span></h2>';
+
+  if (!db.unpaid) {
+    card.appendChild(txt('div', 'empty', 'Загружаем…'));
+    return card;
+  }
+
+  const rows = db.unpaid.unpaid || [];
+  if (!rows.length) {
+    card.appendChild(txt('div', 'empty',
+      'Долгов нет — все сыгранные брони закрыты за последние '
+      + plural(db.unpaid.windowDays, 'день', 'дня', 'дней') + '.'));
+    return card;
+  }
+
+  card.appendChild(txt('div', 'empty',
+    'Всего ' + plural(rows.length, 'бронь', 'брони', 'броней') + ' на ' + money(db.unpaid.total)
+    + '. Оплату отмечает тот, кто её принял, — видно, кто и когда нажал.'));
+
+  rows.forEach(b => {
+    const stale = b.date < addDays(todayIso(), -1);
+    const it = el('div', 'item' + (stale ? ' hl' : ''));
+    it.innerHTML = '<div class="t1">' + escapeHtml(b.clientName) + ' · <b>' + money(b.sum) + '</b>'
+      + (b.coaching ? ' <span class="pill ok">' + escapeHtml(b.coaching.name) + '</span>' : '')
+      + '</div>'
+      + '<div class="t2">' + escapeHtml(longDate(b.date) + ' · ' + fmtRange(b.start, b.end)
+        + ' · ' + courtName(b.courtId))
+      + (b.clientPhone ? ' · ' + escapeHtml(fmtPhone(b.clientPhone)) : '') + '</div>';
+
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Наличными', 'btn sm', () => act(
+      () => api('adminSetPaid', { date: b.date, bookingId: b.id, via: 'cash' }), 'Отмечено: наличными')));
+    acts.appendChild(btn('Переводом', 'btn sm', () => act(
+      () => api('adminSetPaid', { date: b.date, bookingId: b.id, via: 'transfer' }), 'Отмечено: переводом')));
+    // Не пришёл — тоже закрытие долга, только другое: денег нет и
+    // не будет, а рейтинг за это снимается.
+    acts.appendChild(btn('Не пришли', 'btn sm sec', () => act(
+      () => api('adminMarkNoShow', { date: b.date, bookingId: b.id }), 'Отмечена неявка, рейтинг снижен')));
+    acts.appendChild(btn('Открыть день', 'btn sm sec', () => {
+      state.date = b.date; state.tab = 'day'; reload();
+    }));
+    it.appendChild(acts);
+    card.appendChild(it);
+  });
+
+  return card;
 }
 
 // Очередь ожидания — заявки на уже занятое время.
@@ -2551,6 +2706,15 @@ function renderClients(view) {
         + (lastEdit.reason ? ' · ' + lastEdit.reason : '')));
     }
 
+    // Имя правил владелец — под каким человек записан в прошлых
+    // турнирных таблицах, из этой строки и видно.
+    const nameEdits = c.nameEdits || [];
+    const lastName = nameEdits[nameEdits.length - 1];
+    if (lastName) {
+      it.appendChild(txt('div', 't3', 'Имя правил владелец ' + shortDateTime(lastName.at)
+        + ': ' + lastName.from + ' → ' + lastName.to));
+    }
+
     it.appendChild(ntrpField(c));
     it.appendChild(passField(c));
 
@@ -2592,6 +2756,7 @@ function renderClients(view) {
     // него быть не должно вовсе.
     if (me && me.role === 'owner') {
       acts.appendChild(btn('Поправить рейтинг', 'btn sm sec', () => openRatingForm(c)));
+      acts.appendChild(btn('Поправить имя', 'btn sm sec', () => openNameForm(c)));
     }
     it.appendChild(acts);
 
@@ -2703,14 +2868,24 @@ function openClientVisits(c, month) {
           + (v.kind === 'series' ? ' <span class="pill grey">↻ ' + escapeHtml(v.title || 'постоянная') + '</span>' : '')
           + (v.coaching ? ' <span class="pill ok">' + escapeHtml(v.coaching.name) + '</span>' : '')
           + '</td>'
-          + '<td>' + escapeHtml(money(v.total || 0)) + '</td>';
+          + '<td>' + escapeHtml(money(v.total || 0))
+          // Платил ли — то, ради чего историю чаще всего и открывают.
+          // У занятия постоянной брони отметки нет и быть не может: по
+          // ним платят помесячно, а не за игру.
+          + (v.kind === 'series' ? ''
+            : (v.passSpentAt ? ' <span class="pill ok">абонемент</span>'
+              : (v.paidAt ? ' <span class="pill ok">оплачено</span>'
+                : (isPast(v.date, v.end) && v.status === 'confirmed'
+                  ? ' <span class="pill bad">не оплачено</span>' : ''))))
+          + '</td>';
         table.appendChild(tr);
       });
       list.appendChild(table);
 
       list.appendChild(txt('div', 'empty',
         'Считается по броням этого клиента и занятиям его постоянных броней. '
-        + 'Деньги здесь — начисленная стоимость, а не касса: наличные и переводы система не видит.'));
+        + 'Сумма — начисленная стоимость; отметка «оплачено» стоит там, где деньги приняли '
+        + 'и нажали кнопку. По постоянным броням отметок нет: за них платят помесячно.'));
     })
     .catch(() => {
       list.innerHTML = '';
@@ -2906,6 +3081,43 @@ function openRatingForm(c) {
   setTimeout(() => reason.focus(), 50);
 }
 
+// Правка имени. Нужна не «на всякий случай»: имя стоит подписью в
+// турнирных таблицах и в зачёте очков, а заводят карточки по-разному —
+// «Иванов Д.», «Дмитрий Иванов», «иванов дмитрий». В зачёте это три
+// разных человека, и свести их можно только приведя карточки к одному
+// виду. Поэтому правит только владелец и след остаётся.
+function openNameForm(c) {
+  const body = el('div');
+  body.innerHTML = '<h3>Поправить имя</h3>'
+    + '<div class="m-sub">' + escapeHtml(c.name + ' · ' + fmtPhone(c.phone)) + '</div>'
+    + '<div class="empty">Держим один вид записи: «Имя Фамилия». По имени человек ищется '
+    + 'в списке, оно же стоит в турнирных таблицах и в зачёте очков — разнобой там '
+    + 'превращает одного игрока в трёх.</div>';
+
+  const name = document.createElement('input');
+  name.value = c.name;
+  name.maxLength = 60;
+  wrapField(body, 'Имя и фамилия', name);
+
+  // Прежние варианты — чтобы владелец видел, что имя уже правили, и не
+  // ходил по кругу.
+  (c.nameEdits || []).slice(-3).reverse().forEach(e => {
+    body.appendChild(txt('div', 't3', shortDateTime(e.at) + ': ' + e.from + ' → ' + e.to));
+  });
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Сохранить', 'btn', () => {
+    if (name.value.trim().length < 2) { toast('Укажите имя'); return; }
+    closeModal();
+    act(() => api('adminRenameClient', { clientId: c.id, name: name.value }), 'Имя изменено');
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => { name.focus(); name.setSelectionRange(name.value.length, name.value.length); }, 50);
+}
+
 // Временный пароль показываем один раз и крупно: админ диктует его или
 // отправляет клиенту, второй раз этот пароль не узнать.
 async function resetPassword(c) {
@@ -2960,6 +3172,10 @@ function renderSeries(view) {
   const digits = query.replace(/\D/g, '');
   const visible = (state.seriesEnded ? all : active).filter(s => {
     if (state.seriesDay != null && seriesDays(s).indexOf(state.seriesDay) === -1) return false;
+    // День и цвет складываются, а не заменяют друг друга: «все синие по
+    // вторникам» — обычный вопрос владельца, а «все синие» и «все
+    // вторники» по отдельности он задаёт не реже.
+    if (state.seriesColor && (s.color || 'grass') !== state.seriesColor) return false;
     if (!query) return true;
     if ((s.title || '').toLowerCase().indexOf(query) !== -1) return true;
     const cl = clientById(s.clientId);
@@ -2984,6 +3200,27 @@ function renderSeries(view) {
   dayBtn('Все', null);
   WD_ORDER.forEach(i => dayBtn(WD_SHORT[i], i));
   card.appendChild(filters);
+
+  // Второй ряд — по цвету. Цвет в этом клубе значит вид занятия
+  // (детская группа, время тренера), и «покажи все детские» — вопрос
+  // не реже, чем «что во вторник». Кнопка с подписью из легенды, а
+  // без подписи — с названием цвета: пустой квадратик ни о чём.
+  const colorRow = el('div', 'acts');
+  const colorBtn = (label, value, cls) => {
+    const b = btn(label, (state.seriesColor === value ? 'btn sm' : 'btn sm sec') + (cls || ''), () => {
+      state.seriesColor = value;
+      render();
+    });
+    colorRow.appendChild(b);
+  };
+  colorBtn('Любой цвет', null);
+  (db.seriesColors || []).forEach(c => {
+    const used = all.some(s => (s.color || 'grass') === c.id);
+    // Цвет, которым ничего не помечено, в фильтре только мешает.
+    if (!used) return;
+    colorBtn(c.label || c.name, c.id, ' chip c-' + c.id);
+  });
+  if (colorRow.children.length > 1) card.appendChild(colorRow);
 
   const search = document.createElement('input');
   search.placeholder = 'Поиск по названию или клиенту';
@@ -3091,6 +3328,8 @@ function renderSeries(view) {
   card.appendChild(add);
   view.appendChild(card);
 
+  view.appendChild(renderSeriesLegend());
+
   // Раньше здесь было объяснение внутреннего устройства — «не
   // разворачивается в отдельные записи». Владельцу оно ничего не давало:
   // ему нужно знать, что нажать, а не как это хранится.
@@ -3114,6 +3353,62 @@ function renderSeries(view) {
     + 'это время в очереди, а через полчаса объявление уходит в чат центра. Чат выбирается '
     + 'во вкладке «Настройки»; пока он не выбран, объявления не уходят никуда.</div>';
   view.appendChild(note);
+}
+
+// Легенда цветов. Набор цветов закрытый, а вот что каждый значит —
+// решает клуб: «синий это детская группа». Держать это в голове может
+// только тот, кто цвета и назначал, а по сетке дня ходит вся смена.
+//
+// Подписи лежат в настройках, поэтому правит их владелец; администратор
+// легенду видит и по ней же фильтрует список.
+function renderSeriesLegend() {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Что значат цвета <span class="sub">подписи видны всей смене</span></h2>';
+
+  const colors = db.seriesColors || [];
+  const owner = !!(me && me.role === 'owner');
+  const fields = {};
+
+  colors.forEach(c => {
+    const row = el('div', 'legend-row');
+    const dot = el('span', 'swatch c-' + c.id);
+    row.appendChild(dot);
+
+    if (owner) {
+      const input = document.createElement('input');
+      input.value = c.label || '';
+      input.maxLength = 40;
+      input.placeholder = c.name + ' — что им помечаете';
+      input.style.cssText = 'flex:1;min-width:0;border:1px solid var(--line);border-radius:9px;padding:8px';
+      fields[c.id] = input;
+      row.appendChild(input);
+    } else {
+      row.appendChild(txt('span', 't2', c.label ? c.label : c.name + ' — без подписи'));
+    }
+
+    // Сколько серий этим цветом помечено: пустая строка легенды рядом с
+    // «12 броней» — сразу видно, что подписать забыли.
+    const used = db.series.filter(s => (s.color || 'grass') === c.id).length;
+    row.appendChild(txt('span', 't3', used ? String(used) : '—'));
+    card.appendChild(row);
+  });
+
+  if (owner) {
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Сохранить подписи', 'btn sm', () => {
+      const legend = {};
+      // Шлём карту целиком: очищенное поле должно снимать подпись, а
+      // не оставлять прежнюю — сервер выбросит пустые сам.
+      colors.forEach(c => { legend[c.id] = fields[c.id].value; });
+      saveSchedule('adminUpdateConfig', { patch: { series: { legend } } }, 'Легенда сохранена');
+    }));
+    card.appendChild(acts);
+  }
+
+  card.appendChild(txt('div', 'empty',
+    'Цвет виден в сетке дня и в списке выше, а по подписи список фильтруется. '
+    + 'Клиентам на сайте цвета не показываются вовсе — там просто «занято».'));
+  return card;
 }
 
 // Одна форма и на заведение, и на правку: поля те же, а два окна
@@ -3205,7 +3500,7 @@ function openSeriesForm(existing) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'swatch c-' + c.id + (chosenColor.id === c.id ? ' on' : '');
-    b.title = c.name;
+    b.title = colorTitle(c);
     b.addEventListener('click', () => {
       chosenColor.id = c.id;
       [...swatches.children].forEach(x => x.classList.remove('on'));
@@ -3376,6 +3671,7 @@ function showClashes(data) {
 // рано или поздно оказывается нечитаемым или неотличимым от «корт
 // закрыт». Клиентам на сайте цвета не показываются вовсе.
 function colorPicker(s) {
+  const box = el('div');
   const wrap = el('div', 'swatches');
   const colors = db.seriesColors || [];
 
@@ -3383,19 +3679,31 @@ function colorPicker(s) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'swatch c-' + c.id + ((s.color || 'grass') === c.id ? ' on' : '');
-    b.title = c.name;
+    // Подпись владельца важнее названия цвета: «Детская группа»
+    // объясняет, зачем нажимать, а «Зелёный» — нет.
+    b.title = colorTitle(c);
     b.addEventListener('click', async () => {
       try {
         await api('setSeriesColor', { seriesId: s.id, color: c.id });
         s.color = c.id;
         render();
-        toast('Цвет: ' + c.name.toLowerCase());
+        toast('Цвет: ' + colorTitle(c).toLowerCase());
       } catch (e) { toast(errorText(e.code), 3500); }
     });
     wrap.appendChild(b);
   });
+  box.appendChild(wrap);
 
-  return wrap;
+  // Что этот цвет значит — рядом с самими квадратиками. Иначе легенду
+  // приходится держать в голове, а её для того и заводили.
+  const mine = colors.find(c => c.id === (s.color || 'grass'));
+  if (mine && mine.label) box.appendChild(txt('div', 't3', mine.label));
+
+  return box;
+}
+
+function colorTitle(c) {
+  return c.label ? c.label + ' (' + c.name.toLowerCase() + ')' : c.name;
 }
 
 function nextOccurrences(s, n) {
@@ -3640,7 +3948,11 @@ function sessionRow(s) {
   }
 
   const acts = el('div', 'acts');
-  acts.appendChild(btn('Изменить', 'btn sm sec', () => openSessionForm(s, null)));
+  // Правки самого окна здесь больше нет: прежняя кнопка «Изменить»
+  // правила подпись и места первого состава, а стояла снаружи, рядом со
+  // «Вторым составом» и «Отменить», — и читалась как «изменить
+  // тренировку целиком». Теперь правка живёт внутри своего состава, у
+  // обоих одинаковая. Время и корты меняются переносом в сетке дня.
   if (!s.rival && !s.decidedAt) {
     acts.appendChild(btn('Второй состав', 'btn sm sec', () => openRivalForm(s)));
   }
@@ -3682,17 +3994,28 @@ function rosterBlock(s, roster) {
   op.signups.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, false)));
   op.queue.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, true)));
 
+  // Кнопки у обоих составов одни и те же и называются одинаково: «этот
+  // состав» — то, что внутри рамки. Раньше у первого правка называлась
+  // «Изменить» и стояла снаружи, рядом с правкой времени и кортов, — и
+  // отличить их можно было только на ощупь.
   const acts = el('div', 'acts');
   acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s, roster)));
-  if (roster === 'alt') {
-    acts.appendChild(btn('Изменить состав', 'btn sm sec', () => openSessionForm(s, null, 'alt')));
+  acts.appendChild(btn('Изменить состав', 'btn sm sec', () => openSessionForm(s, null, roster)));
+
+  // Распустить можно любой из двух — но только когда их два: одинокий
+  // состав это и есть сама тренировка, и снимается она целиком, кнопкой
+  // «Отменить» ниже.
+  if (s.rival && !s.decidedAt) {
+    const other = roster === 'alt' ? s.openPlay : s.rival;
     acts.appendChild(btn('Распустить', 'btn sm danger', () => confirmDelete(
-      'Распустить второй состав?', op.title,
-      op.taken > 0
-        ? 'Записанным (' + op.taken + ') уйдёт уведомление, что состав снят. Время останется за первым составом.'
-        : 'В нём никого нет. Время останется за первым составом.',
-      () => act(() => api('adminUpdateOpenPlay', { date: s.date, bookingId: s.id, alt: null }),
-        'Второй состав распущен'))));
+      'Распустить состав «' + op.title + '»?', op.title,
+      (op.taken > 0
+        ? 'Записанным (' + op.taken + ') уйдёт уведомление, что состав снят. '
+        : 'В нём никого нет. ')
+      + 'Время останется за составом «' + other.title + '».',
+      () => act(() => api('adminUpdateOpenPlay', Object.assign({ date: s.date, bookingId: s.id },
+        roster === 'alt' ? { alt: null } : { disband: 'main' })),
+      'Состав распущен'))));
   }
   wrap.appendChild(acts);
   return wrap;
@@ -3739,8 +4062,12 @@ function openSessionForm(session, preset, roster) {
   const which = roster === 'alt' ? 'alt' : 'main';
   const op = session ? (which === 'alt' ? session.rival : session.openPlay) : null;
   const body = el('div');
+  // У существующего окна форма правит именно состав — подпись, уровень,
+  // места, — а не время и корты, поэтому так и называется. Второй состав
+  // от первого в заголовке отличается своим же названием.
   body.innerHTML = '<h3>' + (session
-    ? (which === 'alt' ? 'Изменить второй состав' : 'Изменить окно') : 'Новое окно') + '</h3>'
+    ? 'Изменить состав' + (op && op.title ? ' «' + escapeHtml(op.title) + '»' : '')
+    : 'Новое окно') + '</h3>'
     + (session ? '<div class="m-sub">' + escapeHtml(longDate(session.date) + ' · ' + fmtRange(session.start, session.end)) + '</div>' : '');
 
   // Время и корт у существующего окна меняются переносом брони — тем же
@@ -4121,8 +4448,11 @@ function renderEvents(view) {
     it.innerHTML = '<div class="t1">' + escapeHtml(e.title)
       + ' <span class="pill ' + (e.past ? 'grey' : 'wait') + '">' + escapeHtml(e.categoryName) + '</span>'
       + (e.past ? ' <span class="pill grey">прошёл</span>' : '') + '</div>'
-      + '<div class="t2">' + escapeHtml(longDate(e.date))
-      + (e.note ? ' · ' + escapeHtml(e.note) : '') + '</div>';
+      + '<div class="t2">' + escapeHtml(longDate(e.date)) + '</div>'
+      // Описание — своей строкой и с сохранённой разбивкой: в объявлении
+      // турнира несколько абзацев, и приклеенное к дате через точку оно
+      // превращалось в кашу.
+      + (e.note ? '<div class="t2 pre">' + escapeHtml(e.note) + '</div>' : '');
 
     if (canEdit) {
       const acts = el('div', 'acts');
@@ -4247,9 +4577,11 @@ function openEventForm(existing) {
   wrapField(body, 'Категория участников', cat);
 
   const note = document.createElement('textarea');
-  note.rows = 3;
+  // Шести строк хватает на объявление целиком — место, условия, ссылка
+  // на регистрацию, призы, — и видно, что переносы сохраняются.
+  note.rows = 6;
   note.value = existing ? existing.note : '';
-  note.placeholder = 'Время начала, взнос, как записаться';
+  note.placeholder = 'Время начала, взнос, как записаться.\nПереносы строк сохраняются.';
   wrapField(body, 'Подробности — необязательно', note);
 
   const acts = el('div', 'm-acts');
@@ -4930,6 +5262,17 @@ function renderTournamentRoster(view, t, canEdit) {
     card.appendChild(txt('div', 'empty', 'Пока никто не записан.'));
   }
 
+  // До какого момента состав ещё может измениться сам. Срок общий для
+  // всех турниров и правится в настройках; здесь он нужен, чтобы
+  // организатор знал, когда садиться за сетки.
+  if (!t.drawnAt && t.signupCloseAt) {
+    card.appendChild(txt('div', 'empty', t.signupsClosed
+      ? 'Запись закрыта вами вручную.'
+      : (t.signupsClosedNow ? 'Запись закрылась ' : 'Запись закрывается ')
+        + shortDateTime(t.signupCloseAt)
+        + '. Дописать человека руками можно и после этого.'));
+  }
+
   if (!t.drawnAt && t.participants.length) {
     card.appendChild(txt('div', 'empty',
       'Номер — это место в списке записи, он же будет на мяче во время жеребьёвки. '
@@ -5297,18 +5640,46 @@ function confirmDraw(t) {
   const target = Math.max(2, Math.ceil(t.maxParticipants / (t.format.groupCount || 1)));
   const suggested = Math.max(1, Math.min(6, t.format.groupCount, Math.ceil(count / target)));
 
-  const groups = document.createElement('select');
-  for (let n = 1; n <= Math.min(6, Math.floor(count / 2)); n++) {
-    groups.appendChild(opt(String(n), n === 1 ? 'одна группа, все со всеми' : n + ' группы'));
-  }
-  groups.value = String(suggested);
-
+  // Раскладку выбирают глазами, а не из выпадающего списка: при
+  // недоборе решение упирается в число игр. Шестнадцать мест, пришло
+  // одиннадцать — четыре группы это 3-3-3-2 и 12 матчей в группах, три
+  // группы это 4-4-3 и 15. Разница в час корта и в то, сколько человек
+  // сыграет каждый: в тройке две игры, в четвёрке три. Поэтому каждый
+  // вариант считается и показывается целиком.
+  let groupCount = suggested;
+  const picks = el('div');
   const advance = document.createElement('select');
   const note = el('div', 'empty');
 
+  // Матчи в группе — «все со всеми»: n·(n−1)/2.
+  const groupMatches = sizes => sizes.reduce((sum, n) => sum + n * (n - 1) / 2, 0);
+
+  // Плей-офф: сетка добирается лучшими из невышедших до полной степени
+  // двойки, поэтому пустых проходов в ней нет и матчей ровно на один
+  // меньше, чем участников. Плюс матч за третье место, если он включён.
+  function playoffMatches(out) {
+    if (out < 2) return 0;
+    const size = Math.pow(2, Math.ceil(Math.log2(Math.max(2, out))));
+    const third = t.format.thirdPlace !== false && size > 2 ? 1 : 0;
+    return size - 1 + third;
+  }
+
+  // БЕТА берёт места ниже проходного — столько, сколько задал владелец.
+  // Она не добирается до полной сетки, поэтому матчей на один меньше,
+  // чем в ней людей.
+  function consolationMatches(g, adv) {
+    if (!t.format.consolation) return 0;
+    const out = g * adv;
+    const size = Math.pow(2, Math.ceil(Math.log2(Math.max(2, out))));
+    const left = Math.max(0, count - Math.max(out, Math.min(size, count)));
+    const places = t.format.consolationPlaces || 0;
+    const n = places > 0 ? Math.min(left, g * places) : left;
+    if (n < 2) return 0;
+    return n - 1 + (t.format.thirdPlace !== false && n > 2 ? 1 : 0);
+  }
+
   function refresh() {
-    const g = Number(groups.value);
-    const sizes = groupSizes(count, g);
+    const sizes = groupSizes(count, groupCount);
     const smallest = Math.min.apply(null, sizes);
 
     const keep = Number(advance.value);
@@ -5317,22 +5688,45 @@ function confirmDraw(t) {
       advance.appendChild(opt(String(n), n === 1 ? 'по одному' : 'по ' + n));
     }
     advance.value = String(Math.min(keep || t.format.advance, Math.max(1, smallest - 1)));
+    const adv = Number(advance.value);
 
-    const out = g * Number(advance.value);
+    picks.innerHTML = '';
+    for (let g = 1; g <= Math.min(6, Math.floor(count / 2)); g++) {
+      const gs = groupSizes(count, g);
+      const gAdv = Math.min(adv, Math.max(1, Math.min.apply(null, gs) - 1));
+      const inGroups = groupMatches(gs);
+      const inPlayoff = playoffMatches(g * gAdv) + consolationMatches(g, gAdv);
+
+      const it = el('div', 'item pick' + (g === groupCount ? ' on' : ''));
+      it.innerHTML = '<div class="t1">' + (g === 1 ? 'Одна группа, все со всеми' : g + ' группы')
+        + ' <span class="pill grey">' + gs.join(', ') + '</span></div>'
+        + '<div class="t2">' + plural(inGroups, 'матч', 'матча', 'матчей') + ' в группах'
+        + (inPlayoff ? ' + ' + inPlayoff + ' в плей-офф = <b>' + (inGroups + inPlayoff) + '</b>' : '')
+        // Сколько игр достанется человеку — то, за что платят взнос.
+        + ' · каждый сыграет ' + (Math.min.apply(null, gs) - 1)
+        + (Math.max.apply(null, gs) !== Math.min.apply(null, gs)
+          ? '–' + (Math.max.apply(null, gs) - 1) : '') + ' в группе</div>';
+      it.addEventListener('click', () => { groupCount = g; refresh(); });
+      picks.appendChild(it);
+    }
+
+    const out = groupCount * adv;
     const size = Math.pow(2, Math.ceil(Math.log2(Math.max(2, out))));
-    let text = 'Группы: ' + sizes.join(', ') + '. Выходит ' + out + ', сетка на ' + size + '.';
+    let text = 'Выходит ' + out + ', сетка на ' + size + '.';
     if (out < size) text += ' Недостающих доберём лучшими из невышедших.';
-    if (smallest <= Number(advance.value)) {
+    if (smallest <= adv) {
       text += ' ⚠ Из группы в ' + smallest + ' выходят все — они сыграют меньше остальных.';
     }
     note.textContent = text;
   }
 
   if (withGroups) {
-    wrapField(body, 'Сколько групп', groups);
+    const f = el('div', 'field');
+    f.innerHTML = '<span>Сколько групп — выберите раскладку</span>';
+    f.appendChild(picks);
+    body.appendChild(f);
     wrapField(body, 'Выходит из группы', advance);
     body.appendChild(note);
-    groups.addEventListener('change', refresh);
     advance.addEventListener('change', refresh);
     refresh();
   }
@@ -5346,7 +5740,7 @@ function confirmDraw(t) {
   acts.appendChild(btn('Разыграть', 'btn', () => {
     closeModal();
     act(() => api('adminTournamentDraw', Object.assign({ id: t.id },
-      withGroups ? { groupCount: Number(groups.value), advance: Number(advance.value) } : {})),
+      withGroups ? { groupCount, advance: Number(advance.value) } : {})),
     'Жеребьёвка проведена');
   }));
   body.appendChild(acts);
@@ -6021,6 +6415,7 @@ function renderSettings(view) {
   renderPriceRules(view, cfg, owner);
   if (owner) renderCourts(view);
   if (owner) renderReminders(view);
+  if (owner) renderTournamentSignups(view);
   if (owner) renderAnnounceChat(view);
   renderClosures(view, cfg);
   renderStaff(view);
@@ -6258,6 +6653,52 @@ function openCourtForm(existing) {
 
   showModal(body);
   setTimeout(() => name.focus(), 50);
+}
+
+// Когда запись на турнир закрывается сама. Правило одно на все турниры
+// клуба, поэтому живёт в настройках, а не в карточке каждого.
+//
+// Считается накануне и по часам, а не «за сутки до старта»: тот же срок
+// у утреннего и вечернего турнира приходился на разное время суток, и
+// людям нечего было запоминать.
+function renderTournamentSignups(view) {
+  const t = db.chats && db.chats.tournaments;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Запись на турниры <span class="sub">когда состав перестаёт меняться</span></h2>';
+  view.appendChild(card);
+
+  if (!t) {
+    card.appendChild(txt('div', 'empty', 'Загружаем настройки…'));
+    return;
+  }
+
+  const days = document.createElement('select');
+  [[0, 'в день турнира'], [1, 'накануне'], [2, 'за два дня'], [3, 'за три дня']]
+    .forEach(([v, label]) => days.appendChild(opt(String(v), label)));
+  days.value = String(t.signupCloseDaysBefore);
+  wrapField(card, 'Запись закрывается', days);
+
+  const at = document.createElement('input');
+  at.type = 'time';
+  at.value = t.signupCloseTime;
+  wrapField(card, 'в', at);
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
+    patch: {
+      tournaments: {
+        signupCloseDaysBefore: Number(days.value),
+        signupCloseTime: at.value,
+      },
+    },
+  }, 'Срок записи сохранён')));
+  card.appendChild(acts);
+
+  card.appendChild(txt('div', 'empty',
+    'Турнир в субботу с 10:00 при сроке «накануне, 15:00» перестаёт набирать людей в пятницу '
+    + 'в три часа дня. Срок виден и на сайте — в карточке турнира. Дописать человека руками '
+    + 'администратор может и после закрытия, а закрыть запись раньше срока — кнопкой в '
+    + 'карточке турнира.'));
 }
 
 // Напоминания клиентам. Текст про сменную обувь — голос клуба, а не наш,

@@ -365,7 +365,10 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .ev-when .m { font-size: 12px; color: var(--ink-soft); text-transform: uppercase; }
 .ev-what { min-width: 0; }
 .ev-what .t1 { font-weight: 600; }
-.ev-what .t2 { font-size: 14px; color: var(--ink-soft); margin-top: 3px; }
+/* Описание турнира владелец пишет строками — место, условия, ссылка на
+   регистрацию. Разбивку сохраняем: сплошным текстом объявление не
+   читается. Переносы приходят с сервера, там же и вычищены. */
+.ev-what .t2 { font-size: 14px; color: var(--ink-soft); margin-top: 3px; white-space: pre-line; }
 .post { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .post:last-of-type { border-bottom: 0; }
 .post-pic { border-radius: 10px; overflow: hidden; margin-bottom: 10px; max-width: 460px; }
@@ -393,7 +396,11 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
   .svc-photo { width: 76px; }
 }
 .svc-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 7px 2px; border-bottom: 1px dashed var(--line); font-size: 15px; }
-.svc-row.sub { padding-left: 14px; font-size: 14px; color: var(--ink-soft); }
+/* Название тарифа — тем же цветом и кеглем, что и всё остальное:
+   приглушённым оно читалось хуже цены напротив, а строка «клубная —
+   500 ₽» имеет смысл только целиком. Отступ слева и так показывает,
+   что это вариант услуги, а не отдельная услуга. */
+.svc-row.sub { padding-left: 14px; }
 .svc-row:last-child { border-bottom: 0; }
 .svc-row b { white-space: nowrap; }
 .links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
@@ -586,6 +593,21 @@ function slotTimestamp(dateIso, timeStr) {
 
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+// Момент времени в поясе клуба: «пт, 15:00». Считаем сами, а не через
+// toLocaleString — часовой пояс берём из настроек клуба, а не из
+// браузера: человек может смотреть сайт из Москвы, а срок записи
+// краснодарский.
+function clubMoment(iso) {
+  const at = Date.parse(iso || '');
+  if (!Number.isFinite(at)) return '';
+  const tz = (state.config && state.config.booking.timezoneOffset) || '+03:00';
+  const m = /^([+-])(\d{2}):(\d{2})$/.exec(tz);
+  const shift = m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 180;
+  const d = new Date(at + shift * 60000);
+  return WD[d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()]
+    + ', ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+}
 
 function dayLabel(dateIso, today) {
   if (dateIso === today) return 'Сегодня';
@@ -2664,9 +2686,11 @@ function openPlayTag(dateIso, courtId, slot) {
   if (!s) return 'тренировка';
   const op = rosterOf(s, myRoster(s));
   if (op.mine) return op.title + ' · вы записаны';
-  // Два состава в клетку сетки не влезают — там только «есть выбор»,
-  // подробности человек увидит, нажав на клетку.
-  if (s.rival) return op.title + ' · два состава';
+  // Оба названия, а не «два состава»: человек выбирает между женской и
+  // мужской одиночной, и безымянный «второй» выглядел так, будто он
+  // хуже. Клетка широкая — оба помещаются, места остались подробностям
+  // в карточке.
+  if (s.rival) return op.title + ' / ' + s.rival.title;
   if (op.full) return op.title + ' · мест нет';
   return op.title + ' · ' + seatsText(op.left);
 }
@@ -2881,7 +2905,10 @@ function homeOpenPlay() {
     it.innerHTML = '<div class="t1">' + escapeHtml(op.title)
       + ' <span class="pill ' + (op.full ? 'grey' : 'ok') + '">'
       + (op.full ? 'мест нет' : seatsText(op.left)) + '</span>'
-      + (s.rival ? ' <span class="pill wait">и второй состав</span>' : '')
+      // Второй состав называем по имени: «и второй состав» звучит как
+      // приписка, а это равноправная группа — играет та, что соберётся
+      // первой.
+      + (s.rival ? ' <span class="pill wait">или «' + escapeHtml(s.rival.title) + '»</span>' : '')
       + (op.mine ? ' <span class="pill ok">вы записаны</span>' : '') + '</div>'
       + '<div class="t2">' + escapeHtml(dayLabelLong(s.date, state.data.today)
         + ' · ' + fmtRange(s.start, s.end) + ' · ' + op.level) + '</div>';
@@ -3004,12 +3031,17 @@ function showTournamentCard() {
   } else if (t.drawnAt) {
     body.appendChild(txt('div', 'notice', 'Запись закрыта: жеребьёвка уже прошла.'));
   } else if (t.signupsClosed || t.signupsClosedNow) {
-    // Запись закрывается и сама — за сутки до старта. Человеку это
-    // объясняем, иначе кнопка просто исчезает без причины.
-    body.appendChild(txt('div', 'notice', t.signupsClosed
+    // Запись закрывается и сама — накануне турнира. Человеку называем
+    // точный момент, иначе кнопка просто исчезает без причины.
+    const when = clubMoment(t.signupCloseAt);
+    body.appendChild(txt('div', 'notice', t.signupsClosed || !when
       ? 'Запись закрыта. Позвоните в центр, если хотите попасть.'
-      : 'Запись закрылась за сутки до турнира. Позвоните в центр, если хотите попасть.'));
+      : 'Запись закрылась ' + when + '. Позвоните в центр, если хотите попасть.'));
   } else {
+    // До закрытия — тот же срок, но как обещание: видно, сколько ещё
+    // можно думать. Без него человек откладывает и не успевает.
+    const when = clubMoment(t.signupCloseAt);
+    if (when) body.appendChild(txt('div', 'empty', 'Записаться можно до ' + when + '.'));
     acts.appendChild(btn('Записаться', 'btn', () => joinTournament(t)));
   }
 
