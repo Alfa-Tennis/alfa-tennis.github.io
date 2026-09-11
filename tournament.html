@@ -123,6 +123,7 @@ table.cross td.sc.self {
 table.cross .w { color: var(--win); font-weight: 700; }
 table.cross .l { color: var(--lose); }
 table.cross .pend { color: var(--line); }
+table.cross .who .sub { font-weight: 400; font-size: 12px; color: var(--ink-soft); }
 table.cross td.pts { background: #F7F9F8; }
 table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-soft); font-size: 13px; }
 .diff { font-weight: 700; }
@@ -472,6 +473,7 @@ function renderGroup(view, t, g) {
 
   const advance = t.format.groupCount > 0 ? t.format.advance : 0;
   const members = g.table.map(row => participant(t, row.participantId)).filter(Boolean);
+  const annulled = new Set(g.table.filter(r => r.annulled).map(r => r.participantId));
 
   const scroll = el('div', 'scroll');
   const table = document.createElement('table');
@@ -495,10 +497,14 @@ function renderGroup(view, t, g) {
 
     let html = '<td class="pl">' + (row.place || '—') + '</td>'
       + '<td class="who"><span class="no">' + (p ? p.number : '') + '</span> '
-      + escapeHtml(row.name) + '</td>';
+      + escapeHtml(row.name)
+      + (row.annulled ? ' <span class="sub">результаты аннулированы</span>' : '') + '</td>';
     members.forEach(op => {
       if (!p || op.id === p.id) { html += '<td class="sc self"></td>'; return; }
-      html += '<td class="sc">' + crossCell(t, g, p.id, op.id) + '</td>';
+      // Матчи аннулированного в таблицу не идут — и в клетке их нет: рядом
+      // с теми, что считаются, счёт читался бы как ещё один результат.
+      const off = annulled.has(p.id) || annulled.has(op.id);
+      html += '<td class="sc">' + (off ? '<span class="pend">—</span>' : crossCell(t, g, p.id, op.id)) + '</td>';
     });
     html += '<td class="pts"><b>' + row.points + '</b></td>'
       + '<td class="agg">' + row.setsWon + ':' + row.setsLost + ' ' + diffTag(row.setDiff) + '</td>'
@@ -517,6 +523,11 @@ function renderGroup(view, t, g) {
       : 'В плей-офф выходят первые ' + advance + '.');
   }
   notes.push('Места при равенстве очков: разница сетов, потом геймы, потом личная встреча.');
+  // Иначе пустые клетки у половины группы выглядят как несыгранные матчи.
+  if (annulled.size) {
+    notes.push('Снявшийся не доиграл группу, и его матчи в таблицу не идут — '
+      + 'иначе результат от него достался бы только части соперников.');
+  }
   card.appendChild(txt('div', 'empty', notes.join(' ')));
 
   view.appendChild(card);

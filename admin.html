@@ -345,6 +345,7 @@ table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-s
 .diff.zero { color: var(--ink-soft); }
 .medal { font-size: 17px; margin-right: 4px; }
 table.cross .pend { color: var(--line); }
+table.cross .who .sub { font-weight: 400; font-size: 12px; color: var(--ink-soft); }
 table.cross td.pts { background: #F7F9F8; }
 table.cross .no {
   display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px;
@@ -5507,12 +5508,7 @@ function renderTournamentRoster(view, t, canEdit) {
           'Кем заменить: ' + p.name, (clientId) =>
             act(() => api('adminTournamentParticipant',
               { id: t.id, op: 'replace', participantId: p.id, clientId }), 'Участник заменён'))));
-        acts.appendChild(btn('Снять с турнира', 'btn sm danger', () => confirmDelete(
-          'Снять с турнира?', p.name,
-          'Несыгранные матчи станут техническими поражениями, а в сетке соперники пройдут дальше. '
-          + 'Сыгранное останется: оно уже вошло в очки других.',
-          () => act(() => api('adminTournamentParticipant',
-            { id: t.id, op: 'withdraw', participantId: p.id }), 'Участник снят'))));
+        acts.appendChild(btn('Снять с турнира', 'btn sm danger', () => openWithdrawForm(t, p)));
       }
     }
     it.appendChild(acts);
@@ -5577,6 +5573,7 @@ function renderTournamentGroup(view, t, g) {
 
   const members = g.table.map(row => (t.participants || []).find(p => p.id === row.participantId))
     .filter(Boolean);
+  const annulled = new Set(g.table.filter(r => r.annulled).map(r => r.participantId));
 
   const scroll = el('div', 'cross-wrap');
   const table = el('table', 'tbl cross');
@@ -5598,18 +5595,26 @@ function renderTournamentGroup(view, t, g) {
     tr.appendChild(pl);
 
     const who = el('td', 'who');
-    who.innerHTML = '<span class="no">' + (me ? me.number : '') + '</span> ' + escapeHtml(row.name);
+    who.innerHTML = '<span class="no">' + (me ? me.number : '') + '</span> ' + escapeHtml(row.name)
+      + (row.annulled ? ' <span class="sub">результаты аннулированы</span>' : '');
     tr.appendChild(who);
 
     members.forEach(op => {
       const td = el('td', 'sc');
       if (!me || op.id === me.id) { td.className = 'sc self'; tr.appendChild(td); return; }
       const m = g.matches.find(x => (x.a === me.id && x.b === op.id) || (x.a === op.id && x.b === me.id));
-      td.innerHTML = crossCellHtml(m, me.id);
+      // Счёт аннулированного матча никуда не делся — его видно, если открыть
+      // клетку, — но в крестовине он не показывается: рядом с клетками,
+      // которые считаются, он читался бы как ещё один результат.
+      const off = annulled.has(me.id) || annulled.has(op.id);
+      td.innerHTML = off ? '<span class="pend">—</span>' : crossCellHtml(m, me.id);
       if (m && t.status !== 'finished') {
         td.classList.add('hit');
-        td.title = row.name + ' — ' + (members.find(p => p.id === op.id) || {}).name;
+        td.title = row.name + ' — ' + (members.find(p => p.id === op.id) || {}).name
+          + (off ? ' · в таблицу не идёт, снятие с аннулированием' : '');
         td.addEventListener('click', () => openScoreForm(t, m));
+      } else if (off) {
+        td.title = 'В таблицу не идёт: снятие с аннулированием';
       }
       tr.appendChild(td);
     });
@@ -5754,6 +5759,63 @@ function openScoreForm(t, m) {
   }));
   body.appendChild(wo);
 
+  showModal(body);
+}
+
+// Снятие по ходу турнира. Главный вопрос тут не «снимать ли», а что делать
+// с уже сыгранным: травма в первом гейме и «уехал по делам» заслуживают
+// разного, и угадать это система не может. Правило подставляет ответ,
+// решает организатор.
+function openWithdrawForm(t, p) {
+  const body = el('div');
+  body.innerHTML = '<h3>Снять с турнира?</h3>'
+    + '<div class="m-sub">' + escapeHtml(p.name) + '</div>'
+    + '<div class="empty">Несыгранные матчи станут техническими поражениями, '
+    + 'а в сетке соперники пройдут дальше.</div>';
+
+  let annul = true;
+  if (p.played) {
+    const sel = document.createElement('select');
+    const opts = [
+      ['annul', 'Не считать никому' + (p.annulSuggested ? ' — по правилу' : '')],
+      ['keep', 'Оставить в таблице' + (p.annulSuggested ? '' : ' — по правилу')],
+    ];
+    opts.forEach(([v, label]) => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = label;
+      sel.appendChild(o);
+    });
+    sel.value = p.annulSuggested ? 'annul' : 'keep';
+    annul = sel.value === 'annul';
+    wrapField(body, 'Уже сыгранные им матчи', sel);
+
+    const hint = txt('div', 'empty', '');
+    const paint = () => {
+      annul = sel.value === 'annul';
+      hint.textContent = annul
+        ? 'Его матчи выйдут из таблицы у всех — и победы, и поражения. Никто не '
+          + 'останется с результатом, которого другим не досталось.'
+        : 'Сыгранное останется в очках соперников. Тем, кто с ним сыграть не '
+          + 'успел, такого результата не достанется.';
+    };
+    paint();
+    sel.addEventListener('change', paint);
+    body.appendChild(hint);
+    // Иначе владелец решит, что аннулирование заодно стирает и уровень.
+    body.appendChild(txt('div', 'empty',
+      'На игровой уровень это не влияет: сыгранный матч в нём остаётся в любом случае.'));
+  } else {
+    body.appendChild(txt('div', 'empty', 'На корт он не выходил — считать соперникам нечего.'));
+  }
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Снять', 'btn danger', () => {
+    closeModal();
+    act(() => api('adminTournamentParticipant',
+      { id: t.id, op: 'withdraw', participantId: p.id, annul }), 'Участник снят');
+  }));
+  body.appendChild(acts);
   showModal(body);
 }
 
