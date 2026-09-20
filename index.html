@@ -359,6 +359,33 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .cta p { margin: 12px 0 14px; font-size: 14px; color: rgba(255,255,255,.82); line-height: 1.45; }
 .cta .btn { background: var(--ball); color: #2C3A08; }
 .cta .btn:hover { background: #93C400; }
+
+/* Скидочные окна — отдельной плашкой над призывом, а не чипом внутри
+   него: чипом они стояли в ряду с «2 крытых корта» и читались как ещё
+   одна справка, а это единственная причина прийти днём в будни. Лайм
+   берём мячовый — он на странице значит «сюда», и другого такого пятна
+   на главной нет. Дни недели здесь обязательны: «1 600 ₽ 07:00–11:00»
+   без них человек честно прочитает как «всегда». */
+.promo { background: var(--ball); color: #2C3A08; border-radius: var(--radius); padding: 14px 16px; margin-top: 18px; }
+.promo-head { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .72; }
+.promo-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 8px; }
+.promo-row + .promo-row { border-top: 1px solid rgba(44,58,8,.18); padding-top: 8px; }
+.promo-price { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.promo-was { font-size: 14px; text-decoration: line-through; opacity: .6; }
+.promo-when { flex: 1 1 100%; font-size: 15px; font-weight: 600; }
+.promo-label { font-weight: 400; opacity: .78; }
+
+/* Итоги тренировки — круговая таблица с корта. Узкая по своей природе:
+   на телефоне она уезжает вбок внутри своей рамки, а страница при этом
+   остаётся на месте. */
+.rt-wrap { overflow-x: auto; margin: 8px 0 4px; }
+.rt { border-collapse: collapse; font-size: 13px; width: 100%; }
+.rt th, .rt td { border: 1px solid var(--line); padding: 5px 6px; text-align: center; white-space: nowrap; }
+.rt th { background: var(--bg); font-weight: 600; }
+.rt .rt-name { text-align: left; white-space: normal; min-width: 140px; }
+.rt .rt-self { background: #E6EAEC; }
+.rt .rt-sum { font-weight: 600; }
+.rt-note { font-size: 13px; color: var(--ink-soft); margin-top: 4px; white-space: pre-line; }
 .ev { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
 .ev-when { flex: 0 0 auto; text-align: center; min-width: 52px; }
 .ev-when .d { font-size: 20px; font-weight: 600; line-height: 1.1; }
@@ -1110,11 +1137,12 @@ function renderHome() {
     '<span class="fact"><b>' + escapeHtml(fmtRange(c.booking.openTime, c.booking.closeTime)) + '</b> ежедневно</span>',
     '<span class="fact">' + c.courts.length + ' крытых всесезонных корта</span>',
   ];
-  // Подписи скидочных окон — то, ради чего владелец их и заводит.
-  (c.pricing.rules || []).filter(r => r.showOnHome && r.label).forEach(r => {
-    chips.push('<span class="fact">' + escapeHtml(r.label) + ' <b>' + money(r.pricePerHour)
-      + '</b> · ' + escapeHtml(fmtRange(r.from, r.to)) + '</span>');
-  });
+
+  // Скидочные окна идут выше призыва своей плашкой: ради них человек и
+  // выбирает будний день вместо вечера, а чипом в общем ряду они
+  // терялись между часами работы и числом кортов.
+  const promo = homePromo(c);
+  if (promo) view.appendChild(promo);
 
   const cta = el('div', 'cta');
   cta.innerHTML = '<h2>Забронировать корт</h2>'
@@ -1134,6 +1162,13 @@ function renderHome() {
   if (openPlaySessions().length) {
     view.appendChild(txt('div', 'section-title', 'Открытые тренировки'));
     view.appendChild(homeOpenPlay());
+  }
+
+  // Итоги сыгранного — сразу под набором: на них смотрят те же люди и
+  // в те же дни, пока игру ещё обсуждают.
+  if (recentSessions().length) {
+    view.appendChild(txt('div', 'section-title', 'Итоги тренировок'));
+    view.appendChild(homeResults());
   }
 
   // Турниры выше афиши по той же причине, что и тренировки: на афишу
@@ -1158,6 +1193,48 @@ function renderHome() {
 
   view.appendChild(txt('div', 'section-title', 'Как нас найти'));
   view.appendChild(homeContacts(c));
+}
+
+// Дни недели окна человеческой строкой: «пн–пт», «сб и вс», «пн, ср,
+// пт». Неделя считается от понедельника, а в данных воскресенье это 0 —
+// отсюда пересчёт индекса, иначе «сб, вс» превращалось бы в «вс — сб».
+//
+// Пустой список значит «все дни» — так его понимает и сервер.
+function daysLabel(days) {
+  const list = Array.isArray(days) ? days.map(Number).filter(d => d >= 0 && d <= 6) : [];
+  if (!list.length || list.length === 7) return 'ежедневно';
+
+  const order = list.map(d => (d + 6) % 7).sort((a, b) => a - b);
+  const names = order.map(i => WD[(i + 1) % 7]);
+  if (order.length > 2 && order[order.length - 1] - order[0] === order.length - 1) {
+    return names[0] + '–' + names[names.length - 1];
+  }
+  return names.length === 2 ? names.join(' и ') : names.join(', ');
+}
+
+// Плашка со скидочными окнами. Показываем только те, что владелец сам
+// отметил галочкой «на главной», и только если цена там ниже базовой:
+// «скидка» ценой в базовую — обман, даже случайный.
+function homePromo(c) {
+  const base = c.pricing.pricePerHour;
+  const shown = (c.pricing.rules || []).filter(r => r.showOnHome && r.pricePerHour < base);
+  if (!shown.length) return null;
+
+  const card = el('div', 'promo');
+  card.appendChild(txt('div', 'promo-head', shown.length > 1 ? 'Дешевле обычного' : 'Дешевле обычного часа'));
+
+  shown.forEach(r => {
+    const row = el('div', 'promo-row');
+    row.innerHTML = '<div class="promo-price">' + escapeHtml(money(r.pricePerHour)) + ' / час</div>'
+      + '<div class="promo-was">вместо ' + escapeHtml(money(base)) + '</div>'
+      + '<div class="promo-when">' + escapeHtml(daysLabel(r.days)) + ', '
+      + escapeHtml(fmtRange(r.from, r.to))
+      + (r.label ? ' <span class="promo-label">— ' + escapeHtml(r.label) + '</span>' : '')
+      + '</div>';
+    card.appendChild(row);
+  });
+
+  return card;
 }
 
 // Новости приходят из группы клуба и попадают сюда только после того,
@@ -2664,6 +2741,12 @@ function openPlaySessions() {
   return (state.openPlay && state.openPlay.sessions) ? state.openPlay.sessions : [];
 }
 
+// Сыгранное за последние дни — то, у чего уже есть счёт. Сервер сам
+// решает, сколько дней держать итоги, и присылает только их.
+function recentSessions() {
+  return (state.openPlay && state.openPlay.recent) ? state.openPlay.recent : [];
+}
+
 function sessionById(id) {
   return openPlaySessions().find(s => s.id === id) || null;
 }
@@ -2915,6 +2998,57 @@ function homeOpenPlay() {
     it.appendChild(btn(op.mine ? 'Посмотреть состав' : 'Подробнее', 'btn sm sec',
       () => openSessionCard(s.id)));
     card.appendChild(it);
+  });
+  return card;
+}
+
+// ---------- Итоги сыгранного ----------
+//
+// Круговая таблица, как её пишут на листе на корте: строки в порядке
+// записи, в клетке счёт геймов, справа очки и место. Считает всё сервер
+// — страница только рисует присланное.
+
+function resultsTableHtml(op) {
+  const r = op.results;
+  if (!r || !r.rows || !r.rows.length) return '';
+  const n = r.rows.length;
+
+  let head = '<tr><th class="rt-name">Участник</th>';
+  for (let i = 1; i <= n; i++) head += '<th>' + i + '</th>';
+  head += '<th>Очки</th><th>Место</th></tr>';
+
+  const body = r.rows.map(row => {
+    const who = row.name + (row.partnerName ? ' / ' + row.partnerName : '');
+    let tds = '<td class="rt-name">' + row.no + '. ' + escapeHtml(who) + '</td>';
+    for (let j = 0; j < n; j++) {
+      tds += (row.no - 1 === j)
+        ? '<td class="rt-self"></td>'
+        : '<td>' + escapeHtml(row.cells[j] || '') + '</td>';
+    }
+    tds += '<td class="rt-sum">' + row.points + '</td>'
+      + '<td class="rt-sum">' + (row.place || '') + '</td>';
+    return '<tr>' + tds + '</tr>';
+  }).join('');
+
+  return '<div class="rt-wrap"><table class="rt"><thead>' + head
+    + '</thead><tbody>' + body + '</tbody></table></div>';
+}
+
+function homeResults() {
+  const card = el('div', 'card');
+  recentSessions().slice(0, 6).forEach(s => {
+    // У тренировки с двумя составами счёт бывает у обоих: сыграл один,
+    // но итог мог быть внесён и распущенному — показываем всё, что есть.
+    [s.openPlay, s.rival].filter(op => op && op.results).forEach(op => {
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(op.title) + '</div>'
+        + '<div class="t2">' + escapeHtml(dayLabelLong(s.date, state.data.today)
+          + ' · ' + fmtRange(s.start, s.end)) + '</div>'
+        + resultsTableHtml(op)
+        + (op.results.note
+          ? '<div class="rt-note">Ещё играли: ' + escapeHtml(op.results.note) + '</div>' : '');
+      card.appendChild(it);
+    });
   });
   return card;
 }

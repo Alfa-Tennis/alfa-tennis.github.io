@@ -374,6 +374,44 @@ table.cross .no {
   opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 60; }
 .toast.show { opacity: 1; transform: translateX(-50%); }
 
+/* ---------- Таблица тренировки ---------- */
+/* Круговая сетка — та же, что на бумажном листе: строки в порядке
+   записи, клетка со счётом геймов, справа очки и место. Живёт и на
+   экране, и на печати, поэтому стили общие. */
+.rt-wrap { overflow-x: auto; margin: 8px 0 4px; }
+.rt { border-collapse: collapse; font-size: 13px; width: 100%; }
+.rt th, .rt td { border: 1px solid var(--line); padding: 5px 6px; text-align: center; white-space: nowrap; }
+.rt th { background: #f4f7f5; font-weight: 600; }
+.rt .rt-name { text-align: left; white-space: normal; min-width: 150px; }
+.rt .rt-self { background: #e7ebe9; }
+.rt .rt-sum { font-weight: 600; }
+.rt-note { font-size: 13px; color: var(--ink-soft); margin-top: 4px; white-space: pre-line; }
+
+/* Печать существует ради одного листа: таблицы, которую кладут на
+   планшетку и заполняют ручкой. Поэтому на бумагу уходит только
+   #printArea, а панель прячется целиком — распечатанная вкладка с
+   кнопками не нужна никому. */
+#printArea { display: none; }
+@media print {
+  body { background: #fff; }
+  .topbar, .tabs, #view, .backdrop, .toast, #login { display: none !important; }
+  #printArea { display: block !important; padding: 0; }
+  .pr-head { margin-bottom: 10px; }
+  .pr-head h2 { margin: 0 0 2px; font-size: 17px; }
+  .pr-head .pr-sub { font-size: 13px; color: #444; }
+  .rt { font-size: 13px; }
+  /* Клетки крупнее экранных: в пустую таблицу на корте пишут ручкой,
+     и в семь пикселей высоты счёт не влезает. */
+  .rt th, .rt td { border: 1px solid #333; padding: 14px 8px; }
+  .rt th { padding: 7px 8px; }
+  .rt th { background: #eee; }
+  .rt .rt-self { background: #ddd; }
+  /* Пустые строки под парные довески: на листе их дописывают от руки,
+     и место под них надо оставить заранее. */
+  .pr-lines { margin-top: 12px; font-size: 13px; }
+  .pr-lines div { border-bottom: 1px solid #999; height: 22px; margin-top: 10px; }
+}
+
 @media (max-width: 560px) {
   .grid2 { grid-template-columns: 1fr; }
   .daynav .date { min-width: 0; font-size: 16px; }
@@ -419,6 +457,10 @@ table.cross .no {
 
 <div class="backdrop" id="backdrop"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
+
+<!-- Лист тренировки на печать. На экране скрыт всегда, на бумаге —
+     единственное, что остаётся от страницы. -->
+<div id="printArea"></div>
 
 <script>
 // ============================================================
@@ -3895,26 +3937,38 @@ function renderOpenPlay(view) {
   card.appendChild(acts);
 
   const live = openPlaySessions().filter(s => s.status !== 'cancelled');
+  const today = db.openplay.today;
+  const ahead = live.filter(s => s.date >= today);
+  const past = live.filter(s => s.date < today);
+
   if (!live.length) {
     card.appendChild(txt('div', 'empty',
       'Пока ничего не назначено. Окно занимает корт как обычная бронь — сетка дня это учитывает.'));
     return;
   }
 
-  const byDate = {};
-  live.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
+  if (!ahead.length) {
+    card.appendChild(txt('div', 'empty', 'Впереди ничего не назначено.'));
+  }
 
-  Object.keys(byDate).sort().forEach(date => {
+  const byDate = (list) => {
+    const map = {};
+    list.forEach(s => { (map[s.date] = map[s.date] || []).push(s); });
+    return map;
+  };
+
+  const days = byDate(ahead);
+  Object.keys(days).sort().forEach(date => {
     const head = el('div', 'section-title');
     head.textContent = longDate(date);
     view.appendChild(head);
 
     const wrap = el('div', 'card');
-    byDate[date].forEach(s => wrap.appendChild(sessionRow(s)));
+    days[date].forEach(s => wrap.appendChild(sessionRow(s)));
 
     // Полупустых окон в дне больше одного — самое время предложить их
     // слепить: ровно этот выход владелец и выбирает чаще всего.
-    const thin = byDate[date].filter(s => s.openPlay.taken < db.openplay.minPlayers);
+    const thin = days[date].filter(s => s.openPlay.taken < db.openplay.minPlayers);
     if (thin.length > 1) {
       const hint = el('div', 'empty');
       hint.textContent = 'В этот день ' + thin.length + ' окна набраны меньше чем на '
@@ -3923,6 +3977,21 @@ function renderOpenPlay(view) {
     }
     view.appendChild(wrap);
   });
+
+  // Сыгранное — внизу и отдельно: сюда заходят за одним, внести счёт.
+  // Выше списка ему не место, вперёд смотрят чаще, чем назад.
+  if (past.length) {
+    view.appendChild(txt('div', 'section-title', 'Уже сыграно'));
+    const wrap = el('div', 'card');
+    wrap.appendChild(txt('div', 'empty',
+      'Последние дни — чтобы внести результаты. Итоги видны на сайте столько же дней.'));
+    const gone = byDate(past);
+    Object.keys(gone).sort().reverse().forEach(date => {
+      wrap.appendChild(txt('div', 't1', longDate(date)));
+      gone[date].forEach(s => wrap.appendChild(sessionRow(s)));
+    });
+    view.appendChild(wrap);
+  }
 }
 
 function sessionRow(s) {
@@ -3954,23 +4023,28 @@ function sessionRow(s) {
     it.appendChild(rosterBlock(s, 'alt'));
   }
 
+  // Сыгранное не набирают и не отменяют: набор кончился вместе с игрой,
+  // а отмена разослала бы участникам новость о том, что тренировки,
+  // на которой они были, не будет. Остаётся правка состава и счёт.
+  const over = s.date < db.openplay.today;
+
   const acts = el('div', 'acts');
   // Правки самого окна здесь больше нет: прежняя кнопка «Изменить»
   // правила подпись и места первого состава, а стояла снаружи, рядом со
   // «Вторым составом» и «Отменить», — и читалась как «изменить
   // тренировку целиком». Теперь правка живёт внутри своего состава, у
   // обоих одинаковая. Время и корты меняются переносом в сетке дня.
-  if (!s.rival && !s.decidedAt) {
+  if (!s.rival && !s.decidedAt && !over) {
     acts.appendChild(btn('Второй состав', 'btn sm sec', () => openRivalForm(s)));
   }
   // Окно с двумя составами не сливается: непонятно, чей состав куда
   // переезжает. Кнопку не показываем, а не отказываем после нажатия.
-  if (!s.rival
+  if (!s.rival && !over
     && openPlaySessions().filter(x => x.date === s.date && x.id !== s.id
       && x.status !== 'cancelled' && !x.rival).length) {
     acts.appendChild(btn('Объединить', 'btn sm sec', () => openMergeSession(s)));
   }
-  acts.appendChild(btn('Отменить', 'btn sm danger', () => confirmDelete(
+  if (!over) acts.appendChild(btn('Отменить', 'btn sm danger', () => confirmDelete(
     'Отменить тренировку?',
     op.title + ' · ' + longDate(s.date) + ' · ' + fmtRange(s.start, s.end),
     op.taken > 0
@@ -4005,9 +4079,19 @@ function rosterBlock(s, roster) {
   // состав» — то, что внутри рамки. Раньше у первого правка называлась
   // «Изменить» и стояла снаружи, рядом с правкой времени и кортов, — и
   // отличить их можно было только на ощупь.
+  // Итоги показываем сразу в строке, как только счёт внесён: ради них
+  // владелец на эту вкладку и возвращается после игры.
+  if (op.results && op.results.played) wrap.appendChild(resultsView(op));
+
   const acts = el('div', 'acts');
   acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s, roster)));
   acts.appendChild(btn('Изменить состав', 'btn sm sec', () => openSessionForm(s, null, roster)));
+  // Результаты нужны и до игры: с пустой таблицей это лист на планшетку,
+  // который заполняют ручкой на корте.
+  if (op.signups.length >= 2) {
+    acts.appendChild(btn(op.results && op.results.played ? 'Правка результатов' : 'Результаты',
+      'btn sm sec', () => openResultsForm(s, roster)));
+  }
 
   // Распустить можно любой из двух — но только когда их два: одинокий
   // состав это и есть сама тренировка, и снимается она целиком, кнопкой
@@ -4051,16 +4135,181 @@ function signupRow(s, p, num, inQueue) {
   return row;
 }
 
+// ---------- Результаты тренировки ----------
+//
+// На корте итог пишут от руки на листе: круговая сетка, в клетке счёт
+// геймов, справа очки и место. Здесь то же самое — и ради того же
+// листа: пустую таблицу печатают перед игрой, заполненную вносят после.
+//
+// Очки и места считает сервер. Страница их не пересчитывает нигде,
+// включая печать: два расчёта однажды разошлись бы, и спорить с
+// напечатанным листом было бы нечем.
+
+function playerLabel(row) {
+  return row.name + (row.partnerName ? ' / ' + row.partnerName : '');
+}
+
+function resultsTableHtml(op) {
+  const r = op.results;
+  if (!r || !r.rows || !r.rows.length) return '';
+  const n = r.rows.length;
+
+  let head = '<tr><th class="rt-name">Участник</th>';
+  for (let i = 1; i <= n; i++) head += '<th>' + i + '</th>';
+  head += '<th>Очки</th><th>Место</th></tr>';
+
+  const body = r.rows.map(row => {
+    let tds = '<td class="rt-name">' + row.no + '. ' + escapeHtml(playerLabel(row)) + '</td>';
+    for (let j = 0; j < n; j++) {
+      tds += (row.no - 1 === j)
+        ? '<td class="rt-self"></td>'
+        : '<td>' + escapeHtml(row.cells[j] || '') + '</td>';
+    }
+    // У несыгранного листа очки и места пустые: «1 место» у первого по
+    // списку — это неправда, напечатанная крупно.
+    tds += '<td class="rt-sum">' + (r.played ? row.points : '') + '</td>'
+      + '<td class="rt-sum">' + (row.place || '') + '</td>';
+    return '<tr>' + tds + '</tr>';
+  }).join('');
+
+  return '<div class="rt-wrap"><table class="rt"><thead>' + head
+    + '</thead><tbody>' + body + '</tbody></table></div>';
+}
+
+function resultsView(op) {
+  const box = el('div');
+  box.innerHTML = resultsTableHtml(op)
+    + '<div class="rt-note">Сыграно ' + op.results.played + ' из ' + op.results.total
+    + (op.results.note ? ' · ещё играли: ' + escapeHtml(op.results.note) : '') + '</div>';
+  return box;
+}
+
+function openResultsForm(s, roster) {
+  const which = roster === 'alt' ? 'alt' : 'main';
+  const op = which === 'alt' ? s.rival : s.openPlay;
+
+  const body = el('div');
+  body.innerHTML = '<h3>Результаты · ' + escapeHtml(op.title) + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
+
+  // Прежний счёт достаём по паре в любом порядке: в файле он лежит так,
+  // как его ввели в прошлый раз, а форма строит пары по списку состава.
+  const prev = {};
+  (op.matches || []).forEach(m => {
+    prev[m.a + '|' + m.b] = { ga: m.ga, gb: m.gb };
+    prev[m.b + '|' + m.a] = { ga: m.gb, gb: m.ga };
+  });
+
+  const pairs = [];
+  const list = op.signups;
+  const tooMany = !!(op.results && op.results.tooMany);
+
+  if (tooMany) {
+    body.appendChild(txt('div', 'empty',
+      'В составе ' + list.length + ' участников — круговой таблицей столько не показать и не '
+      + 'напечатать. Итог можно записать строкой ниже.'));
+  } else {
+    const num = (v) => {
+      const i = document.createElement('input');
+      i.type = 'number'; i.min = '0'; i.max = '99'; i.inputMode = 'numeric';
+      i.value = (v === undefined || v === null) ? '' : String(v);
+      return i;
+    };
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j];
+        const known = prev[a.id + '|' + b.id];
+        const line = el('div', 'score-row');
+        const ga = num(known && known.ga);
+        const gb = num(known && known.gb);
+        line.appendChild(ga);
+        line.appendChild(txt('span', 'score-sep', ':'));
+        line.appendChild(gb);
+        wrapField(body, playerLabel(a) + ' — ' + playerLabel(b), line);
+        pairs.push({ a: a.id, b: b.id, ga, gb });
+      }
+    }
+    body.appendChild(txt('div', 'empty',
+      'Счёт в геймах, как на листе. Несыгранное оставьте пустым — таблица покажет пустую клетку.'));
+  }
+
+  const note = document.createElement('textarea');
+  note.rows = 2;
+  note.value = (op.results && op.results.note) || '';
+  note.placeholder = 'Баладьян/Берсенев — Юшкевич/Емельянов 2:4';
+  wrapField(body, 'Ещё играли — парами или вне сетки', note);
+
+  // Половина счёта — почти наверняка недописанная строка, а не ничья с
+  // пустотой. Молча принимать такое нельзя: в таблице она станет «6:0».
+  const collect = () => {
+    const matches = [];
+    for (const p of pairs) {
+      const a = p.ga.value.trim(), b = p.gb.value.trim();
+      if (a === '' && b === '') continue;
+      if (a === '' || b === '') return null;
+      matches.push({ a: p.a, b: p.b, ga: Number(a), gb: Number(b) });
+    }
+    return matches;
+  };
+
+  const save = async (andPrint) => {
+    const matches = collect();
+    if (!matches) { toast('В каком-то матче записана только половина счёта', 4000); return; }
+    const res = await act(() => api('adminOpenPlayResults', {
+      date: s.date, bookingId: s.id, roster: which, matches, note: note.value,
+    }), 'Результаты сохранены');
+    if (!res) return;
+    closeModal();
+    if (andPrint) printResults(s.id, s.date, which);
+  };
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Сохранить', 'btn', () => save(false)));
+  // Печать всегда после сохранения: печатается ровно то, что лежит в
+  // системе, и напечатанный лист не расходится с экраном.
+  acts.appendChild(btn('Сохранить и напечатать', 'btn sec', () => save(true)));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
+// Лист на бумагу. Данные берём заново из обновлённой ленты: сохранение
+// уже прошло, и в старой карточке лежит счёт до правки.
+function printResults(id, date, which) {
+  const fresh = openPlaySessions().find(x => x.id === id && x.date === date);
+  const op = fresh ? (which === 'alt' ? fresh.rival : fresh.openPlay) : null;
+  if (!op) { toast('Тренировка не найдена'); return; }
+
+  const area = document.getElementById('printArea');
+  area.innerHTML = '<div class="pr-head"><h2>' + escapeHtml(op.title) + '</h2>'
+    + '<div class="pr-sub">'
+    + escapeHtml(longDate(fresh.date) + ' · ' + fmtRange(fresh.start, fresh.end) + ' · ' + op.level)
+    + '</div></div>'
+    + resultsTableHtml(op)
+    + (op.results && op.results.note
+      ? '<div class="rt-note">Ещё играли: ' + escapeHtml(op.results.note) + '</div>' : '')
+    // Две пустые строки под то, что допишут на корте от руки.
+    + '<div class="pr-lines"><div></div><div></div></div>';
+
+  window.print();
+}
+
 // Последний день, где окна уже заводили: он и предлагается как образец.
-// Ничего не копится — смотрим то же окно в три недели вперёд, что и
-// список; прошедшие дни сюда не попадают вовсе. Отменённые окна тоже:
+// Ничего не копится — смотрим то же окно, что и список. Сначала ищем
+// среди назначенного впереди, и только если там пусто — среди
+// сыгранного: «собрать день как в прошлую субботу» это тот же образец,
+// а после длинного перерыва другого и нет. Отменённые окна не в счёт:
 // день, где всё отменили, — не образец.
 function lastFilledDay() {
-  const byDate = {};
-  openPlaySessions().filter(s => s.status !== 'cancelled')
-    .forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
-  const dates = Object.keys(byDate).sort();
-  return dates.length ? { date: dates[dates.length - 1], sessions: byDate[dates[dates.length - 1]] } : null;
+  const pick = (list) => {
+    const byDate = {};
+    list.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
+    const dates = Object.keys(byDate).sort();
+    return dates.length ? { date: dates[dates.length - 1], sessions: byDate[dates[dates.length - 1]] } : null;
+  };
+  const live = openPlaySessions().filter(s => s.status !== 'cancelled');
+  return pick(live.filter(s => s.date >= db.openplay.today)) || pick(live);
 }
 
 // ---------- Окна: создание и правка ----------
@@ -4337,7 +4586,10 @@ function openAddSignup(s, roster) {
 }
 
 function openMoveSignup(s, p) {
-  const others = openPlaySessions().filter(x => x.id !== s.id && x.status !== 'cancelled');
+  // В прошедшие окна не переносим: лента теперь показывает и их, но
+  // записать человека во вчерашнюю игру нельзя.
+  const others = openPlaySessions().filter(x => x.id !== s.id && x.status !== 'cancelled'
+    && x.date >= db.openplay.today);
   if (!others.length) return toast('Переносить некуда — других окон нет');
 
   const body = el('div');
@@ -6519,7 +6771,8 @@ function renderStats(view) {
     const col = el('div', 'bar-col');
     const bar = el('div', 'bar' + (h.load < 0.2 ? ' low' : ''));
     bar.style.height = Math.max(2, Math.round(h.load * 100)) + '%';
-    bar.title = h.label + ' — ' + Math.round(h.load * 100) + '%';
+    bar.title = fmtRange(minutesToTime(h.hour * 60), minutesToTime(h.hour * 60 + 60))
+      + ' — ' + Math.round(h.load * 100) + '%';
     col.appendChild(bar);
     // Подписываем каждый второй час: иначе на телефоне цифры сливаются.
     col.appendChild(txt('div', 'bar-lb', h.hour % 2 === 0 ? h.label.slice(0, 2) : ''));
@@ -6541,23 +6794,39 @@ function renderStats(view) {
 
   s.idle.forEach(h => {
     const it = el('div', 'item');
-    it.innerHTML = '<div class="t1">' + escapeHtml(h.label) + ' — '
-      + Math.round(h.load * 100) + '% загрузки</div>';
-    const acts = el('div', 'acts');
+    // Час, а не момент: «07:00» владелец честно читал как «до скольки?».
+    // Строка статистики — это ячейка от часа до часа, ею и подписываем.
+    const hourFrom = minutesToTime(h.hour * 60);
+    const hourTo = minutesToTime(h.hour * 60 + 60);
+
     // Готовое предложение, а не просто цифра: ради этого владелец сюда
     // и заходит. Окно предлагаем на два часа от пустого — час скидки
     // редко кого сдвигает с места.
-    acts.appendChild(btn('Сделать скидочным', 'btn sm sec', () => openRuleForm(null, {
-      from: minutesToTime(h.hour * 60),
+    const preset = {
+      from: hourFrom,
       to: minutesToTime(Math.min(h.hour * 60 + 120, timeToMinutes(db.config.closeTime))),
       days: [1, 2, 3, 4, 5],
       pricePerHour: Math.round(db.config.pricePerHour * 0.8 / 100) * 100,
-    })));
+    };
+
+    it.innerHTML = '<div class="t1">' + escapeHtml(fmtRange(hourFrom, hourTo))
+      + ' — корты заняты на ' + Math.round(h.load * 100) + '%</div>'
+      // Что именно сделает кнопка, видно до нажатия: иначе «сделать
+      // скидочным» открывает форму с цифрами, взявшимися ниоткуда.
+      + '<div class="t2">Кнопка предложит окно ' + escapeHtml(fmtRange(preset.from, preset.to))
+      // money2, а не money: внутри этой функции `money` — карточка денег
+      // выше, и глобальная подпись цены здесь перекрыта.
+      + ' по будням, ' + escapeHtml(money2(preset.pricePerHour)) + ' за час'
+      + ' (сейчас ' + escapeHtml(money2(db.config.pricePerHour)) + '). В форме всё можно поправить.</div>';
+
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Сделать скидочным', 'btn sm sec', () => openRuleForm(null, preset)));
     it.appendChild(acts);
     idle.appendChild(it);
   });
   idle.appendChild(txt('div', 'empty',
-    'Показаны часы, в которые играют, но мало: скидка сдвигает существующий спрос, а не создаёт новый. '
+    'Процент — доля занятого времени на обоих кортах в этот час за месяц. Показаны часы, в которые '
+    + 'играют, но мало: скидка сдвигает существующий спрос, а не создаёт новый. '
     + 'Список окон и их порядок — во вкладке «Настройки».'));
   view.appendChild(idle);
 
