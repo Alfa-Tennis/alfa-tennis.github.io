@@ -392,7 +392,27 @@ table.cross .no {
    #printArea, а панель прячется целиком — распечатанная вкладка с
    кнопками не нужна никому. */
 #printArea { display: none; }
+/* Неделя печатается альбомом, лист тренировки — как был, книжкой.
+   Именованная страница меняет ориентацию только у своего листа. */
+@page week-sheet { size: A4 landscape; margin: 8mm; }
 @media print {
+  .pr-week { page: week-sheet; }
+  /* Без этого браузер печатает сетку без заливки, и занятое не
+     отличить от свободного — а ради этого лист и печатают. */
+  .pr-week, .pr-week * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pr-week .pr-head { margin-bottom: 4px; }
+  .pr-week .pr-head h2 { font-size: 14px; }
+  .pr-week .pr-head .pr-sub { font-size: 10px; }
+  /* Липкие заголовки экрана на бумаге съезжают поверх сетки. */
+  .pr-week .grid.week .g-day, .pr-week .grid.week .g-head, .pr-week .grid.week .g-time {
+    position: static; }
+  .pr-week .grid.week .g-day { font-size: 10px; padding: 2px 0; }
+  .pr-week .grid.week .g-head { font-size: 8px; padding: 1px 0; }
+  .pr-week .grid.week .g-time { font-size: 8px; line-height: 1; }
+  .pr-week .grid.week .blk { font-size: 7.5px; line-height: 1.15; padding: 1px 2px; margin: .3mm .4mm;
+    border-radius: 3px; border-left-width: 2px; }
+  .pr-week .grid.week .blk .b-n { font-size: 7.5px; }
+  .pr-week .g-free { border-bottom-color: #d9dfdc; border-right-color: #d9dfdc; }
   body { background: #fff; }
   .topbar, .tabs, #view, .backdrop, .toast, #login { display: none !important; }
   #printArea { display: block !important; padding: 0; }
@@ -775,6 +795,20 @@ function shortDayLabel(dateIso) {
   return WD_SHORT[d.getUTCDay()] + ', ' + shortDate(dateIso);
 }
 function money(v) { return Math.round(v).toLocaleString('ru-RU') + ' ₽'; }
+
+// Способы оплаты на месте. Один список на обе кнопочные строки — в
+// карточке брони и в «Не оплачено»: разойдись они, одна из них однажды
+// потеряла бы новый способ. Терминал и QR — один способ: оба идут на
+// расчётный счёт, и вечером сверяются одинаково.
+const PAY_VIA = [
+  ['cash', 'наличными'],
+  ['transfer', 'переводом'],
+  ['terminal', 'терминалом / QR'],
+];
+function payViaLabel(via) {
+  const found = PAY_VIA.find(x => x[0] === via);
+  return found ? found[1] : 'наличными';
+}
 function hoursText(min) { return (Math.round(min / 60 * 10) / 10).toString().replace('.', ',') + ' ч'; }
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -960,6 +994,7 @@ async function loadAll() {
     openplay: sessions || null,
     tournaments: b.tournaments || null,
     tourPoints: b.tourPoints || null,
+    tournamentReserves: b.tournamentReserves || null,
     tournament: (b.tournament && b.tournament.tournament) || null,
     // Очки сезона по зачёту этого турнира: сумма и отдельно перенесённое
     // рукой. По ним же идёт сеяние, поэтому едут вместе с карточкой.
@@ -1131,6 +1166,18 @@ function seriesSlotOn(s, dateIso) {
   };
 }
 
+// Резерв под турниры уступает турниру: есть турнирное закрытие на эту
+// дату и этот корт, пересекающееся по времени, — занятия резерва в
+// сетке нет. Зеркало reserveYields из backend/slots.js: там по этому же
+// правилу считается занятость для сайта, и разойтись они не имеют права.
+function reserveYields(s, slot, dateIso) {
+  if (!s || !s.forTournaments || !slot) return false;
+  const from = timeToMinutes(slot.start), to = timeToMinutes(slot.end);
+  return (db.exceptions || []).some(x => x && x.tournamentId && x.date === dateIso
+    && (x.courtId == null || x.courtId === slot.courtId)
+    && from < timeToMinutes(x.end) && timeToMinutes(x.start) < to);
+}
+
 function seriesColorOf(seriesId) {
   const s = seriesId ? db.series.find(x => x.id === seriesId) : null;
   return s && s.color ? s.color : null;
@@ -1176,6 +1223,7 @@ function dayBlocks(dateIso) {
     if (materialized.indexOf(s.id) !== -1) return;
     const cl = clientById(s.clientId);
     const slot = seriesSlotOn(s, dateIso);
+    if (reserveYields(s, slot, dateIso)) return;
     out.push({
       kind: 'series', seriesId: s.id, color: s.color || null,
       courtId: slot.courtId, start: slot.start, end: slot.end, moved: slot.moved,
@@ -1438,6 +1486,13 @@ function renderDay(view) {
     spanBox.appendChild(b);
   });
   nav.appendChild(spanBox);
+  // Печать — только у недели: лист на стойку дублирует ровно её, а день
+  // и так виден целиком на экране у того, кто за стойкой.
+  if (week) {
+    const shown = [];
+    for (let i = 0; i < WEEK_DAYS; i++) shown.push(addDays(date, i));
+    nav.appendChild(btn('Распечатать', 'btn sec sm', () => openWeekPrint(shown)));
+  }
   view.appendChild(nav);
 
   // Пока день не прочитан, сетку не показываем вовсе: пустой корт,
@@ -1723,6 +1778,91 @@ function makeDraggable(block, b, ctx) {
 // Своя прокрутка, а не страничная, нужна ради липких шапки и колонки
 // времени: без них, уехав на четверг, администратор видит «Корт 1» и не
 // знает, чей это четверг.
+// ---------- Печать недели ----------
+//
+// Лист на стойку дублирует экранную неделю: при молчащем интернете или
+// севшем телефоне администратор смотрит в бумагу. Поэтому это та же
+// сетка, что на экране, — тем же buildWeekGrid, а не отдельная вёрстка:
+// вторая вёрстка однажды разошлась бы с экраном в мелочи, а спорить,
+// где правда, у стойки некогда. Мелкие брони остаются без подписи, как и
+// на экране.
+//
+// Выбранные дни целиком ложатся на один лист A4 альбомом. Данные — те,
+// что неделя уже загрузила: отдельного запроса нет.
+
+function openWeekPrint(dates) {
+  const picked = new Set(dates);
+  const body = el('div');
+  body.innerHTML = '<h3>Распечатать неделю</h3>'
+    + '<div class="m-sub">Выбранные дни лягут на один лист A4 — так же, как видно на экране.</div>';
+
+  const row = el('div', 'acts');
+  const buttons = new Map();
+  const paint = () => buttons.forEach((b, d) => { b.className = 'btn sm' + (picked.has(d) ? '' : ' sec'); });
+  dates.forEach(d => {
+    const b = btn(shortDayLabel(d), 'btn sm', () => {
+      if (picked.has(d)) picked.delete(d); else picked.add(d);
+      paint();
+    });
+    buttons.set(d, b);
+    row.appendChild(b);
+  });
+  body.appendChild(row);
+
+  const quick = el('div', 'acts');
+  const pickOnly = (fn) => { picked.clear(); dates.filter(fn).forEach(d => picked.add(d)); paint(); };
+  quick.appendChild(btn('Все', 'btn sm sec', () => pickOnly(() => true)));
+  quick.appendChild(btn('Будни', 'btn sm sec', () => pickOnly(d => weekday(d) >= 1 && weekday(d) <= 5)));
+  quick.appendChild(btn('Выходные', 'btn sm sec', () => pickOnly(d => weekday(d) === 0 || weekday(d) === 6)));
+  body.appendChild(quick);
+  paint();
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Печать', 'btn', () => {
+    const chosen = dates.filter(d => picked.has(d));
+    if (!chosen.length) { toast('Выберите хотя бы один день'); return; }
+    closeModal();
+    printWeek(chosen);
+  }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+function printWeek(dates) {
+  const grid = buildWeekGrid(dates);
+  const cfg = db.config;
+  const rows = (timeToMinutes(cfg.closeTime) - timeToMinutes(cfg.openTime)) / cfg.slotStep;
+  // Высота строки считается от их числа: часы у клуба сезонные, и лист
+  // обязан влезть и в летние 22 часа, и в зимние. 165 мм — высота A4
+  // альбомом без полей, шапки листа и двух строк заголовков сетки.
+  grid.style.gridTemplateRows = 'auto auto repeat(' + rows + ', ' + (165 / rows).toFixed(2) + 'mm)';
+  // На экране колонка не уже 74 пикселей и лента листается вбок; на
+  // бумаге листать некуда — колонки делят ширину поровну.
+  grid.style.gridTemplateColumns = '9mm repeat(' + dates.length * db.courts.length + ', minmax(0, 1fr))';
+  // «Сегодня» и «Завтра» в шапке верны только в день печати, а лист
+  // висит у стойки неделю — на бумаге день недели и число.
+  grid.querySelectorAll('.g-day:not(.corner)').forEach((h, i) => {
+    h.textContent = WD_SHORT[weekday(dates[i])] + ', ' + shortDate(dates[i]);
+    h.classList.remove('today');
+  });
+
+  const range = dates.length === 1 ? longDate(dates[0])
+    : shortDate(dates[0]) + ' — ' + shortDate(dates[dates.length - 1]);
+  const area = document.getElementById('printArea');
+  area.innerHTML = '';
+  const sheet = el('div', 'pr-week');
+  sheet.innerHTML = '<div class="pr-head"><h2>График кортов · ' + escapeHtml(range) + '</h2>'
+    // Время печати на листе обязательно: бумага устаревает с первой же
+    // новой бронью, и у стойки надо понимать, насколько ей верить.
+    + '<div class="pr-sub">Напечатано ' + escapeHtml(shortDateTime(new Date().toISOString()))
+    + '. Брони после этого момента здесь не видны.</div></div>';
+  sheet.appendChild(grid);
+  area.appendChild(sheet);
+
+  window.print();
+}
+
 function buildWeekGrid(dates) {
   const cfg = db.config;
   const step = cfg.slotStep;
@@ -1987,7 +2127,7 @@ function openBooking(b) {
       payLine.textContent = 'Оплачено абонементом — часы списаны ' + shortDateTime(b.passSpentAt) + '.';
     } else if (b.paidAt) {
       const who = clientById(b.paidBy);
-      payLine.textContent = 'Оплачено ' + (b.paidVia === 'transfer' ? 'переводом' : 'наличными')
+      payLine.textContent = 'Оплачено ' + payViaLabel(b.paidVia)
         + ' · ' + shortDateTime(b.paidAt) + (who ? ' · отметил ' + who.name : '');
     } else {
       payLine.textContent = finished ? 'Оплата не отмечена — бронь висит в списке «Не оплачено».'
@@ -1997,14 +2137,12 @@ function openBooking(b) {
 
     const pay = el('div', 'acts');
     if (!b.passSpentAt && !b.paidAt) {
-      pay.appendChild(btn('Оплатил наличными', 'btn sm', () => {
-        closeModal();
-        act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via: 'cash' }), 'Отмечено: наличными');
-      }));
-      pay.appendChild(btn('Оплатил переводом', 'btn sm', () => {
-        closeModal();
-        act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via: 'transfer' }), 'Отмечено: переводом');
-      }));
+      PAY_VIA.forEach(([via, label]) => {
+        pay.appendChild(btn('Оплатил ' + label, 'btn sm', () => {
+          closeModal();
+          act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via }), 'Отмечено: ' + label);
+        }));
+      });
     } else if (b.paidAt) {
       // Снимает отметку любой администратор, а не только владелец: на
       // стойке легко промахнуться, а звонок владельцу из-за каждого
@@ -2466,10 +2604,10 @@ function renderUnpaid() {
       + (b.clientPhone ? ' · ' + escapeHtml(fmtPhone(b.clientPhone)) : '') + '</div>';
 
     const acts = el('div', 'acts');
-    acts.appendChild(btn('Наличными', 'btn sm', () => act(
-      () => api('adminSetPaid', { date: b.date, bookingId: b.id, via: 'cash' }), 'Отмечено: наличными')));
-    acts.appendChild(btn('Переводом', 'btn sm', () => act(
-      () => api('adminSetPaid', { date: b.date, bookingId: b.id, via: 'transfer' }), 'Отмечено: переводом')));
+    PAY_VIA.forEach(([via, label]) => {
+      acts.appendChild(btn(label.charAt(0).toUpperCase() + label.slice(1), 'btn sm', () => act(
+        () => api('adminSetPaid', { date: b.date, bookingId: b.id, via }), 'Отмечено: ' + label)));
+    });
     // Не пришёл — тоже закрытие долга, только другое: денег нет и
     // не будет, а рейтинг за это снимается.
     acts.appendChild(btn('Не пришли', 'btn sm sec', () => act(
@@ -3311,6 +3449,7 @@ function renderSeries(view) {
       const ended = !!(s.to && s.to < today) || s.active === false;
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(s.title)
+        + (s.forTournaments ? ' <span class="pill grey">резерв под турниры</span>' : '')
         + (ended ? ' <span class="pill grey">завершена</span>' : '') + '</div>'
         + '<div class="t2">' + seriesSchedule(s, true) + ', ' + escapeHtml(fmtRange(s.start, s.end))
         + ' · ' + escapeHtml(courtName(s.courtId))
@@ -3353,7 +3492,8 @@ function renderSeries(view) {
         it.appendChild(row);
       }
 
-      it.appendChild(colorPicker(s));
+      // У резерва цвет закреплён: серый и значит «под турниры».
+      if (!s.forTournaments) it.appendChild(colorPicker(s));
 
       const acts = el('div', 'acts');
       acts.appendChild(btn('Изменить', 'btn sm sec', () => openSeriesForm(s)));
@@ -3472,6 +3612,14 @@ function openSeriesForm(existing) {
   title.placeholder = 'Например: группа Петрова';
   wrapField(body, 'Название', title);
 
+  // Резерв держит время под будущий турнир и уступает ему сам. У него
+  // нет ни клиента, ни своего цвета: время держит клуб, а серый на сетке
+  // и значит «под турниры». Поэтому при отметке эти поля прячутся.
+  const reserve = { on: !!(existing && existing.forTournaments) };
+  body.appendChild(check('Резерв под турниры', reserve.on, v => { reserve.on = v; syncReserve(); },
+    'Время держится, пока турнир не заведён. Турнир на это время встаёт сам, без снятия брони; '
+    + 'удалили турнир — резерв вернулся. Цвет — серый.'));
+
   // «Любой» стоит первым и по умолчанию: администратору обычно всё
   // равно, на каком из двух одинаковых кортов стоит группа, — важно,
   // чтобы время было свободно. Корт при этом выбирается один раз, при
@@ -3534,7 +3682,9 @@ function openSeriesForm(existing) {
   to.value = existing && existing.to ? existing.to : '';
   wrapField(body, 'По — пусто значит бессрочно', to);
 
-  const picked = clientPicker(body, existing ? existing.clientId : null);
+  const clientBox = el('div');
+  body.appendChild(clientBox);
+  const picked = clientPicker(clientBox, existing ? existing.clientId : null);
 
   // Цвет выбирается здесь же, а не только у заведённой брони: в сетке
   // цвет — это способ отличить детскую группу от тренерского времени
@@ -3560,6 +3710,12 @@ function openSeriesForm(existing) {
   colorField.appendChild(swatches);
   body.appendChild(colorField);
 
+  function syncReserve() {
+    clientBox.hidden = reserve.on;
+    colorField.hidden = reserve.on;
+  }
+  syncReserve();
+
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   acts.appendChild(btn(existing ? 'Сохранить' : 'Завести', 'btn', async () => {
@@ -3571,8 +3727,9 @@ function openSeriesForm(existing) {
       weekdays: WD_ORDER.filter(i => days.has(i)),
       start: start.value, end: end.value,
       title: title.value, from: from.value, to: to.value || null,
-      clientId: picked.id,
-      color: chosenColor.id,
+      clientId: reserve.on ? null : picked.id,
+      color: reserve.on ? 'slate' : chosenColor.id,
+      forTournaments: reserve.on,
     };
     if (existing) payload.seriesId = existing.id;
     closeModal();
@@ -5494,7 +5651,7 @@ function renderTournamentCard(view) {
         toast('Корты заняты под турнир');
       } catch (e) {
         if (e.code === 'bookings-clash') {
-          const who = ((e.data && e.data.bookings) || []).map(b => b.clientName || 'бронь').join(', ');
+          const who = clashNames((e.data && e.data.bookings) || []);
           toast('Это время всё ещё занято: ' + who, 6000);
         } else {
           toast(errorText(e.code), 4000);
@@ -6425,6 +6582,14 @@ function levelRow(row, overrides) {
 }
 
 // Одна форма и на создание, и на правку — как у афиши.
+// Кто мешает турниру занять корты — словами. Сервер называет мешающего
+// полем `who`; раньше здесь читалось несуществующее `clientName`, и
+// владелец видел одно безличное «бронь» — ищи сам, чья.
+function clashNames(list) {
+  return list.map(b => (b.series ? 'постоянная «' + (b.who || 'бронь') + '»' : (b.who || 'бронь'))
+    + ' ' + fmtTime(b.start) + '–' + fmtTime(b.end)).join(', ');
+}
+
 function openTournamentForm(existing) {
   const body = el('div');
   body.innerHTML = '<h3>' + (existing ? 'Правка турнира' : 'Новый турнир') + '</h3>'
@@ -6466,6 +6631,36 @@ function openTournamentForm(existing) {
     ? (existing.blockCourtId == null ? 'all' : String(existing.blockCourtId))
     : 'none';
   const blockField = wrapFieldNode(body, 'Корты на время турнира', block);
+
+  // Время из резерва — одним выбором. Субботы держатся постоянной бронью
+  // «под турниры», и турнир заводят ровно на её время: подставляем дату,
+  // часы и корты, а сузить время можно потом, когда станет ясно, сколько
+  // набралось людей. Резерв при этом снимать не нужно — он уступит сам.
+  // Только у нового турнира: у заведённого время уже выбрано.
+  const reserves = (db.tournamentReserves && db.tournamentReserves.reserves) || [];
+  if (!existing && reserves.length) {
+    const pick = document.createElement('select');
+    pick.appendChild(opt('', '— своё время —'));
+    reserves.forEach((r, i) => {
+      const courts = r.courts.length >= (db.courts || []).length
+        ? 'оба корта' : r.courts.map(courtName).join(' и ');
+      pick.appendChild(opt(String(i), longDate(r.date) + ' · ' + fmtRange(r.start, r.end) + ' · ' + courts));
+    });
+    pick.addEventListener('change', () => {
+      const r = reserves[Number(pick.value)];
+      if (!r) return;
+      from.value = r.date;
+      to.value = r.date;
+      timeFrom.value = r.start;
+      timeTo.value = r.end;
+      block.value = r.courts.length >= (db.courts || []).length ? 'all' : String(r.courts[0]);
+      // Поля ниже прячутся и показываются от дат — пусть узнают о смене.
+      [from, to, timeFrom, timeTo, block].forEach(x => x.dispatchEvent(new Event('change')));
+    });
+    // Ставим выбор первым полем после названия: с него и начинают.
+    body.insertBefore(wrapFieldNode(el('div'), 'Взять время из резерва под турниры', pick),
+      from.closest('.field'));
+  }
 
   const fee = document.createElement('input');
   fee.type = 'number'; fee.min = '0'; fee.step = '100';
@@ -6635,7 +6830,7 @@ function openTournamentForm(existing) {
       // стоит чья-то бронь. Сносить её молча система не должна, поэтому
       // просто говорим об этом вслед за сообщением об успехе.
       if (res && res.closure && res.closure.error === 'bookings-clash') {
-        const who = (res.closure.bookings || []).map(b => b.clientName || 'бронь').join(', ');
+        const who = clashNames(res.closure.bookings || []);
         setTimeout(() => toast('Корты не закрыты — это время занято: ' + who, 6000), 1400);
       }
       return res;
