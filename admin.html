@@ -683,6 +683,12 @@ const ERRORS = {
   'invalid-photo': 'Это не похоже на фотографию.',
   'unsupported-photo-type': 'Подойдёт JPEG, PNG или WebP.',
   'photo-too-large': 'Фотография слишком большая даже после сжатия.',
+  'already-drawn': 'Жеребьёвка уже проведена. Чтобы разложить заново, сначала сбросьте её.',
+  'too-few': 'Для жеребьёвки нужно хотя бы четверо участников.',
+  'no-groups': 'У этого турнира нет групп — раскладывать вручную некуда.',
+  'manual-incomplete': 'Разложены не все участники — или состав только что изменился. Обновите страницу.',
+  'manual-bad-group': 'Группы должны идти подряд с A, без пропусков.',
+  'manual-small': 'В каждой группе должно быть хотя бы двое.',
 };
 
 function errorText(code) {
@@ -5734,6 +5740,12 @@ function renderTournamentCard(view) {
 
   if (canEdit && !t.drawnAt) {
     acts.appendChild(btn('Провести жеребьёвку', 'btn sm', () => confirmDraw(t)));
+    // Жеребьёвку в клубе тянут и бочонками — тогда системе остаётся
+    // только записать итог. Для сетки без групп это другая задача
+    // (места с посевом), её здесь нет.
+    if (t.format.groupCount > 0) {
+      acts.appendChild(btn('Разложить вручную', 'btn sm sec', () => openManualDraw(t)));
+    }
   }
   if (canEdit && t.drawnAt && t.status !== 'finished') {
     acts.appendChild(btn('Сбросить жеребьёвку', 'btn sm sec', () => confirmDelete(
@@ -6534,6 +6546,139 @@ function confirmDraw(t) {
     'Жеребьёвка проведена');
   }));
   body.appendChild(acts);
+  showModal(body);
+}
+
+// Ручная раскладка: жеребьёвку провели в клубе бочонками, системе нужно
+// записать её итог. Человека кладут в группу нажатием — и порядок нажатий
+// становится порядком жеребьёвки. Он не для красоты: им решается
+// круговая ничья троих в самом конце тай-брейка, так что заносить надо в
+// том порядке, в каком тянули.
+//
+// Размеры групп не выравниваем: если вытянули 5-3, это решение клуба.
+// Кнопка сохранения ждёт только одного — чтобы всё сходилось.
+function openManualDraw(t) {
+  const people = (t.participants || []).filter(p => p.status !== 'withdrawn');
+  const count = people.length;
+  const body = el('div');
+  body.innerHTML = '<h3>Разложить вручную</h3>'
+    + '<div class="m-sub">' + escapeHtml(t.title) + ' · участников ' + count + '</div>'
+    + '<div class="empty">Нажимайте группу у каждого в том порядке, в каком тянули бочонки: '
+    + 'этот порядок запишется как порядок жеребьёвки. Ошиблись — «убрать» и заново.</div>';
+
+  // Сколько групп предложить сразу — так же, как в автоматической.
+  const target = Math.max(2, Math.ceil(t.maxParticipants / (t.format.groupCount || 1)));
+  let groupCount = Math.max(1, Math.min(6, t.format.groupCount, Math.ceil(count / target)));
+  let seats = [];
+
+  const countSel = document.createElement('select');
+  for (let g = 1; g <= Math.min(6, Math.floor(count / 2)); g++) {
+    countSel.appendChild(opt(String(g), g === 1 ? 'одна, все со всеми' : g + ' группы'));
+  }
+  countSel.value = String(groupCount);
+  wrapField(body, 'Сколько групп', countSel);
+
+  const board = el('div');
+  body.appendChild(board);
+  const pool = el('div');
+  body.appendChild(pool);
+
+  const advance = document.createElement('select');
+  wrapField(body, 'Выходит из группы', advance);
+  const note = el('div', 'empty');
+  body.appendChild(note);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  const save = btn('Записать группы', 'btn', () => {
+    closeModal();
+    act(() => api('adminTournamentDraw', {
+      id: t.id, manual: true, seats, advance: Number(advance.value),
+    }), 'Группы записаны');
+  });
+  acts.appendChild(save);
+  body.appendChild(acts);
+
+  const keys = () => Array.from({ length: groupCount }, (_, i) => String.fromCharCode(65 + i));
+  const nameOf = id => (people.find(p => p.id === id) || {}).name || '—';
+  const numOf = id => (people.find(p => p.id === id) || {}).number || '';
+
+  function place(id, key) {
+    // Переложили в другую группу — встаёт в конец порядка: так и тянули
+    // бы заново, а подменять его место в очереди значило бы переписать
+    // уже записанный порядок.
+    seats = seats.filter(s => s.participantId !== id).concat([{ participantId: id, group: key }]);
+    refresh();
+  }
+
+  function refresh() {
+    const ks = keys();
+    const sizes = ks.map(k => seats.filter(s => s.group === k).length);
+
+    board.innerHTML = '';
+    ks.forEach((k, i) => {
+      const box = el('div', 'item');
+      box.innerHTML = '<div class="t1">Группа ' + k + ' <span class="pill grey">' + sizes[i] + '</span></div>';
+      seats.filter(s => s.group === k).forEach((s, n) => {
+        const line = el('div', 'acts');
+        line.appendChild(txt('div', 't2', (n + 1) + '. №' + numOf(s.participantId) + ' ' + nameOf(s.participantId)));
+        line.appendChild(btn('убрать', 'btn sm sec', () => {
+          seats = seats.filter(x => x.participantId !== s.participantId);
+          refresh();
+        }));
+        box.appendChild(line);
+      });
+      board.appendChild(box);
+    });
+
+    pool.innerHTML = '';
+    const left = people.filter(p => !seats.some(s => s.participantId === p.id));
+    if (left.length) {
+      pool.appendChild(txt('div', 't2', 'Ещё не разложены — ' + left.length + ':'));
+      left.forEach(p => {
+        const row = el('div', 'item');
+        row.appendChild(txt('div', 't1', '№' + p.number + ' ' + p.name));
+        const pick = el('div', 'acts');
+        ks.forEach(k => pick.appendChild(btn(k, 'btn sm', () => place(p.id, k))));
+        row.appendChild(pick);
+        pool.appendChild(row);
+      });
+    }
+
+    // Выходит меньше, чем играет в самой маленькой группе.
+    const smallest = left.length ? Math.min.apply(null, groupSizes(count, groupCount)) : Math.min.apply(null, sizes);
+    const keep = Number(advance.value) || t.format.advance;
+    advance.innerHTML = '';
+    for (let n = 1; n < Math.max(2, smallest); n++) {
+      advance.appendChild(opt(String(n), n === 1 ? 'по одному' : 'по ' + n));
+    }
+    advance.value = String(Math.max(1, Math.min(keep, smallest - 1)));
+
+    let text = '';
+    let ready = false;
+    if (left.length) text = 'Осталось разложить: ' + left.length + '.';
+    else if (sizes.some(n => n === 0)) text = 'Группа ' + ks[sizes.indexOf(0)] + ' пустая — уберите лишнюю группу или переложите в неё людей.';
+    else if (sizes.some(n => n < 2)) text = 'В группе ' + ks[sizes.findIndex(n => n < 2)] + ' один человек — нужно хотя бы двое.';
+    else {
+      ready = true;
+      text = 'Всё разложено: ' + sizes.join(', ') + '.';
+      if (Math.max.apply(null, sizes) !== Math.min.apply(null, sizes)) {
+        text += ' Группы разного размера — так можно, но в меньшей сыграют меньше матчей.';
+      }
+      if (smallest <= Number(advance.value)) text += ' ⚠ Из самой маленькой группы выходят все.';
+    }
+    note.textContent = text;
+    save.disabled = !ready;
+  }
+
+  countSel.addEventListener('change', () => {
+    groupCount = Number(countSel.value);
+    // Групп стало меньше — людей из исчезнувших возвращаем в общий список.
+    seats = seats.filter(s => keys().indexOf(s.group) >= 0);
+    refresh();
+  });
+  advance.addEventListener('change', refresh);
+  refresh();
   showModal(body);
 }
 

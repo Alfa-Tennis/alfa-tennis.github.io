@@ -398,11 +398,16 @@ function render() {
   acts.appendChild(button('← Назад', 'btn sec', () => {
     if (history.length > 1) history.back(); else location.href = 'index.html';
   }));
-  if (t.drawnAt) {
+  // Разложенное руками по итогам жеребьёвки в клубе церемонией не
+  // показываем: мячи изображали бы жребий сервера, которого не было.
+  if (t.drawnAt && !t.drawManual) {
     acts.appendChild(button('Показать жеребьёвку', 'btn sec', () => playCeremony(false)));
   }
   acts.appendChild(button('На печать', 'btn sec', () => window.print()));
   head.appendChild(acts);
+  if (t.drawnAt && t.drawManual) {
+    head.appendChild(txt('div', 'meta', 'Группы составлены жеребьёвкой в клубе.'));
+  }
   view.appendChild(head);
 
   // Итоги турнира — первым делом после шапки: за ними и приходят, когда
@@ -904,7 +909,7 @@ async function load() {
   // Жеребьёвку показываем сама собой ровно один раз — тому, кто эту
   // раскладку ещё не видел. Дальше только по кнопке: повторный показ
   // при каждом заходе быстро превратился бы из праздника в помеху.
-  if (state.t.drawnAt && !store.get(seenKey(state.t))) playCeremony(true);
+  if (state.t.drawnAt && !state.t.drawManual && !store.get(seenKey(state.t))) playCeremony(true);
 }
 
 load();
