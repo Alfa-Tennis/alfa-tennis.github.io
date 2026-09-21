@@ -122,6 +122,9 @@ main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
 .btn.danger { background: var(--danger); }
 .btn.danger:hover { background: #97302f; }
 .btn:disabled { opacity: .5; cursor: default; }
+/* Ссылка в виде кнопки — «Позвонить»: у <a> свои подчёркивание и цвет. */
+a.btn { display: inline-block; text-decoration: none; }
+a.btn.sec:visited { color: var(--ink); }
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .field { display: block; margin-bottom: 10px; }
@@ -828,6 +831,22 @@ function escapeHtml(s) {
 function fmtPhone(p) {
   const d = String(p).replace(/\D/g, '').slice(-10);
   return d.length === 10 ? '+7 ' + d.slice(0,3) + ' ' + d.slice(3,6) + '-' + d.slice(6,8) + '-' + d.slice(8) : p;
+}
+
+// Кнопка «Позвонить»: ссылка tel:, на телефоне она сразу открывает
+// набор номера. Нужна там, где решение принимают после звонка, — новый
+// клиент без Telegram и длинная бронь на подтверждение: переписывать
+// номер с экрана руками на бегу — верный способ ошибиться цифрой.
+// Номер в карточках хранится по-разному (10 цифр или с +7), поэтому
+// берём последние десять.
+function callButton(phone) {
+  const d = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (d.length !== 10) return null;
+  const a = document.createElement('a');
+  a.className = 'btn sm sec';
+  a.href = 'tel:+7' + d;
+  a.textContent = 'Позвонить';
+  return a;
 }
 
 // Маска ввода. Администратор записывает людей на бегу и с чужих слов —
@@ -2591,6 +2610,8 @@ function renderRequests(view) {
       + ' · ' + escapeHtml(fmtPhone(b.clientPhone)) + '</div>'
       + (b.expired ? '<div class="t2">Корт уже вернулся в общий доступ — подтвердить нельзя.</div>' : '');
     const acts = el('div', 'acts');
+    const call = callButton(b.clientPhone);
+    if (call) acts.appendChild(call);
     // Заявка могла протухнуть, пока админ смотрел на список: кнопку
     // «Подтвердить» на отпущенный корт не показываем вовсе.
     if (!b.expired) {
@@ -2626,6 +2647,8 @@ function renderRequests(view) {
       // чего проверка и заводилась.
       + (cl.awaitingGroup ? ' · <b>не состоит в группе центра</b>' : '') + '</div>';
     const acts = el('div', 'acts');
+    const call = callButton(cl.phone);
+    if (call) acts.appendChild(call);
     acts.appendChild(btn('Подтвердить', 'btn sm', () =>
       act(() => api('verifyClient', { clientId: cl.id }), 'Клиент может бронировать')));
     acts.appendChild(btn('Отклонить', 'btn sm danger', () =>
