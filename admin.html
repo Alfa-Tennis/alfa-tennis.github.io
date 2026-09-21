@@ -374,6 +374,21 @@ table.cross .no {
   opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 60; }
 .toast.show { opacity: 1; transform: translateX(-50%); }
 
+/* ---------- Мини-календарь выбора дней для печати ---------- */
+.mcal { margin: 10px 0 6px; }
+.mcal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.mcal-title { font-weight: 600; text-transform: capitalize; }
+.mcal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.mcal-wd { text-align: center; font-size: 12px; color: var(--ink-soft); padding: 2px 0; }
+.mcal-day { appearance: none; border: 1px solid var(--line); background: var(--surface); border-radius: 8px;
+  padding: 7px 0; font: inherit; font-size: 14px; cursor: pointer; }
+.mcal-day:hover { border-color: var(--accent); }
+.mcal-day.out { color: #aab4b0; }
+.mcal-day.today { font-weight: 700; }
+.mcal-day.in { background: var(--accent-tint); border-color: var(--accent-tint); }
+.mcal-day.edge { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mcal-sum { font-size: 14px; margin-top: 8px; }
+
 /* ---------- Таблица тренировки ---------- */
 /* Круговая сетка — та же, что на бумажном листе: строки в порядке
    записи, клетка со счётом геймов, справа очки и место. Живёт и на
@@ -392,11 +407,7 @@ table.cross .no {
    #printArea, а панель прячется целиком — распечатанная вкладка с
    кнопками не нужна никому. */
 #printArea { display: none; }
-/* Неделя печатается альбомом, лист тренировки — как был, книжкой.
-   Именованная страница меняет ориентацию только у своего листа. */
-@page week-sheet { size: A4 landscape; margin: 8mm; }
 @media print {
-  .pr-week { page: week-sheet; }
   /* Без этого браузер печатает сетку без заливки, и занятое не
      отличить от свободного — а ради этого лист и печатают. */
   .pr-week, .pr-week * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1790,43 +1801,129 @@ function makeDraggable(block, b, ctx) {
 // Выбранные дни целиком ложатся на один лист A4 альбомом. Данные — те,
 // что неделя уже загрузила: отдельного запроса нет.
 
-function openWeekPrint(dates) {
-  const picked = new Set(dates);
-  const body = el('div');
-  body.innerHTML = '<h3>Распечатать неделю</h3>'
-    + '<div class="m-sub">Выбранные дни лягут на один лист A4 — так же, как видно на экране.</div>';
+// Сколько дней влезает на лист: больше семи колонок-пар сетка на A4
+// не читается.
+const PRINT_MAX_DAYS = 7;
 
-  const row = el('div', 'acts');
-  const buttons = new Map();
-  const paint = () => buttons.forEach((b, d) => { b.className = 'btn sm' + (picked.has(d) ? '' : ' sec'); });
-  dates.forEach(d => {
-    const b = btn(shortDayLabel(d), 'btn sm', () => {
-      if (picked.has(d)) picked.delete(d); else picked.add(d);
-      paint();
-    });
-    buttons.set(d, b);
-    row.appendChild(b);
-  });
-  body.appendChild(row);
+// Выбор дней — отрезком в мини-календаре: нажали первый день, нажали
+// последний. Прежние кнопки-дни по одному заказчик забраковал: неясно,
+// что выбрано, и нельзя взять дни через границу недели — «со среды по
+// вторник» кнопками показанной недели не собрать.
+function openWeekPrint(dates) {
+  // Понедельник той недели, что на экране, — от него считаются быстрые
+  // кнопки: «будни» — это пн–пт, а не пять дней от открытой даты.
+  const monday = addDays(dates[0], -((weekday(dates[0]) + 6) % 7));
+  const range = { from: dates[0], to: dates[dates.length - 1], waitingEnd: false };
+  let month = dates[0].slice(0, 7);
+
+  const body = el('div');
+  body.innerHTML = '<h3>Распечатать график</h3>'
+    + '<div class="m-sub">Нажмите первый день и последний — до ' + PRINT_MAX_DAYS
+    + ' дней подряд. Всё выбранное ляжет на один лист A4 так же, как видно на экране.</div>';
 
   const quick = el('div', 'acts');
-  const pickOnly = (fn) => { picked.clear(); dates.filter(fn).forEach(d => picked.add(d)); paint(); };
-  quick.appendChild(btn('Все', 'btn sm sec', () => pickOnly(() => true)));
-  quick.appendChild(btn('Будни', 'btn sm sec', () => pickOnly(d => weekday(d) >= 1 && weekday(d) <= 5)));
-  quick.appendChild(btn('Выходные', 'btn sm sec', () => pickOnly(d => weekday(d) === 0 || weekday(d) === 6)));
+  const preset = (a, b) => { range.from = a; range.to = b; range.waitingEnd = false; month = a.slice(0, 7); paint(); };
+  quick.appendChild(btn('Эта неделя', 'btn sm sec', () => preset(monday, addDays(monday, 6))));
+  quick.appendChild(btn('Будни', 'btn sm sec', () => preset(monday, addDays(monday, 4))));
+  quick.appendChild(btn('Выходные', 'btn sm sec', () => preset(addDays(monday, 5), addDays(monday, 6))));
   body.appendChild(quick);
+
+  const cal = el('div', 'mcal');
+  body.appendChild(cal);
+  const summary = el('div', 'mcal-sum');
+  body.appendChild(summary);
+
+  const span = () => Math.round((Date.parse(range.to) - Date.parse(range.from)) / 86400000) + 1;
+
+  const pick = (d) => {
+    if (!range.waitingEnd) {
+      range.from = d; range.to = d; range.waitingEnd = true;
+    } else {
+      let a = range.from, b = d;
+      if (b < a) { const t = a; a = b; b = t; }
+      // Длиннее семи дней не принимаем, а обрезаем от первого нажатия:
+      // отказ с сообщением заставил бы кликать заново, хотя намерение
+      // понятно — «с этого дня и дальше».
+      if (Math.round((Date.parse(b) - Date.parse(a)) / 86400000) + 1 > PRINT_MAX_DAYS) {
+        if (d < range.from) { a = addDays(range.from, -(PRINT_MAX_DAYS - 1)); b = range.from; }
+        else { a = range.from; b = addDays(range.from, PRINT_MAX_DAYS - 1); }
+        toast('Не больше ' + PRINT_MAX_DAYS + ' дней на лист — взял первые семь');
+      }
+      range.from = a; range.to = b; range.waitingEnd = false;
+    }
+    paint();
+  };
+
+  function paint() {
+    cal.innerHTML = '';
+    const [y, m] = month.split('-').map(Number);
+    const head = el('div', 'mcal-head');
+    const shift = (delta) => {
+      const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+      month = d.toISOString().slice(0, 7);
+      paint();
+    };
+    head.appendChild(btn('‹', 'nav-btn', () => shift(-1)));
+    head.appendChild(txt('div', 'mcal-title', MONTHS_NOM[m - 1] + ' ' + y));
+    head.appendChild(btn('›', 'nav-btn', () => shift(1)));
+    cal.appendChild(head);
+
+    const gridBox = el('div', 'mcal-grid');
+    WD_ORDER.forEach(i => gridBox.appendChild(txt('div', 'mcal-wd', WD_SHORT[i])));
+    const first = month + '-01';
+    const lead = (weekday(first) + 6) % 7;
+    const start = addDays(first, -lead);
+    for (let i = 0; i < 42; i++) {
+      const d = addDays(start, i);
+      if (i >= 35 && d.slice(0, 7) !== month) break;
+      const inRange = d >= range.from && d <= range.to;
+      const cls = 'mcal-day'
+        + (d.slice(0, 7) !== month ? ' out' : '')
+        + (inRange ? ' in' : '')
+        + (d === range.from || d === range.to ? ' edge' : '')
+        + (d === todayIso() ? ' today' : '');
+      const b = btn(String(Number(d.slice(8))), cls, () => pick(d));
+      gridBox.appendChild(b);
+    }
+    cal.appendChild(gridBox);
+
+    summary.textContent = range.waitingEnd
+      ? 'Начало — ' + WD_SHORT[weekday(range.from)] + ', ' + shortDate(range.from) + '. Теперь нажмите последний день.'
+      : 'Выбрано: ' + WD_SHORT[weekday(range.from)] + ', ' + shortDate(range.from)
+        + (span() > 1 ? ' — ' + WD_SHORT[weekday(range.to)] + ', ' + shortDate(range.to) : '')
+        + ' · ' + span() + ' ' + (span() === 1 ? 'день' : span() < 5 ? 'дня' : 'дней');
+  }
   paint();
 
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
-  acts.appendChild(btn('Печать', 'btn', () => {
-    const chosen = dates.filter(d => picked.has(d));
-    if (!chosen.length) { toast('Выберите хотя бы один день'); return; }
+  acts.appendChild(btn('Печать', 'btn', async () => {
+    const chosen = [];
+    for (let i = 0; i < span(); i++) chosen.push(addDays(range.from, i));
     closeModal();
+    // Брони выбранных дней читаем заново одним запросом: отрезок мог
+    // выйти за открытую неделю, а у тех дней в панели броней нет вовсе —
+    // пустая клетка на бумаге выглядела бы свободным кортом. Заодно лист
+    // печатается со свежими данными, а не с тем, что загружено час назад.
+    try {
+      const fresh = await api('adminWeek', { from: chosen[0], days: chosen.length });
+      Object.keys(fresh.days || {}).forEach(d => { db.bookings[d] = fresh.days[d]; });
+    } catch (e) {
+      toast('Не удалось прочитать брони этих дней — лист не напечатан', 5000);
+      return;
+    }
     printWeek(chosen);
   }));
   body.appendChild(acts);
   showModal(body);
+}
+
+// Альбом недели снимается по `afterprint`, но не каждый браузер его
+// присылает, если окно печати закрыли. Лист тренировки перед печатью
+// убирает остаток сам — иначе он вышел бы альбомом.
+function dropPrintOrientation() {
+  const left = document.getElementById('printOrientation');
+  if (left) left.remove();
 }
 
 function printWeek(dates) {
@@ -1859,6 +1956,17 @@ function printWeek(dates) {
     + '. Брони после этого момента здесь не видны.</div></div>';
   sheet.appendChild(grid);
   area.appendChild(sheet);
+
+  // Альбом — только на время этой печати. Раньше стояла именованная
+  // страница (`@page week-sheet`), но браузер начинает такую с нового
+  // листа: первый, обычный книжный, выходил пустым, и в окне печати
+  // значилось «Книжная». Лист тренировки по-прежнему печатается книжкой.
+  dropPrintOrientation();
+  const orientation = document.createElement('style');
+  orientation.id = 'printOrientation';
+  orientation.textContent = '@page { size: A4 landscape; margin: 8mm; }';
+  document.head.appendChild(orientation);
+  window.addEventListener('afterprint', () => orientation.remove(), { once: true });
 
   window.print();
 }
@@ -4437,6 +4545,7 @@ function printResults(id, date, which) {
   const fresh = openPlaySessions().find(x => x.id === id && x.date === date);
   const op = fresh ? (which === 'alt' ? fresh.rival : fresh.openPlay) : null;
   if (!op) { toast('Тренировка не найдена'); return; }
+  dropPrintOrientation();
 
   const area = document.getElementById('printArea');
   area.innerHTML = '<div class="pr-head"><h2>' + escapeHtml(op.title) + '</h2>'
