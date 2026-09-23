@@ -612,6 +612,8 @@ const ERRORS = {
   'bad-credentials': 'Неверный телефон или пароль.',
   'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
   'slot-taken': 'Это время уже занято.',
+  'repack-stale': 'Пока окно было открыто, расписание изменилось — перекладка больше не подходит. Откройте запись заново.',
+  'invalid-repack': 'Перекладка не подходит к выбранному корту — откройте запись заново.',
   'not-pending': 'Заявка уже обработана.',
   'pending-expired': 'Заявка просрочена — корт вернулся в общий доступ.',
   'not-started': 'Игра ещё не началась — неявки пока нет.',
@@ -1723,6 +1725,33 @@ function moveGhost(evt, b, ctx) {
       : fmtTime(t.start) + ' · ' + courtName(t.courtId));
 }
 
+// Корт выбрал сам клиент — фильтром на сайте или попросив по телефону.
+// У постоянной брони отметка живёт в серии.
+const LOCK_MARK = '📌';
+function courtLocked(b) {
+  const bk = b.booking || b;
+  return !!(bk.courtLocked || (b.series && b.series.courtLocked));
+}
+
+// Перенос на другой корт брони, чей корт выбрал клиент, — не запрет, а
+// вопрос: администратор мог договориться с ним по телефону. Но спросить
+// надо до переноса, а не после — иначе человек придёт на свой корт и
+// упрётся в чужую игру.
+function confirmCourtChange(b, toCourtId, go) {
+  if (!courtLocked(b) || toCourtId === b.courtId) return go();
+  const body = el('div');
+  body.innerHTML = '<h3>' + LOCK_MARK + ' Корт выбран клиентом</h3>'
+    + '<div class="m-sub">' + escapeHtml((b.clientName || '') + ' · ' + fmtRange(b.start, b.end)) + '</div>';
+  body.appendChild(txt('div', 'empty', 'Клиент просил именно «' + courtName(b.courtId) + '». '
+    + 'Переносите на «' + courtName(toCourtId) + '», только если он согласен'
+    + (b.clientPhone ? ' — телефон ' + fmtPhone(b.clientPhone) : '') + '. Сам он об этом не узнает.'));
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Перенести всё равно', 'btn danger', () => { closeModal(); go(); }));
+  acts.appendChild(btn('Не переносить', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
 function endDrag(b, ctx) {
   const t = drag && drag.target;
   const moved = drag && drag.active;
@@ -1738,13 +1767,13 @@ function endDrag(b, ctx) {
   if (isPast(t.date, t.start)) { toast('Это время уже прошло'); return true; }
   if (t.courtId === b.courtId && t.start === b.start) return true;
 
-  act(() => api('adminMoveBooking', {
+  confirmCourtChange(b, t.courtId, () => act(() => api('adminMoveBooking', {
     date: b.date,
     bookingId: (b.booking || b).id,
     start: t.start,
     courtId: t.courtId,
     exactCourt: true,
-  }), 'Бронь перенесена на ' + fmtTime(t.start) + ', ' + courtName(t.courtId));
+  }), 'Бронь перенесена на ' + fmtTime(t.start) + ', ' + courtName(t.courtId)));
   return true;
 }
 
@@ -2051,9 +2080,10 @@ function buildWeekGrid(dates) {
       // В недельной клетке помещается одна строка: время занимает её
       // целиком, а имя дописывается только у окон от полутора часов.
       div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end))
-        + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + '</div>'
+        + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + (courtLocked(b) ? ' ' + LOCK_MARK : '') + '</div>'
         + ((to - from) >= 3 ? '<div class="b-n">' + escapeHtml(b.clientName) + '</div>' : '');
-      div.title = fmtRange(b.start, b.end) + ' · ' + b.clientName;
+      div.title = fmtRange(b.start, b.end) + ' · ' + b.clientName
+        + (courtLocked(b) ? ' · корт выбран клиентом' : '');
       div.addEventListener('click', () => openBlock(b));
       makeDraggable(div, b, { grid, dates });
       grid.appendChild(div);
@@ -2126,6 +2156,7 @@ function buildDayGrid(date, blocks) {
       // в сетке уже заняты постоянными бронями.
       + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + '</div>'
       + '<div class="b-n">' + label + escapeHtml(b.clientName) + (b.groupId ? ' ⇄' : '')
+      + (courtLocked(b) ? ' ' + LOCK_MARK : '')
       + (b.kind === 'openplay' && b.openPlay
         ? ' · ' + seatsTakenRaw(b.openPlay) + '/' + b.openPlay.seats
           // Второй состав — со своим названием и своим счётом. Раньше в
@@ -2139,6 +2170,7 @@ function buildDayGrid(date, blocks) {
       // на две строки они вытесняют время и название.
       + (b.kind === 'openplay' && b.openPlay && (to - from) >= 3 && signupNames(b.openPlay)
         ? '<div class="b-x">' + escapeHtml(signupNames(b.openPlay)) + '</div>' : '');
+    if (courtLocked(b)) div.title = 'Корт выбран клиентом — на соседний без его согласия не переносить';
     div.addEventListener('click', () => openBlock(b));
     makeDraggable(div, b, { grid, dates: [date] });
     grid.appendChild(div);
@@ -2200,6 +2232,7 @@ function openBooking(b) {
     + (extras.length ? ' <span class="pill grey">корт ' + money(b.price) + '</span>' : '')
     + ' · ' + statusPill(b.status)
     + (b.groupId ? ' <span class="pill grey">с переходом</span>' : '')
+    + (b.courtLocked ? ' <span class="pill wait">' + LOCK_MARK + ' корт выбран клиентом</span>' : '')
     + (b.prepayRequired ? ' <span class="pill bad">предоплата</span>' : '') + '</div>'
     + (extras.length ? '<div class="t2">🎾 ' + escapeHtml(extras.map(x => x.name + ' ×' + x.qty).join(', '))
       + ' · ' + money(b.extrasTotal) + '</div>' : '');
@@ -2366,11 +2399,12 @@ function openMove(b) {
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Перенести', 'btn', () => {
     const newStart = selTime.value;
+    const toCourt = Number(selCourt.value);
     closeModal();
-    act(() => api('adminMoveBooking', {
+    confirmCourtChange(b, toCourt, () => act(() => api('adminMoveBooking', {
       date: b.date, bookingId: b.id, start: newStart,
-      courtId: Number(selCourt.value), exactCourt: true,
-    }), 'Перенесено');
+      courtId: toCourt, exactCourt: true,
+    }), 'Перенесено'));
   }));
   acts.appendChild(btn('Назад', 'btn sec', () => openBooking(b)));
   body.appendChild(acts);
@@ -2432,12 +2466,85 @@ function openNewBooking(date, courtId, start) {
   updPrice();
   body.appendChild(price);
 
+  // По умолчанию запись идёт как у клиента на сайте: с корта, по
+  // которому нажали, а не помещается — с переходом на соседний. Раньше
+  // панель всегда слала «только этот корт», и время, которое клиент
+  // занимал с переходом сам, администратору отвечало «занято».
+  const exact = { on: false };
+  body.appendChild(check('Только ' + courtName(courtId), false, v => { exact.on = v; refreshPlan(); },
+    'Клиент просит именно этот корт. Переходов не будет, отметка видна в сетке, '
+    + 'и такую бронь не предложат переложить на соседний.'));
+
+  // Прикидка сервера: ляжет ли бронь на один корт и можно ли убрать
+  // переход, переставив одну чужую бронь. Считает сервер — занятость
+  // серий и закрытий повторять здесь незачем.
+  const planBox = el('div');
+  body.appendChild(planBox);
+  const repackPick = { option: null, on: false };
+  let planFits = true;
+  let planSeq = 0;
+
+  function refreshPlan() {
+    const dur = Number(selDur.value);
+    const seq = ++planSeq;
+    planBox.innerHTML = '';
+    repackPick.option = null; repackPick.on = false;
+    planFits = true;
+    if (timeToMinutes(start) + dur > timeToMinutes(db.config.closeTime)) return;
+    planBox.appendChild(txt('div', 'empty', 'Проверяю корты…'));
+    api('adminCreateBooking', {
+      date, start, durationMinutes: dur, courtId, exactCourt: exact.on, preview: true,
+    }).then(res => {
+      if (seq !== planSeq) return;
+      planBox.innerHTML = '';
+      const plan = res.plan;
+      planFits = !!plan;
+      if (plan && plan.switches === 0) {
+        planBox.appendChild(txt('div', 'empty', 'Всё время на корте «' + courtName(plan.segments[0].courtId) + '».'));
+      } else if (plan) {
+        const sw = plan.segments[1];
+        const warn = el('div', 'item');
+        warn.innerHTML = '<div class="t1">⇄ С переходом в ' + escapeHtml(fmtTime(sw.start)) + '</div>'
+          + '<div class="t2">' + escapeHtml(plan.segments.map(s => courtName(s.courtId) + ' '
+            + fmtRange(s.start, s.end)).join(', ')) + '. Предупредите клиента.</div>';
+        planBox.appendChild(warn);
+      } else {
+        planBox.appendChild(txt('div', 'empty', exact.on
+          ? 'На этом корте время занято. Снимите отметку — может, поместится с переходом.'
+          : 'Не помещается ни на один корт, даже с переходом.'));
+      }
+
+      const rp = res.repack;
+      if (!rp) return;
+      repackPick.option = rp;
+      const m = rp.move;
+      const whom = m.kind === 'series' ? '«' + m.title + '» (постоянная, только на этот день)' : m.title;
+      planBox.appendChild(check(plan ? 'Убрать переход' : 'Освободить место перекладкой', false,
+        v => { repackPick.on = v; },
+        'Переставить ' + whom + ' ' + fmtRange(m.start, m.end) + ' с корта «' + courtName(m.fromCourtId)
+        + '» на «' + courtName(m.toCourtId) + '» — время то же. Тогда новая бронь целиком встанет на «'
+        + courtName(rp.courtId) + '». '
+        + (m.notifies ? 'Клиенту придёт сообщение в Telegram.'
+          : (m.phone ? 'Telegram у клиента нет — позвоните: ' + fmtPhone(m.phone) + '.' : 'Клиента в системе нет — предупредите сами.'))));
+    }).catch(() => {
+      if (seq !== planSeq) return;
+      planBox.innerHTML = '';
+    });
+  }
+  selDur.addEventListener('change', refreshPlan);
+  refreshPlan();
+
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Записать', 'btn', () => {
     const dur = Number(selDur.value);
     const end = minutesToTime(timeToMinutes(start) + dur);
     if (timeToMinutes(end) > timeToMinutes(db.config.closeTime)) return toast('Не помещается до закрытия');
     if (!who.id && !inpName.value.trim()) return toast('Найдите клиента или впишите имя');
+    const useRepack = repackPick.on && repackPick.option;
+    if (!planFits && !useRepack) {
+      return toast(repackPick.option ? 'Без перекладки не помещается — отметьте её или выберите другое время'
+        : 'Это время занято', 3600);
+    }
 
     // Занятость корта проверяет сервер ещё раз, уже на свежих данных:
     // между открытием окна и нажатием кнопки время могли занять.
@@ -2446,7 +2553,8 @@ function openNewBooking(date, courtId, start) {
     // существующая, не совпал — заводится новая. Говорим об этом вслух,
     // иначе база растёт молча.
     act(() => api('adminCreateBooking', {
-      date, start, durationMinutes: dur, courtId, exactCourt: true,
+      date, start, durationMinutes: dur, courtId, exactCourt: exact.on,
+      repack: useRepack ? { courtId: useRepack.courtId, move: useRepack.move } : undefined,
       coaching: selCoach.value || undefined,
       clientId: who.id || undefined,
       clientName: who.id ? undefined : inpName.value.trim(),
@@ -2488,7 +2596,8 @@ function openSeriesOccurrence(b) {
 
   const info = el('div', 'item');
   info.innerHTML = '<div class="t1">↻ ' + escapeHtml(s.title)
-    + (b.moved ? ' <span class="pill wait">поправлено на этот раз</span>' : '') + '</div>'
+    + (b.moved ? ' <span class="pill wait">поправлено на этот раз</span>' : '')
+    + (s.courtLocked ? ' <span class="pill wait">' + LOCK_MARK + ' корт выбран клиентом</span>' : '') + '</div>'
     + '<div class="t2">Постоянная бронь, ' + seriesSchedule(s) + ', обычно '
     + escapeHtml(fmtRange(s.start, s.end) + ' · ' + courtName(s.courtId)) + '. '
     + escapeHtml(fmtPhone((clientById(s.clientId) || {}).phone || '')) + '</div>';
@@ -2566,11 +2675,12 @@ function openSeriesOccurrenceMove(b) {
 
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Сохранить', 'btn', () => {
+    const toCourt = Number(court.value);
     closeModal();
-    act(() => api('adminMoveSeriesOccurrence', {
+    confirmCourtChange(b, toCourt, () => act(() => api('adminMoveSeriesOccurrence', {
       seriesId: s.id, date: b.date,
-      start: start.value, end: end.value, courtId: Number(court.value),
-    }), 'Занятие изменено');
+      start: start.value, end: end.value, courtId: toCourt,
+    }), 'Занятие изменено'));
   }));
   acts.appendChild(btn('Назад', 'btn sec', () => openSeriesOccurrence(b)));
   body.appendChild(acts);
@@ -2596,6 +2706,43 @@ function openException(x) {
 // ============================================================
 // Вкладка: Заявки
 // ============================================================
+
+// Брони с переходом, у которых переход убирается перекладкой одной чужой
+// брони на соседний корт в то же время. Само ничего не перекладывается:
+// у переставляемой брони есть живой клиент, и решает администратор.
+// Пустой список карточку не рисует — это подсказка, а не работа смены.
+function renderRepacks() {
+  const list = (db.review && db.review.repacks) || [];
+  if (!list.length) return null;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Можно убрать переход <span class="sub">переставив одну бронь на соседний корт</span></h2>';
+  list.forEach(x => {
+    const m = x.move;
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">⇄ ' + escapeHtml(x.clientName) + ' · ' + escapeHtml(fmtRange(x.start, x.end))
+      + ' · ' + escapeHtml(longDate(x.date)) + '</div>'
+      + '<div class="t2">Сейчас: ' + escapeHtml(x.segments.map(s => courtName(s.courtId) + ' ' + fmtRange(s.start, s.end)).join(', '))
+      + '. Станет: всё время «' + escapeHtml(courtName(x.courtId)) + '».</div>'
+      + '<div class="t2">Для этого ' + (m.kind === 'series' ? 'занятие постоянной брони «' + escapeHtml(m.title) + '» (только на этот день)'
+        : 'бронь «' + escapeHtml(m.title) + '»') + ' ' + escapeHtml(fmtRange(m.start, m.end))
+      + ' переедет с «' + escapeHtml(courtName(m.fromCourtId)) + '» на «' + escapeHtml(courtName(m.toCourtId)) + '», время то же. '
+      + (m.notifies ? 'Ему придёт сообщение в Telegram.'
+        : '<b>У него нет Telegram — позвоните' + (m.phone ? ' ' + escapeHtml(fmtPhone(m.phone)) : '') + '.</b>') + '</div>';
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Переложить', 'btn sm', () =>
+      act(() => api('adminRepack', { date: x.date, groupId: x.groupId, courtId: x.courtId, move: m }),
+        'Переход убран')));
+    const call = m.notifies ? null : callButton(m.phone);
+    if (call) acts.appendChild(call);
+    acts.appendChild(btn('Открыть день', 'btn sm sec', () => {
+      state.date = x.date; state.tab = 'day'; reload();
+    }));
+    it.appendChild(acts);
+    card.appendChild(it);
+  });
+  card.appendChild(txt('div', 'empty', 'Брони с ' + LOCK_MARK + ' — где корт выбрал клиент — сюда не попадают.'));
+  return card;
+}
 
 function renderRequests(view) {
   const bookings = pendingBookings();
@@ -2635,6 +2782,9 @@ function renderRequests(view) {
   view.appendChild(c1);
 
   view.appendChild(renderUnpaid());
+
+  const repackCard = renderRepacks();
+  if (repackCard) view.appendChild(repackCard);
 
   view.appendChild(renderWaitingQueue());
 
@@ -3587,6 +3737,7 @@ function renderSeries(view) {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(s.title)
         + (s.forTournaments ? ' <span class="pill grey">резерв под турниры</span>' : '')
+        + (s.courtLocked ? ' <span class="pill wait">' + LOCK_MARK + ' корт выбран клиентом</span>' : '')
         + (ended ? ' <span class="pill grey">завершена</span>' : '') + '</div>'
         + '<div class="t2">' + seriesSchedule(s, true) + ', ' + escapeHtml(fmtRange(s.start, s.end))
         + ' · ' + escapeHtml(courtName(s.courtId))
@@ -3768,6 +3919,15 @@ function openSeriesForm(existing) {
   court.value = existing ? String(existing.courtId) : '';
   wrapField(body, 'Корт', court);
 
+  // Отметка имеет смысл только при выбранном корте: «любой свободный» и
+  // «важен именно этот» друг другу противоречат.
+  const locked = { on: !!(existing && existing.courtLocked) };
+  const lockBox = check('Корт выбран клиентом', locked.on, v => { locked.on = v; },
+    'Занятие не предложат переложить на соседний корт, в сетке у него будет ' + LOCK_MARK + '.');
+  body.appendChild(lockBox);
+  const syncLock = () => { lockBox.hidden = court.value === '' || reserve.on; };
+  court.addEventListener('change', syncLock);
+
   // Дней может быть несколько: одна группа ходит и во вторник, и в
   // четверг, и это одна договорённость — заводить под неё две почти
   // одинаковые карточки владельцу приходилось руками.
@@ -3850,6 +4010,7 @@ function openSeriesForm(existing) {
   function syncReserve() {
     clientBox.hidden = reserve.on;
     colorField.hidden = reserve.on;
+    syncLock();
   }
   syncReserve();
 
@@ -3867,6 +4028,7 @@ function openSeriesForm(existing) {
       clientId: reserve.on ? null : picked.id,
       color: reserve.on ? 'slate' : chosenColor.id,
       forTournaments: reserve.on,
+      courtLocked: court.value !== '' && !reserve.on && locked.on,
     };
     if (existing) payload.seriesId = existing.id;
     closeModal();
