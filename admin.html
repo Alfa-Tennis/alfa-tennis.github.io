@@ -612,6 +612,7 @@ const ERRORS = {
   'bad-credentials': 'Неверный телефон или пароль.',
   'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
   'slot-taken': 'Это время уже занято.',
+  'duration-too-long': 'Слишком долгая бронь — больше потолка в настройках. Запишите двумя бронями.',
   'repack-stale': 'Пока окно было открыто, расписание изменилось — перекладка больше не подходит. Откройте запись заново.',
   'invalid-repack': 'Перекладка не подходит к выбранному корту — откройте запись заново.',
   'not-pending': 'Заявка уже обработана.',
@@ -935,6 +936,9 @@ function mapConfig(booking) {
     closeTime: booking.closeTime,
     slotStep: booking.slotStep,
     minBookingMinutes: booking.minBookingMinutes,
+    // Старый сервер полей не присылает — тогда прежние 6 и 10 часов.
+    maxBookingMinutes: booking.maxBookingMinutes || 360,
+    adminMaxBookingMinutes: booking.adminMaxBookingMinutes || 600,
     approvalFromMinutes: booking.approvalFromMinutes,
     cancelDeadlineHours: booking.cancelDeadlineHours,
     cancelGraceMinutes: booking.cancelGraceMinutes,
@@ -2419,7 +2423,19 @@ function openNewBooking(date, courtId, start) {
 
   const fDur = el('label', 'field'); fDur.innerHTML = '<span>Длительность</span>';
   const selDur = document.createElement('select');
-  [60, 90, 120, 150, 180, 240].forEach(m => selDur.appendChild(opt(m, hoursText(m))));
+  // До потолка администратора, а не до четырёх часов, как раньше: сайт
+  // долгую бронь не принимает и отправляет её сюда, по звонку. Дольше
+  // закрытия список не тянем — такую всё равно не записать.
+  const durMax = Math.min(db.config.adminMaxBookingMinutes,
+    timeToMinutes(db.config.closeTime) - timeToMinutes(start));
+  for (let m = db.config.minBookingMinutes; m <= durMax; m += db.config.slotStep) {
+    selDur.appendChild(opt(m, hoursText(m)));
+  }
+  // Ни одна длительность до закрытия не влезает — оставляем минимальную,
+  // и кнопка скажет «не помещается», а не отправит пустое.
+  if (!selDur.options.length) selDur.appendChild(opt(db.config.minBookingMinutes, hoursText(db.config.minBookingMinutes)));
+  selDur.value = '60';
+  if (!selDur.value) selDur.selectedIndex = 0;
   fDur.appendChild(selDur); body.appendChild(fDur);
 
   // Поиск, а не список всех клиентов: в выпадающем списке на три сотни
@@ -2818,7 +2834,8 @@ function renderRequests(view) {
   // сообщение уезжает вверх за полдня — здесь заявка лежит, пока её не
   // закроют.
   const c3 = el('div', 'card');
-  c3.innerHTML = '<h2>Заявки с витрины <span class="sub">товары и услуги с главной страницы</span></h2>';
+  c3.innerHTML = '<h2>Заявки с витрины <span class="sub">товары, услуги и брони дольше '
+    + escapeHtml(hoursText(db.config.maxBookingMinutes)) + '</span></h2>';
   if (!db.requests) {
     c3.appendChild(txt('div', 'empty', 'Загружаем…'));
   } else if (!items.length) {
@@ -2827,17 +2844,24 @@ function renderRequests(view) {
 
   items.slice(0, openItems.length ? undefined : 10).forEach(r => {
     const it = el('div', 'item' + (r.status === 'new' ? ' hl' : ''));
-    it.innerHTML = '<div class="t1">' + escapeHtml(r.itemName)
+    // Долгая бронь корт не держит — это просьба собрать время, и видно
+    // это должно быть до звонка, а не по ходу разговора.
+    const longBooking = r.itemId === 'long-booking';
+    it.innerHTML = '<div class="t1">' + (longBooking ? '📅 ' : '') + escapeHtml(r.itemName)
       + (r.optionName ? ' · ' + escapeHtml(r.optionName) : '')
       + (r.answer ? ' · ' + escapeHtml(r.questionName + ': ' + r.answer) : '')
       + (r.status === 'new' ? '' : ' <span class="pill grey">закрыта</span>') + '</div>'
       + '<div class="t2">' + escapeHtml(r.name) + ' · ' + escapeHtml(fmtPhone(r.phone))
       + ' · ' + escapeHtml(shortDateTime(r.createdAt))
       + (r.fromClient ? '' : ' · не заходил в учётку') + '</div>'
-      + (r.comment ? '<div class="t2">«' + escapeHtml(r.comment) + '»</div>' : '');
+      + (r.comment ? '<div class="t2">«' + escapeHtml(r.comment) + '»</div>' : '')
+      + (longBooking && r.status === 'new'
+        ? '<div class="t2">Корт ещё не забронирован — перезвоните клиенту и забронируйте время в сетке.</div>' : '');
 
     if (r.status === 'new') {
       const acts = el('div', 'acts');
+      const call = callButton(r.phone);
+      if (call) acts.appendChild(call);
       acts.appendChild(btn('Ответил', 'btn sm', () =>
         act(() => api('closeRequest', { id: r.id }), 'Заявка закрыта')));
       it.appendChild(acts);
@@ -7547,6 +7571,8 @@ function renderSettings(view) {
       ['Часы работы', fmtRange(cfg.openTime, cfg.closeTime)],
       ['Шаг сетки', cfg.slotStep + ' мин'],
       ['Минимальная бронь', hoursText(cfg.minBookingMinutes)],
+      ['Бронь с сайта не дольше', hoursText(cfg.maxBookingMinutes) + ' — дольше только заявкой'],
+      ['Администратор записывает до', hoursText(cfg.adminMaxBookingMinutes)],
       ['Подтверждать брони от', hoursText(cfg.approvalFromMinutes)],
       ['Отмена без потери клиентского рейтинга не позднее чем за', cfg.cancelDeadlineHours + ' ч'],
       ['…и всегда в первые', (cfg.cancelGraceMinutes || 0) + ' мин после брони'],
@@ -7659,6 +7685,10 @@ function renderSettingsForm(card, cfg) {
 
   const minBook = pickField(card, 'Минимальная бронь', cfg.minBookingMinutes,
     [30, 60, 90, 120], hoursText);
+  const maxBook = pickField(card, 'Бронь с сайта не дольше — дольше только заявкой', cfg.maxBookingMinutes,
+    [180, 240, 300, 360, 480, 600], hoursText);
+  const adminMax = pickField(card, 'Администратор записывает до', cfg.adminMaxBookingMinutes,
+    [360, 480, 600, 720, 900, 1200], hoursText);
   const approval = pickField(card, 'Подтверждать администратором брони от', cfg.approvalFromMinutes,
     [60, 90, 120, 150, 180, 240, 300], hoursText);
 
@@ -7690,6 +7720,8 @@ function renderSettingsForm(card, cfg) {
         openTime: open.value,
         closeTime: close.value,
         minBookingMinutes: Number(minBook.value),
+        maxBookingMinutes: Number(maxBook.value),
+        adminMaxBookingMinutes: Number(adminMax.value),
         approvalFromMinutes: Number(approval.value),
         cancelDeadlineHours: Number(cancelH.value),
         cancelGraceMinutes: Number(cancelM.value),

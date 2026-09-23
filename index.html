@@ -747,6 +747,8 @@ const ERRORS = {
   'too-soon': 'До начала осталось слишком мало времени.',
   'beyond-horizon': 'Так далеко записываться пока нельзя.',
   'duration-too-short': 'Минимальная бронь — 1 час.',
+  'duration-too-long': 'Такую долгую бронь с сайта не сделать — позвоните администратору или оставьте заявку.',
+  'not-long-booking': 'Такое время можно забронировать самому — заявка не нужна.',
   'window-too-short': 'Промежуток короче, чем нужное время. Расширьте его.',
   'outside-hours': 'Это время за пределами работы центра.',
   'move-limit': 'Эту бронь уже переносили максимальное число раз. Отмените и запишитесь заново.',
@@ -1616,6 +1618,91 @@ function openRequest(item, option) {
   setTimeout(() => (inpName || comment).focus(), 50);
 }
 
+// Бронь дольше потолка сайта. Сайт её не делает: день на корте — это
+// почти всегда сборы или турнир, и время под них администратор собирает
+// сам, иногда сдвигая чужие брони. Заявка корт НЕ держит — об этом надо
+// сказать прямо, иначе человек сочтёт время своим.
+function openLongBooking(date, start, minutes) {
+  const cfg = state.config.booking;
+  const client = state.auth && state.auth.client;
+  const end = minutesToTime(timeToMinutes(start) + minutes);
+
+  const body = el('div');
+  body.innerHTML = '<h3>Бронь дольше ' + escapeHtml(hoursText(cfg.maxBookingMinutes)) + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(dayLabelLong(date, state.data.today) + ' · '
+      + fmtRange(start, end) + ' · ' + hoursText(minutes)) + '</div>';
+  body.appendChild(txt('div', 'empty', 'С сайта корт бронируется не дольше '
+    + hoursText(cfg.maxBookingMinutes) + '. Более долгую бронь делает администратор: позвоните '
+    + 'или оставьте заявку — он перезвонит. Пока он не перезвонил, корт за вами не забронирован.'));
+
+  const phone = phoneDigits(state.config.club && state.config.club.phone);
+  if (phone) {
+    const links = el('div', 'links');
+    links.style.margin = '4px 0 12px';
+    links.appendChild(link('Позвонить', 'tel:' + phone));
+    body.appendChild(links);
+  }
+
+  let inpName = null;
+  let inpPhone = null;
+  if (client) {
+    body.appendChild(txt('div', 'empty', 'Перезвоним на ' + client.phone + '.'));
+  } else {
+    const fName = el('label', 'field');
+    fName.innerHTML = '<span>Как вас зовут</span>';
+    inpName = document.createElement('input');
+    inpName.autocomplete = 'name';
+    fName.appendChild(inpName); body.appendChild(fName);
+    const fPhone = el('label', 'field');
+    fPhone.innerHTML = '<span>Телефон</span>';
+    inpPhone = document.createElement('input');
+    inpPhone.autocomplete = 'tel';
+    attachPhoneMask(inpPhone);
+    fPhone.appendChild(inpPhone); body.appendChild(fPhone);
+  }
+
+  const fComment = el('label', 'field');
+  fComment.innerHTML = '<span>Что за игра — необязательно</span>';
+  const comment = document.createElement('input');
+  comment.placeholder = 'Например: сборы, турнир, корпоратив';
+  fComment.appendChild(comment); body.appendChild(fComment);
+
+  const consent = client ? null : consentBox();
+  if (consent) body.appendChild(consent.el);
+
+  const acts = el('div', 'm-acts');
+  const send = btn('Оставить заявку', 'btn', async () => {
+    if (!client && (!inpName.value.trim() || !inpPhone.value.trim())) {
+      toast('Оставьте имя и телефон — иначе перезвонить некуда');
+      return;
+    }
+    if (consent && !consent.checked()) {
+      toast('Отметьте согласие на обработку персональных данных', 3200);
+      return;
+    }
+    send.disabled = true;
+    try {
+      await api('requestLongBooking', {
+        date, start, durationMinutes: minutes,
+        name: inpName ? inpName.value : '',
+        phone: inpPhone ? inpPhone.value : '',
+        comment: comment.value,
+        consent: consent ? true : undefined,
+      });
+      closeModal();
+      toast('Заявка ушла администратору — перезвонит. Корт пока не забронирован.', 4500);
+    } catch (e) {
+      send.disabled = false;
+      toast(errorText(e.code), 4000);
+    }
+  });
+  acts.appendChild(send);
+  acts.appendChild(btn('Вернуться к выбору', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
 // Схему проверяем и здесь, хотя сервер уже проверил при сохранении:
 // в бакете лежат и значения, попавшие туда до этой проверки, и правки
 // руками. «javascript:…» в href — это скрипт на главной у каждого
@@ -2069,6 +2156,13 @@ function onCellClick(courtId, idx, date) {
   // важен: «до сюда» — это запрос по времени, раскладку подбор соберёт
   // сам, при необходимости с переходом.
   if (p && idx > p.toIdx) {
+    // Дольше потолка сайт не бронирует — такое время собирают по звонку.
+    // Не отказ, а другой путь: заявка с уже выбранным временем.
+    const minutes = (idx - p.fromIdx + 1) * cfg.slotStep;
+    if (cfg.maxBookingMinutes && minutes > cfg.maxBookingMinutes) {
+      openLongBooking(state.date, state.data.slots[p.fromIdx], minutes);
+      return;
+    }
     const extended = planBooking(state.date, grid, p.fromIdx, idx, { preferCourtId: p.segments[0].courtId });
     if (extended) { setPlan(extended); return; }
     toast('В это время оба корта заняты');
