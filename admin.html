@@ -15,7 +15,7 @@
      фотографии каталога и новостей идут из бакета, запросы уходят только в
      функцию. Локальный стенд подставляет свой адрес в connect-src сам,
      файл на диске при этом не меняется (tools/dev-server.js). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://storage.yandexcloud.net; connect-src https://functions.yandexcloud.net; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://storage.yandexcloud.net/alfa-tennis-data/; connect-src https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Альфа — панель администратора</title>
 <meta name="robots" content="noindex">
@@ -2595,6 +2595,14 @@ function openNewBooking(date, courtId, start) {
       toast(res.clientCreated
         ? 'Записано · заведена карточка: ' + res.clientName
         : (who.id ? 'Записано' : 'Записано · клиент найден: ' + res.clientName), 3200);
+      // Номер совпал с уже заведённой учёткой, в которую с сайта ни разу
+      // не входили. Обычно это тот же человек, но бывает и застолблённый
+      // чужой номер — сверьте с тем, кто перед вами, и при сомнении
+      // скажите владельцу.
+      if (res.existingUnconfirmed) {
+        toast('⚠️ На этот номер уже есть неподтверждённая регистрация с сайта. '
+          + 'Если это не тот же человек — скажите владельцу.', 7000);
+      }
     });
   }));
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
@@ -3111,6 +3119,10 @@ function sortedClients() {
 }
 
 function renderClients(view) {
+  // Игровой уровень правит только владелец: он решает допуск к турниру
+  // и посев. Администратору поле не показываем — сервер его всё равно
+  // не примет.
+  const owner = !!(me && me.role === 'owner');
   const card = el('div', 'card');
   card.innerHTML = '<h2>Клиенты <span class="sub">' + db.clients.length
     + (state.clientQuery ? ' по запросу' : ' человек') + '</span></h2>';
@@ -3146,23 +3158,26 @@ function renderClients(view) {
 
   // Загрузка «Корзин игроков». Кнопка живёт здесь, а не в настройках:
   // уровень — свойство клиента, и смотреть на результат импорта надо
-  // там же, где потом будешь его править руками.
-  const imp = el('div', 'acts');
-  const file = document.createElement('input');
-  file.type = 'file';
-  file.accept = '.xlsx';
-  file.style.display = 'none';
-  file.addEventListener('change', () => {
-    const chosen = file.files && file.files[0];
-    if (!chosen) return;
-    const reader = new FileReader();
-    reader.onload = () => { file.value = ''; parseNtrpFile(reader.result); };
-    reader.onerror = () => toast('Не удалось прочитать файл');
-    reader.readAsDataURL(chosen);
-  });
-  imp.appendChild(file);
-  imp.appendChild(btn('Загрузить «Корзины игроков»', 'btn sm sec', () => file.click()));
-  card.appendChild(imp);
+  // там же, где потом будешь его править руками. Только владелец: весь
+  // путь правки уровня за ним.
+  if (owner) {
+    const imp = el('div', 'acts');
+    const file = document.createElement('input');
+    file.type = 'file';
+    file.accept = '.xlsx';
+    file.style.display = 'none';
+    file.addEventListener('change', () => {
+      const chosen = file.files && file.files[0];
+      if (!chosen) return;
+      const reader = new FileReader();
+      reader.onload = () => { file.value = ''; parseNtrpFile(reader.result); };
+      reader.onerror = () => toast('Не удалось прочитать файл');
+      reader.readAsDataURL(chosen);
+    });
+    imp.appendChild(file);
+    imp.appendChild(btn('Загрузить «Корзины игроков»', 'btn sm sec', () => file.click()));
+    card.appendChild(imp);
+  }
 
   const list = el('div');
   card.appendChild(list);
@@ -3228,7 +3243,7 @@ function renderClients(view) {
         + ': ' + lastName.from + ' → ' + lastName.to));
     }
 
-    it.appendChild(ntrpField(c));
+    if (owner) it.appendChild(ntrpField(c));
     it.appendChild(passField(c));
 
     const note = document.createElement('textarea');

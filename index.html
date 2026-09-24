@@ -15,7 +15,7 @@
      фотографии каталога и новостей идут из бакета, запросы уходят только в
      функцию. Локальный стенд подставляет свой адрес в connect-src сам,
      файл на диске при этом не меняется (tools/dev-server.js). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://storage.yandexcloud.net; connect-src https://functions.yandexcloud.net; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://storage.yandexcloud.net/alfa-tennis-data/; connect-src https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Теннисный центр «Альфа» — бронирование кортов в Краснодаре</title>
 <meta name="description" content="Онлайн-бронирование кортов теннисного центра «Альфа», Краснодар. Два крытых корта, с 5:00 до 24:00 без выходных.">
@@ -731,6 +731,7 @@ const ERRORS = {
   'password-too-short': 'Пароль должен быть не короче 6 символов.',
   'password-too-simple': 'Такой пароль подбирается сразу. Не подряд идущие символы и не одна буква.',
   'password-is-phone': 'Пароль не может быть вашим номером телефона.',
+  'wrong-current-password': 'Текущий пароль неверный.',
   'invalid-name': 'Укажите имя и фамилию.',
   'invalid-phone': 'Проверьте номер телефона.',
   'item-not-found': 'Этой позиции больше нет — обновите страницу.',
@@ -750,6 +751,7 @@ const ERRORS = {
   'bad-init-data': 'Telegram не подтвердил вход. Откройте страницу заново.',
   'declined': 'Вход отклонён в Telegram.',
   'wrong-code': 'В боте нажата кнопка с другим кодом — вход отменён. Начните заново.',
+  'staff-use-password': 'Для служебных учёток вход через Telegram отключён — войдите по телефону и паролю.',
   'bad-code': 'Ссылка для входа устарела. Начните заново.',
   'telegram-not-configured': 'Привязка Telegram пока недоступна. Позвоните в центр.',
   'server-unavailable': 'Сервер не отвечает. Попробуйте через минуту.',
@@ -4057,6 +4059,22 @@ function renderProfile() {
 
   const c2 = el('div', 'card');
   c2.innerHTML = '<h2>Пароль</h2>';
+
+  // Текущий пароль — только у учётки, где он есть. Через Telegram
+  // входят без пароля, и первую установку старым не загораживаем.
+  // Сервер проверяет то же самое: страница лишь не показывает лишнее
+  // поле.
+  let inpCur = null;
+  if (client.hasPassword) {
+    const fCur = el('label', 'field');
+    fCur.innerHTML = '<span>Текущий пароль</span>';
+    inpCur = document.createElement('input');
+    inpCur.type = 'password'; inpCur.placeholder = 'нужен для смены';
+    inpCur.autocomplete = 'current-password';
+    fCur.appendChild(withPasswordToggle(inpCur));
+    c2.appendChild(fCur);
+  }
+
   const fPass = el('label', 'field');
   fPass.innerHTML = '<span>Новый пароль</span>';
   const inpPass = document.createElement('input');
@@ -4066,12 +4084,16 @@ function renderProfile() {
   c2.appendChild(fPass);
   c2.appendChild(btn('Сменить пароль', 'btn sm', async () => {
     try {
-      const res = await api('updateProfile', { password: inpPass.value });
+      const res = await api('updateProfile', {
+        password: inpPass.value,
+        currentPassword: inpCur ? inpCur.value : undefined,
+      });
       // Смена пароля отзывает старые токены — сервер сразу выдаёт новый,
       // иначе человек вылетел бы из собственной сессии.
       state.auth = { token: res.token, client: res.client };
       store.set(TOKEN_KEY, res.token);
       inpPass.value = '';
+      if (inpCur) inpCur.value = '';
       toast('Пароль изменён');
     } catch (e) { toast(errorText(e.code)); }
   }));
