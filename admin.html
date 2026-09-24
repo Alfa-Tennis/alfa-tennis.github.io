@@ -80,6 +80,15 @@ input, select, textarea { font: inherit; color: inherit; }
   padding: 28px 24px; max-width: 380px; width: 100%; text-align: center; }
 .login-card h1 { margin: 0 0 4px; font-size: 21px; }
 .login-card .who { margin: 0 0 18px; color: var(--ink-soft); font-size: 14px; }
+/* Глазок в поле пароля: кнопка поверх правого края, текст под неё не заходит. */
+.pass-wrap { position: relative; margin-bottom: 12px; }
+.pass-wrap input { padding-right: 36px; }
+.pass-eye { position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; border: 0; background: none; border-radius: 6px; padding: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); }
+.pass-eye:hover { color: var(--accent); }
+.pass-eye:focus-visible { outline: 2px solid var(--accent); }
+.pass-eye svg { width: 18px; height: 18px; }
 .login-note { background: var(--warn-tint); border: 1px solid var(--warn-line); color: var(--warn);
   border-radius: 10px; padding: 10px 12px; font-size: 13px; text-align: left; margin-bottom: 16px; }
 
@@ -465,8 +474,11 @@ table.cross .no {
     </div>
     <input class="inp" id="loginPhone" type="tel" inputmode="tel" autocomplete="username"
            placeholder="+7 (___) ___-__-__" style="width:100%;margin-bottom:8px">
-    <input class="inp" id="loginPass" type="password" autocomplete="current-password"
-           placeholder="Пароль" style="width:100%;margin-bottom:12px">
+    <div class="pass-wrap">
+      <input class="inp" id="loginPass" type="password" autocomplete="current-password"
+             placeholder="Пароль" style="width:100%">
+      <button type="button" class="pass-eye" id="loginPassEye"></button>
+    </div>
     <button class="btn" id="loginBtn" style="width:100%">Войти</button>
   </div>
 </div>
@@ -1168,6 +1180,9 @@ async function doLogin() {
     const res = await api('login', { phone, password });
     setToken(res.token);
     document.getElementById('loginPass').value = '';
+    // Показанный пароль прячем обратно: после выхода форма не должна
+    // встречать следующего открытым полем.
+    if (document.getElementById('loginPass').type === 'text') document.getElementById('loginPassEye').click();
     await enter(res.client);
   } catch (e) {
     showLogin(errorText(e.code));
@@ -8510,6 +8525,28 @@ document.getElementById('loginPass').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') doLogin();
 });
 attachPhoneMask(document.getElementById('loginPhone'));
+
+// Глазок в поле пароля: вход в панель тоже бывает с телефона, а
+// опечатку в пароле без показа не увидеть. Открывается только по кнопке.
+(function () {
+  const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_SHUT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.7 17.7 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.9 9.9 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  const input = document.getElementById('loginPass');
+  const eye = document.getElementById('loginPassEye');
+  const sync = () => {
+    const shown = input.type === 'text';
+    eye.innerHTML = shown ? EYE_SHUT : EYE_OPEN;
+    eye.setAttribute('aria-label', shown ? 'Скрыть пароль' : 'Показать пароль');
+    eye.setAttribute('aria-pressed', shown ? 'true' : 'false');
+    eye.title = shown ? 'Скрыть пароль' : 'Показать пароль';
+  };
+  eye.addEventListener('mousedown', (e) => e.preventDefault());
+  eye.addEventListener('click', () => {
+    input.type = input.type === 'password' ? 'text' : 'password';
+    sync();
+  });
+  sync();
+})();
 
 document.getElementById('reloadBtn').addEventListener('click', () => {
   reload().then(() => toast('Обновлено')).catch(() => toast('Не удалось обновить'));
