@@ -1,0 +1,446 @@
+/* Палитра снята прямо из вектора логотипа: #3F6CA3 у знака и надписи,
+   #A4DB00 у мяча — это не подбор на глаз, а те же значения из файла.
+   Золота в логотипе больше нет; янтарь остался только там, где он значит
+   «требует внимания», и никогда не служит текстом на белом — контраст не
+   проходит, поэтому для надписей взят тёмный оттенок --warn. */
+:root {
+  --ink: #22272C;
+  --ink-soft: #5F6B72;
+  --line: #DDE3E5;
+  --bg: #F2F4F5;
+  --surface: #FFFFFF;
+  --accent: #3F6CA3;
+  --accent-dark: #2F5480;
+  --accent-tint: #E8F0F9;
+  --accent-line: #C6D9EE;
+  --busy: #E5E9EA;
+  --warn: #7A5410;
+  --warn-tint: #FDF3DE;
+  --warn-line: #EFDCB2;
+  --grass: #5C752F;
+  --grass-tint: #EEF2E7;
+  /* Счёт в турнирной крестовине: выигрыш зелёным, проигрыш красным.
+     Оливковый --ball-dk читался как обычный текст. */
+  --win: #159B45;
+  --lose: #D4372F;
+  --pass: #159B45;
+  --pass-tint: #E7F6EC;
+
+  --ball: #A4DB00;
+  --ball-dk: #4C6600;
+  --ball-tint: #F0F8D8;
+  --danger: #B23B3B;
+  --danger-tint: #FBEDED;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(34,39,44,.06), 0 8px 24px rgba(34,39,44,.07);
+}
+* { box-sizing: border-box; }
+/* Любое правило вроде `.login { display: flex }` сильнее браузерного
+   `[hidden] { display: none }`, и элемент с атрибутом hidden остаётся
+   на экране. Закрываем это раз и навсегда для всей страницы. */
+[hidden] { display: none !important; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------- Вход ---------- */
+.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: linear-gradient(160deg, #1E3A5F 0%, #2C4F7C 100%); }
+.login-logo { width: 72px; height: 72px; margin: 0 auto 14px; display: block; }
+.login-card { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow);
+  padding: 28px 24px; max-width: 380px; width: 100%; text-align: center; }
+.login-card h1 { margin: 0 0 4px; font-size: 21px; }
+.login-card .who { margin: 0 0 18px; color: var(--ink-soft); font-size: 14px; }
+/* Глазок в поле пароля: кнопка поверх правого края, текст под неё не заходит. */
+.pass-wrap { position: relative; margin-bottom: 12px; }
+.pass-wrap input { padding-right: 36px; }
+.pass-eye { position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; border: 0; background: none; border-radius: 6px; padding: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); }
+.pass-eye:hover { color: var(--accent); }
+.pass-eye:focus-visible { outline: 2px solid var(--accent); }
+.pass-eye svg { width: 18px; height: 18px; }
+.login-note { background: var(--warn-tint); border: 1px solid var(--warn-line); color: var(--warn);
+  border-radius: 10px; padding: 10px 12px; font-size: 13px; text-align: left; margin-bottom: 16px; }
+
+/* ---------- Каркас ---------- */
+.topbar { background: linear-gradient(160deg, #1E3A5F 0%, #2C4F7C 100%); color: #fff; padding: 12px 16px; }
+.topbar-inner { max-width: 1080px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* Под пропорции вектора (444×263): в квадрате знак ужимался бы
+   до трети высоты плашки и терял читаемость. */
+.topbar .logo { width: 56px; height: 34px; border-radius: 8px; background: #fff; padding: 3px 5px; flex: 0 0 auto; }
+.topbar .logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.topbar .title { font-weight: 600; }
+.topbar .spacer { flex: 1; }
+.badge-demo { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+.link-out { background: none; border: 0; color: rgba(255,255,255,.8); cursor: pointer; text-decoration: underline; padding: 0; }
+
+.tabs { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.tabs-inner { max-width: 1080px; margin: 0 auto; display: flex; gap: 2px; overflow-x: auto; padding: 0 8px; }
+.tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 12px 14px; cursor: pointer; white-space: nowrap; color: var(--ink-soft); }
+.tab:hover { color: var(--ink); }
+.tab.on { color: var(--accent-dark); border-bottom-color: var(--accent); font-weight: 600; }
+.tab .cnt { background: var(--warn); color: #fff; border-radius: 999px; font-size: 11px;
+  padding: 1px 6px; margin-left: 5px; vertical-align: 1px; }
+
+main { max-width: 1080px; margin: 0 auto; padding: 14px 12px 60px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
+.card h2 { margin: 0 0 10px; font-size: 16px; }
+.card h2 .sub { font-weight: 400; color: var(--ink-soft); font-size: 13px; margin-left: 6px; }
+.muted { color: var(--ink-soft); }
+.empty { color: var(--ink-soft); font-size: 14px; padding: 6px 2px; }
+
+.btn { appearance: none; border: 0; border-radius: 9px; background: var(--accent); color: #fff;
+  font-weight: 600; padding: 9px 16px; cursor: pointer; }
+.btn:hover { background: var(--accent-dark); }
+.btn.sm { padding: 6px 12px; font-size: 14px; }
+.btn.sec { background: #eef1ef; color: var(--ink); }
+.btn.sec:hover { background: #e3e8e5; }
+.btn.danger { background: var(--danger); }
+.btn.danger:hover { background: #97302f; }
+.btn:disabled { opacity: .5; cursor: default; }
+/* Ссылка в виде кнопки — «Позвонить»: у <a> свои подчёркивание и цвет. */
+a.btn { display: inline-block; text-decoration: none; }
+a.btn.sec:visited { color: var(--ink); }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.field { display: block; margin-bottom: 10px; }
+.field span { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+.field input, .field select, .field textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; background: #fff;
+}
+.field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--accent-tint); border-color: var(--accent); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* ---------- Навигация по дням ---------- */
+.daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.daynav .date { font-weight: 600; font-size: 17px; min-width: 190px; }
+/* Кнопка календаря. Сам input лежит под иконкой прозрачным: так у
+   браузеров, где showPicker недоступен, клик всё равно открывает их
+   собственный календарь. */
+.daypick { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 9px; background: #fff; cursor: pointer; }
+.daypick:hover { border-color: var(--accent); }
+.daypick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.daypick-icon { font-size: 16px; line-height: 1; pointer-events: none; }
+.span-toggle { display: inline-flex; gap: 4px; margin-left: auto; }
+.span-toggle .nav-btn { width: auto; padding: 0 12px; font-size: 14px; }
+.span-toggle .nav-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+/* Неделя: прокрутка внутри карточки, иначе липкая шапка считает отступ
+   от окна и уезжает вместе с лентой. Высота ограничена по той же
+   причине — sticky нужен контейнер выше содержимого. */
+.week-card { padding: 0; overflow: auto; max-height: 76vh; }
+.grid.week .g-head { top: 30px; }
+.grid.week .g-day { position: sticky; top: 0; z-index: 6; background: var(--surface);
+  border-bottom: 1px solid var(--line); padding: 6px 4px; font-size: 13px; font-weight: 600;
+  text-align: center; white-space: nowrap; }
+.grid.week .g-day.today { color: var(--accent); }
+.grid.week .g-time { position: sticky; left: 0; z-index: 4; background: var(--surface); }
+.grid.week .g-head.corner, .grid.week .g-day.corner { left: 0; z-index: 7; }
+/* Граница между днями: без неё четырнадцать колонок читаются как один
+   бесконечный день. */
+.grid.week .day-edge { border-left: 2px solid var(--line); }
+/* В недельной клетке строки ниже, а шрифт мельче: иначе семь дней не
+   помещаются даже на большом экране. */
+.grid.week .blk { font-size: 11px; padding: 2px 5px; margin: 1px 2px; }
+.grid.week .blk .b-n { font-size: 11px; }
+.nav-btn { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 9px;
+  width: 36px; height: 36px; cursor: pointer; }
+.nav-btn:hover { border-color: var(--accent); }
+
+.daystat { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; color: var(--ink-soft); margin-bottom: 10px; }
+.daystat b { color: var(--ink); }
+
+/* ---------- Сетка дня ---------- */
+.grid { display: grid; position: relative; }
+.g-head { position: sticky; top: var(--nav-h, 45px); z-index: 5; background: var(--surface);
+  border-bottom: 1px solid var(--line); padding: 8px 4px; font-size: 14px; font-weight: 600; text-align: center; }
+.g-time { border-right: 1px solid var(--line); font-size: 12px; color: var(--ink-soft);
+  padding-right: 8px; display: flex; align-items: center; justify-content: flex-end; }
+.g-time.hour { color: var(--ink); font-weight: 600; }
+.g-free { border-bottom: 1px solid #eef1ef; border-right: 1px solid #eef1ef; cursor: pointer; background: #fff; }
+.g-free:hover { background: var(--accent-tint); }
+/* Прошедшее время — тот же серый, что и на клиентской странице. Прежний
+   #f7f8f7 от белого отличался едва различимо, и вчерашний хвост дня
+   выглядел свободным. Заливка светлее любой брони: это не «занято», а
+   «уже не бывает», и брони поверх неё должны читаться по-прежнему. */
+.g-free.past { background: #DFE4E7; cursor: default;
+  border-bottom-color: #D2D9DC; border-right-color: #D2D9DC; }
+.g-free.past:hover { background: #DFE4E7; }
+
+/* Заливки заметно плотнее прежних пастельных: на дешёвой матрице и при
+   боковом взгляде занятые клетки сливались с белой сеткой, и день
+   читался как пустой. Полоса слева тоже шире — она несёт цвет серии. */
+.blk { border-radius: 8px; margin: 1px 3px; padding: 4px 7px; overflow: hidden; cursor: pointer;
+  font-size: 12px; line-height: 1.25; border-left: 4px solid var(--accent); background: #DCEAF8; }
+.blk:hover { filter: brightness(.97); }
+.blk .b-t { font-weight: 600; }
+.blk .b-n { color: var(--ink-soft); }
+/* Состав тренировки прямо в клетке: ради «кто записан» не должно
+   приходиться открывать вкладку и искать окно в списке. */
+.blk .b-x { color: var(--ink-soft); font-size: 12px; line-height: 1.35; margin-top: 2px; }
+.blk.pending { border-left-color: var(--warn); background: var(--warn-tint); }
+.blk.series { border-left-color: var(--grass); background: #DFEACB; }
+/* Открытая тренировка — не чужая бронь: на неё ещё идёт набор, и
+   отличать её в сетке взглядом важнее, чем экономить один цвет. */
+.blk.openplay { border-left-color: var(--ball-dk); background: var(--ball-tint); }
+/* Цвет постоянной брони. Набор закрытый и проверен на контраст один раз:
+   произвольная палитра рано или поздно даёт жёлтое по жёлтому или цвет,
+   неотличимый от «закрыто на техработы». Два тона на цвет: полоса слева
+   и заливка. Гостю на сайте цвета не показываются вовсе. */
+.c-grass { --sc: #5C752F; --sct: #D3E3B5; }
+.c-court { --sc: #3F6CA3; --sct: #C4D9F0; }
+.c-gold  { --sc: #B08900; --sct: #F4DF97; }
+.c-plum  { --sc: #7A4E7F; --sct: #DDC7E0; }
+.c-coral { --sc: #B0503C; --sct: #F0C7BC; }
+.c-teal  { --sc: #2F7268; --sct: #BFDBD6; }
+.c-slate { --sc: #5A6570; --sct: #CDD5DA; }
+.blk.series[class*=" c-"] { border-left-color: var(--sc); background: var(--sct); }
+
+/* Кнопка фильтра по цвету: квадратик того же тона перед подписью. Без
+   него в ряду «Детская группа · Тренер · Корпоративные» не понять, о
+   каком цвете речь, а подписи владелец даёт свои. */
+.btn.chip::before { content: ''; display: inline-block; width: 10px; height: 10px;
+  border-radius: 3px; margin-right: 6px; vertical-align: -1px;
+  background: var(--sct); border: 1px solid var(--sc); }
+
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.swatch { width: 30px; height: 30px; border-radius: 8px; cursor: pointer; padding: 0;
+  background: var(--sct); border: 2px solid var(--sc); box-shadow: inset 0 0 0 2px #fff; }
+.swatch.on { box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--ink); }
+/* Строка легенды: квадратик, подпись, счётчик помеченных броней. */
+.legend-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.legend-row .swatch { flex: none; cursor: default; display: inline-block; }
+.legend-row .t3 { flex: none; min-width: 24px; text-align: right; }
+.blk.done { border-left-color: #9aa7a0; background: #E3E7E5; color: var(--ink-soft); }
+
+/* Перетаскивание. Курсор-крестик обещает возможность заранее — иначе о
+   ней никто не узнает, а прежний диалог никуда не делся. */
+.blk.movable { cursor: grab; }
+.blk.movable:active { cursor: grabbing; }
+.blk.dragging { opacity: .35; }
+/* Призрак в целевой клетке: показывает и куда встанет бронь, и что
+   именно там окажется — время и корт подписаны прямо в нём. */
+.blk.drag-ghost { pointer-events: none; z-index: 8; display: flex; align-items: center; justify-content: center;
+  border: 2px dashed var(--accent); border-left-width: 2px; background: var(--accent-tint);
+  color: var(--accent); font-weight: 600; font-size: 12px; text-align: center; }
+.blk.drag-ghost.bad { border-color: var(--danger); background: var(--danger-tint); color: var(--danger); }
+.blk.noshow { border-left-color: var(--danger); background: var(--danger-tint); }
+.blk.closed { border-left-color: #7b857f; background: repeating-linear-gradient(45deg, #cdd5d1 0 6px, #bfc9c4 6px 12px); }
+
+/* ---------- Списки ---------- */
+.item { border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; margin-bottom: 8px; }
+.item.hl { border-color: var(--warn-line); background: var(--warn-tint); }
+/* Куда именно перешли из сетки: без пометки на длинном списке дня
+   приходится искать глазами то самое окно. */
+.item.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+/* Выбор из нескольких раскладок: строка целиком — кнопка. Радио тут
+   читалось бы хуже: у каждого варианта две строки текста. */
+.item.pick { cursor: pointer; }
+.item.pick.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
+.item .t1 { font-weight: 600; }
+.item .t2 { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+/* Текст, написанный человеком строками, — описание турнира и подобное:
+   разбивку сохраняем, иначе абзацы склеиваются в сплошную строку. */
+.pre { white-space: pre-line; }
+.item .acts { margin-top: 9px; display: flex; gap: 8px; flex-wrap: wrap; }
+.acts { margin-top: 9px; display: flex; gap: 8px; flex-wrap: wrap; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--ink-soft);
+  margin: 18px 4px 8px; text-transform: uppercase; letter-spacing: .05em; }
+.item.past { opacity: .68; }
+
+.alarm { background: var(--danger-tint, #fbeaea); border: 1px solid #e3b4b4; color: #8d2f2f;
+  border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; font-size: 14px; }
+.alarm .t2 { margin-top: 5px; font-size: 13px; color: #8d2f2f; opacity: .85; }
+
+/* Каталог */
+.group { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--ink-soft); margin: 14px 2px 7px; }
+.goods { display: flex; gap: 12px; align-items: flex-start; }
+.goods-text { min-width: 0; }
+.thumb { flex: 0 0 auto; width: 62px; height: 62px; border-radius: 9px; border: 1px solid var(--line);
+  overflow: hidden; background: #fff; }
+.thumb.big { width: 120px; height: 120px; margin-bottom: 8px; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb.empty-thumb { background: repeating-linear-gradient(45deg, #F2F4F5 0 6px, #EAEDEE 6px 12px); }
+.field-label { font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+.opt-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.opt-row input:first-child { flex: 1; }
+.opt-row input:last-child { width: 96px; }
+.opt-row input { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+
+/* Длинный список внутри карточки: за смену событий набегает несколько
+   десятков, и полотном они выдавливают всё остальное со вкладки. */
+.scroller { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.scroller .item:last-child { margin-bottom: 0; }
+
+.pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 12px; border: 1px solid var(--line); }
+.pill.ok { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent-dark); }
+.pill.wait { background: var(--warn-tint); border-color: var(--warn-line); color: var(--warn); }
+.pill.bad { background: var(--danger-tint); border-color: #eec9c9; color: var(--danger); }
+.pill.grey { background: #f0f2f1; color: var(--ink-soft); }
+
+/* ---------- Статистика ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; }
+.kpi .v { font-size: 22px; font-weight: 600; }
+.kpi .l { font-size: 13px; color: var(--ink-soft); }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 150px; margin-top: 6px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+.bar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
+.bar.low { background: #c3d5cb; }
+.bar-lb { font-size: 10px; color: var(--ink-soft); margin-top: 4px; }
+
+table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.tbl th { text-align: left; font-weight: 600; color: var(--ink-soft); font-size: 13px;
+  padding: 6px 8px; border-bottom: 1px solid var(--line); }
+table.tbl td { padding: 8px; border-bottom: 1px solid #eef1ef; }
+/* Снявшийся с турнира остаётся в таблице: его сыгранное уже вошло в очки
+   соперников. Но он больше не участник, и выглядеть должен иначе. */
+table.tbl tr.off td { color: var(--ink-soft); text-decoration: line-through; }
+
+/* ---------- Турниры ---------- */
+/* Крестовина группы. На телефоне уезжает вбок, а не ломается: шестнадцать
+   столбцов в экран не влезают никак. */
+.cross-wrap { overflow-x: auto; }
+table.cross th, table.cross td { text-align: center; padding: 6px 4px; }
+table.cross th.who, table.cross td.who { text-align: left; white-space: nowrap; }
+table.cross th.pl, table.cross td.pl { width: 30px; color: var(--ink-soft); }
+table.cross th.sc, table.cross td.sc { min-width: 56px; font-variant-numeric: tabular-nums; }
+table.cross td.sc.hit { cursor: pointer; }
+table.cross td.sc.hit:hover { background: var(--accent-tint); }
+table.cross td.sc.self {
+  background: repeating-linear-gradient(-45deg, #F3F5F4 0 5px, #E8ECEA 5px 10px);
+}
+table.cross .w { color: var(--win); font-weight: 700; }
+table.cross .l { color: var(--lose); }
+/* Выходящие в плей-офф: заливка плюс полоса слева, иначе её не видно. */
+table.cross tr.up td { background: var(--pass-tint); }
+table.cross tr.up td.pl:first-child { box-shadow: inset 3px 0 0 var(--pass); }
+table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-soft); font-size: 13px; }
+.diff { font-weight: 700; }
+.diff.plus { color: var(--win); }
+.diff.minus { color: var(--lose); }
+.diff.zero { color: var(--ink-soft); }
+.medal { font-size: 17px; margin-right: 4px; }
+table.cross .pend { color: var(--line); }
+table.cross .who .sub { font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+table.cross td.pts { background: #F7F9F8; }
+table.cross .no {
+  display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px;
+  border-radius: 999px; background: var(--accent-tint); color: var(--accent-dark);
+  font-size: 12px; font-weight: 600; text-align: center;
+}
+.score-row { display: flex; align-items: center; gap: 8px; }
+.score-row input { width: 72px; text-align: center; }
+.score-sep { color: var(--ink-soft); }
+.picklist { max-height: 300px; overflow: auto; margin: 8px 0; }
+.picklist .item { cursor: pointer; }
+.picklist .item:hover { background: #f4f7f5; }
+
+/* ---------- Модальное окно ---------- */
+.backdrop { position: fixed; inset: 0; background: rgba(22,33,28,.45); display: none;
+  align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.backdrop.show { display: flex; }
+.modal { background: var(--surface); border-radius: 14px; max-width: 440px; width: 100%;
+  max-height: 90vh; overflow: auto; padding: 18px; }
+.modal h3 { margin: 0 0 3px; font-size: 18px; }
+.modal .m-sub { color: var(--ink-soft); font-size: 14px; margin-bottom: 14px; }
+.modal .m-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(12px);
+  background: var(--ink); color: #fff; font-size: 14px; padding: 10px 16px; border-radius: 10px;
+  opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 60; }
+.toast.show { opacity: 1; transform: translateX(-50%); }
+
+/* ---------- Мини-календарь выбора дней для печати ---------- */
+.mcal { margin: 10px 0 6px; }
+.mcal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.mcal-title { font-weight: 600; text-transform: capitalize; }
+.mcal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.mcal-wd { text-align: center; font-size: 12px; color: var(--ink-soft); padding: 2px 0; }
+.mcal-day { appearance: none; border: 1px solid var(--line); background: var(--surface); border-radius: 8px;
+  padding: 7px 0; font: inherit; font-size: 14px; cursor: pointer; }
+.mcal-day:hover { border-color: var(--accent); }
+.mcal-day.out { color: #aab4b0; }
+.mcal-day.today { font-weight: 700; }
+.mcal-day.in { background: var(--accent-tint); border-color: var(--accent-tint); }
+.mcal-day.edge { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mcal-sum { font-size: 14px; margin-top: 8px; }
+
+/* ---------- Таблица тренировки ---------- */
+/* Круговая сетка — та же, что на бумажном листе: строки в порядке
+   записи, клетка со счётом геймов, справа очки и место. Живёт и на
+   экране, и на печати, поэтому стили общие. */
+.rt-wrap { overflow-x: auto; margin: 8px 0 4px; }
+.rt { border-collapse: collapse; font-size: 13px; width: 100%; }
+.rt th, .rt td { border: 1px solid var(--line); padding: 5px 6px; text-align: center; white-space: nowrap; }
+.rt th { background: #f4f7f5; font-weight: 600; }
+.rt .rt-name { text-align: left; white-space: normal; min-width: 150px; }
+.rt .rt-self { background: #e7ebe9; }
+.rt .rt-sum { font-weight: 600; }
+.rt-note { font-size: 13px; color: var(--ink-soft); margin-top: 4px; white-space: pre-line; }
+
+/* Печать существует ради одного листа: таблицы, которую кладут на
+   планшетку и заполняют ручкой. Поэтому на бумагу уходит только
+   #printArea, а панель прячется целиком — распечатанная вкладка с
+   кнопками не нужна никому. */
+#printArea { display: none; }
+@media print {
+  /* Без этого браузер печатает сетку без заливки, и занятое не
+     отличить от свободного — а ради этого лист и печатают. */
+  .pr-week, .pr-week * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pr-week .pr-head { margin-bottom: 4px; }
+  .pr-week .pr-head h2 { font-size: 14px; }
+  .pr-week .pr-head .pr-sub { font-size: 10px; }
+  /* Липкие заголовки экрана на бумаге съезжают поверх сетки. */
+  .pr-week .grid.week .g-day, .pr-week .grid.week .g-head, .pr-week .grid.week .g-time {
+    position: static; }
+  .pr-week .grid.week .g-day { font-size: 10px; padding: 2px 0; }
+  .pr-week .grid.week .g-head { font-size: 8px; padding: 1px 0; }
+  .pr-week .grid.week .g-time { font-size: 8px; line-height: 1; }
+  .pr-week .grid.week .blk { font-size: 7.5px; line-height: 1.15; padding: 1px 2px; margin: .3mm .4mm;
+    border-radius: 3px; border-left-width: 2px; }
+  .pr-week .grid.week .blk .b-n { font-size: 7.5px; }
+  .pr-week .g-free { border-bottom-color: #d9dfdc; border-right-color: #d9dfdc; }
+  body { background: #fff; }
+  .topbar, .tabs, #view, .backdrop, .toast, #login { display: none !important; }
+  #printArea { display: block !important; padding: 0; }
+  .pr-head { margin-bottom: 10px; }
+  .pr-head h2 { margin: 0 0 2px; font-size: 17px; }
+  .pr-head .pr-sub { font-size: 13px; color: #444; }
+  .rt { font-size: 13px; }
+  /* Клетки крупнее экранных: в пустую таблицу на корте пишут ручкой,
+     и в семь пикселей высоты счёт не влезает. */
+  .rt th, .rt td { border: 1px solid #333; padding: 14px 8px; }
+  .rt th { padding: 7px 8px; }
+  .rt th { background: #eee; }
+  .rt .rt-self { background: #ddd; }
+  /* Пустые строки под парные довески: на листе их дописывают от руки,
+     и место под них надо оставить заранее. */
+  .pr-lines { margin-top: 12px; font-size: 13px; }
+  .pr-lines div { border-bottom: 1px solid #999; height: 22px; margin-top: 10px; }
+}
+
+@media (max-width: 560px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .daynav .date { min-width: 0; font-size: 16px; }
+}
+
+/* Бывшие атрибуты style: политика безопасности запрещает встроенные стили.
+   Селекторы по id и составные — чтобы перебить остальные правила, как
+   перебивал атрибут. */
+#loginPhone { width: 100%; margin-bottom: 8px; }
+#loginPass, #loginBtn { width: 100%; }
+.item.temp-pass { text-align: center; font-size: 22px; letter-spacing: 1px; }
+.goods-text .t2.news-when { display: inline; }
+.goods-text .t2.news-text { white-space: pre-line; }

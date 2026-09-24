@@ -1,0 +1,51 @@
+:root {
+  --ink: #22272C;
+  --ink-soft: #5F6B72;
+  --line: #DDE3E5;
+  --bg: #F2F4F5;
+  --surface: #FFFFFF;
+  --court: #3F6CA3;
+  --court-dk: #2F5480;
+  --court-tint: #E8F0F9;
+  --court-line: #C6D9EE;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 0 16px 64px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+.wrap { max-width: 780px; margin: 0 auto; }
+header {
+  background: var(--court); color: #fff;
+  margin: 0 -16px 26px; padding: 26px 16px 22px;
+}
+header .in { max-width: 780px; margin: 0 auto; }
+header a { color: #fff; opacity: .85; text-decoration: none; font-size: 14px; }
+header a:hover { opacity: 1; text-decoration: underline; }
+h1 { font-size: 26px; line-height: 1.25; margin: 10px 0 6px; }
+.sub { opacity: .85; font-size: 14px; }
+main { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+h2 { font-size: 19px; margin: 30px 0 10px; color: var(--court-dk); scroll-margin-top: 16px; }
+p, li { margin: 9px 0; }
+ul, ol { padding-left: 22px; }
+.toc { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin: 0 0 8px; }
+.toc h2 { margin: 0 0 8px; font-size: 16px; }
+.toc ol { margin: 0; padding-left: 20px; font-size: 15px; }
+.toc li { margin: 3px 0; }
+.note {
+  background: var(--court-tint); border: 1px solid var(--court-line);
+  border-radius: 10px; padding: 13px 15px; margin: 16px 0;
+}
+.meta { color: var(--ink-soft); font-size: 14px; margin-top: 26px; border-top: 1px solid var(--line); padding-top: 14px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: var(--bg); font-weight: 600; }
+.scroll { overflow-x: auto; }
+a { color: var(--court-dk); }
+
+/* Бывшие атрибуты style: политика безопасности запрещает встроенные стили */
+.note p.flush-top { margin-top: 0; }
+.note p.flush-bottom { margin-bottom: 0; }

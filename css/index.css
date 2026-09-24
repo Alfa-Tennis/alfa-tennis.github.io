@@ -1,0 +1,433 @@
+/* Палитра снята прямо из вектора логотипа: #3F6CA3 у знака и надписи,
+   #A4DB00 у мяча — это не подбор на глаз, а те же значения из файла.
+   Золота в логотипе больше нет, и раньше `--gold` тянул две несовместимые
+   роли сразу — призыв и предупреждение. Теперь это разные переменные:
+   лайм зовёт (`--ball`), янтарь предупреждает (`--warn`). Звезда рейтинга
+   осталась жёлтой намеренно: лаймовая звезда читается как ошибка. */
+:root {
+  --ink: #22272C;
+  --ink-soft: #5F6B72;
+  --line: #DDE3E5;
+  --bg: #F2F4F5;
+  --surface: #FFFFFF;
+
+  --court: #3F6CA3;
+  --court-dk: #2F5480;
+  --court-tint: #E8F0F9;
+  --court-line: #C6D9EE;
+
+  --ball: #A4DB00;
+  --ball-dk: #4C6600;
+  --ball-tint: #F0F8D8;
+
+  --warn: #C98A14;
+  --warn-dk: #7A5410;
+  --warn-tint: #FDF3DE;
+  --warn-line: #EFDCB2;
+
+  --star: #F0B429;
+
+  --grass: #5C752F;
+  --danger: #B23B3B;
+  --danger-tint: #FBEDED;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(34,39,44,.06), 0 8px 24px rgba(34,39,44,.07);
+}
+
+* { box-sizing: border-box; }
+/* Любое правило вроде `display: flex` на элементе сильнее браузерного
+   `[hidden] { display: none }`, и скрытый блок остаётся на экране.
+   Закрываем это раз и навсегда для всей страницы. */
+[hidden] { display: none !important; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 104px;
+}
+a { color: var(--court-dk); }
+button { font: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------- Шапка ---------- */
+.hero { background: linear-gradient(160deg, #1E3A5F 0%, #2C4F7C 100%); color: #fff; padding: 20px 16px 24px; }
+.hero-inner { max-width: 920px; margin: 0 auto; }
+.hero-top { display: flex; align-items: center; gap: 14px; }
+/* Вектор логотипа шире, чем выше (444×263), и в квадратной плашке
+   давал бы белые поля сверху и снизу. Плашка под пропорции знака. */
+.logo { width: 92px; height: 56px; border-radius: 12px; background: #fff; padding: 5px 8px; flex: 0 0 auto; }
+.logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.hero h1 { margin: 0; font-size: 21px; line-height: 1.2; letter-spacing: -.01em; }
+.hero .where { margin: 2px 0 0; font-size: 14px; color: rgba(255,255,255,.72); }
+.hero-top .grow { flex: 1; }
+
+/* Отдельной строкой на всю ширину: рядом с названием на телефоне фраза
+   рвалась посередине — «4,9 · 64 / оценки на / Яндекс.Картах». */
+.rating { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 14px; color: rgba(255,255,255,.85); margin-top: 12px; }
+.rating .star { color: var(--star); }
+
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.fact {
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px; padding: 6px 12px; font-size: 14px;
+}
+.fact b { font-weight: 600; }
+.fact.accent { background: var(--ball); border-color: var(--ball); color: #2C3A08; }
+.hero a { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Чем клуб хорош — читают до выбора времени, а не после, поэтому это
+   в шапке, а не в подвале. */
+.about { margin: 14px 0 0; font-size: 14px; color: rgba(255,255,255,.72); line-height: 1.45; }
+.about .svc { display: block; margin-top: 4px; }
+
+.who {
+  appearance: none; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08);
+  color: #fff; border-radius: 999px; padding: 8px 15px; cursor: pointer; white-space: nowrap;
+}
+.who:hover { background: rgba(255,255,255,.16); }
+
+/* ---------- Навигация ---------- */
+.nav { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.nav-inner { max-width: 920px; margin: 0 auto; display: flex; gap: 2px; padding: 0 8px; overflow-x: auto; }
+.nav button {
+  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 13px 14px; cursor: pointer; color: var(--ink-soft); white-space: nowrap;
+}
+.nav button:hover { color: var(--ink); }
+.nav button.on { color: var(--court-dk); border-bottom-color: var(--court); font-weight: 600; }
+.nav .dot { background: var(--ball); color: #2C3A08; border-radius: 999px; font-size: 11px; padding: 1px 6px; margin-left: 5px; font-weight: 600; }
+
+main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
+/* Заголовки разделов витрины: серым и тонким они терялись между
+   карточками, и человек пролистывал каталог, не заметив, что начался
+   новый раздел. */
+.section-title { font-size: 13px; font-weight: 700; color: var(--ink); margin: 22px 4px 10px; text-transform: uppercase; letter-spacing: .05em; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
+.card h2 { margin: 0 0 10px; font-size: 16px; }
+
+.notice { margin: 14px 0 0; background: var(--warn-tint); border: 1px solid var(--warn-line); color: var(--warn-dk); border-radius: var(--radius); padding: 10px 14px; font-size: 14px; }
+.notice.info { background: var(--court-tint); border-color: var(--court-line); color: var(--court-dk); }
+.empty { color: var(--ink-soft); font-size: 14px; padding: 4px 2px; }
+
+/* ---------- Кнопки ---------- */
+.btn { appearance: none; border: 0; border-radius: 10px; background: var(--court); color: #fff; font-weight: 600; padding: 11px 20px; cursor: pointer; }
+.btn:hover { background: var(--court-dk); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.sm { padding: 7px 13px; font-size: 14px; }
+.btn.sec { background: #EDF0F1; color: var(--ink); }
+.btn.sec:hover { background: #E2E7E9; }
+.btn.danger { background: var(--danger); }
+.btn.danger:hover { background: #96302F; }
+.btn.ghost { background: transparent; color: var(--ink-soft); font-weight: 400; padding: 11px 8px; }
+.btn.wide { width: 100%; }
+
+.field { display: block; margin-bottom: 12px; }
+.field span { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 5px; }
+.field input { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; background: #fff; }
+.field input:focus { outline: 2px solid var(--court-tint); border-color: var(--court); }
+/* Глазок в поле пароля: кнопка поверх правого края, текст под неё не заходит. */
+.pass-wrap { position: relative; }
+.pass-wrap input { padding-right: 46px; }
+.pass-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 38px; height: 38px; border: 0; background: none; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); }
+.pass-eye:hover { color: var(--court); }
+.pass-eye:focus-visible { outline: 2px solid var(--court-tint); }
+.pass-eye svg { width: 20px; height: 20px; }
+
+.pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 12px; border: 1px solid var(--line); }
+.pill.ok { background: var(--court-tint); border-color: var(--court-line); color: var(--court-dk); }
+.pill.wait { background: var(--warn-tint); border-color: var(--warn-line); color: var(--warn-dk); }
+.pill.bad { background: var(--danger-tint); border-color: #EEC9C9; color: var(--danger); }
+.pill.grey { background: #EFF2F3; color: var(--ink-soft); }
+
+/* ---------- Дни ---------- */
+.days { display: flex; gap: 8px; overflow-x: auto; padding: 4px 4px 10px; }
+.day { flex: 0 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 14px; cursor: pointer; text-align: center; min-width: 94px; }
+.day:hover { border-color: var(--court); }
+.day .d-label { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.day .d-free { font-size: 12px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap; }
+.day.active { background: var(--court); border-color: var(--court); color: #fff; }
+.day.active .d-free { color: rgba(255,255,255,.82); }
+
+/* ---------- Панель подбора ---------- */
+.picker { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
+.picker-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.picker-row .lab { font-size: 14px; color: var(--ink-soft); }
+.chips { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.chip { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 14px; cursor: pointer; }
+.chip:hover { border-color: var(--court); }
+.chip.on { background: var(--court); border-color: var(--court); color: #fff; }
+/* Незаполненная обязательная группа выбора: подпись краснеет ровно там,
+   где нечего выбрано, а не общим сообщением поверх всей формы. */
+.field.need > span { color: var(--danger); }
+.field.need .chip { border-color: var(--danger); }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ink-soft); cursor: pointer; }
+/* Согласие на обработку данных. Галочка не проставлена заранее и стоит
+   рядом с кнопкой: согласие должно быть действием человека, а не
+   состоянием формы по умолчанию. */
+.consent { display: flex; gap: 9px; align-items: flex-start; margin: 4px 0 14px;
+  font-size: 13px; line-height: 1.45; color: var(--ink-soft); cursor: pointer; }
+.consent input { margin: 2px 0 0; flex: 0 0 auto; width: 16px; height: 16px; }
+
+/* Вариантов бывает три десятка — без ограничения высоты они отодвигают
+   сетку кортов далеко за пределы экрана телефона. */
+.opts { display: flex; flex-wrap: wrap; gap: 8px; max-height: 216px; overflow-y: auto; }
+.opt { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 12px; text-align: left; line-height: 1.25; cursor: pointer; }
+.opt:hover { border-color: var(--court); }
+.opt.on { border-color: var(--court); background: var(--court-tint); }
+.opt .o-time { display: block; font-weight: 600; font-size: 15px; }
+.opt .o-court { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap; }
+.opt.split .o-court { color: var(--warn-dk); }
+.opts-empty { font-size: 14px; color: var(--ink-soft); padding: 2px; }
+.picker-foot { margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--ink-soft); }
+.grid-hint { margin: 10px 4px 0; font-size: 13px; color: var(--ink-soft); }
+
+/* ---------- Сетка ---------- */
+/* overflow: clip, а не hidden — намеренно. `hidden` делает карточку
+   собственной областью прокрутки, и `position: sticky` у шапки сетки
+   начинает считать отступ от карточки, а не от окна: шапка встаёт на
+   49 пикселей ниже своей строки и навсегда накрывает 05:00 и половину
+   05:30. Именно это и видел владелец. `clip` обрезает так же, но
+   области прокрутки не создаёт. */
+.grid-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: clip; }
+
+.grid { display: grid; }
+.g-head { position: sticky; top: var(--nav-h, 53px); z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 6px; font-size: 14px; font-weight: 600; text-align: center; }
+.g-head.corner { z-index: 4; }
+.g-head .g-sub { display: block; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+/* Получас — 29 пикселей, а не 34: рабочий день клуба это сорок строк, и
+   на телефоне сетка уезжала за экран сильнее, чем нужно. Меньше 28 уже
+   не даёт попасть пальцем. */
+.g-time { position: sticky; left: 0; z-index: 2; background: var(--surface); border-right: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); padding: 0 8px; display: flex; align-items: center; justify-content: flex-end; height: 29px; }
+.g-time.hour { color: var(--ink); font-weight: 600; }
+
+.cell { height: 29px; border-bottom: 1px solid #EEF1F2; border-right: 1px solid #EEF1F2; position: relative; }
+.cell.hour-line { border-top: 1px solid var(--line); }
+.cell.free { background: var(--surface); cursor: pointer; }
+/* Сетка выкладывается по строкам (время, корт 1, корт 2), поэтому
+   соседи в DOM — это соседние корты, а не соседние получасы. Отделять
+   прошедшее от свободного правилом «сосед сверху» тут нечем: полагаемся
+   на заливку, её теперь хватает. */
+.cell.free:hover { background: var(--court-tint); }
+/* Занятое и постоянные брони держим заметно темнее фона: на дешёвой
+   матрице и при боковом взгляде прежние светло-серые клетки сливались
+   со свободными, и сетка читалась как пустая. */
+.cell.busy { background: #C9D1D4; cursor: pointer; }
+.cell.busy:hover { background: #BAC4C8; }
+.cell.regular { background: repeating-linear-gradient(45deg, #C9D1D4 0 6px, #A9B9C6 6px 12px); cursor: pointer; }
+/* Открытая тренировка — занято, но не чужое: сюда можно записаться,
+   и клетка обязана отличаться от обычной брони с первого взгляда. */
+.cell.openplay { background: var(--ball-tint); cursor: pointer; box-shadow: inset 3px 0 0 var(--ball); }
+.cell.openplay:hover { background: #E7F4C4; }
+.cell.openplay .tag { color: var(--ball-dk); font-weight: 600; }
+.cell.closed { background: repeating-linear-gradient(45deg, #B3BCC0 0 6px, #A2ADB2 6px 12px); }
+/* Турнир — не «закрыт»: на него записываются. Цвет корта, а не мяча:
+   лаймом помечена тренировка, и два разных «сюда можно попасть» одного
+   цвета читались бы одним и тем же. */
+.cell.tournament { background: var(--court-tint); cursor: pointer; box-shadow: inset 3px 0 0 var(--court); }
+.cell.tournament:hover { background: #DCE8F5; }
+.cell.tournament .tag { color: var(--court-dk); font-weight: 600; }
+/* Прошедшее время — ровный серый в полную силу. Прежний #F7F8F9 от
+   белого «свободно» отличался на глаз едва-едва, и человек в клубе
+   принимал закрытый хвост дня за свободный. Ощутимо темнее занятого
+   (#C9D1D4) быть не должно: это не «занято», а «уже не бывает». */
+.cell.past { background: #DFE4E7; cursor: default; border-bottom-color: #D2D9DC; border-right-color: #D2D9DC; }
+.cell.mine { background: var(--grass); }
+.cell.sel { background: var(--court); }
+.cell.sel:hover { background: var(--court-dk); }
+/* Белая черта в месте перехода на соседний корт: видно, что бронь одна,
+   но играть её придётся на двух кортах. */
+.cell.sel.seg-break, .cell.mine.seg-break { box-shadow: inset 0 3px 0 #fff; }
+/* Две тренировки подряд без разделителя читаются как одно окно на пять
+   часов. Левая полоса при этом остаётся — она метит саму тренировку. */
+.cell.openplay.seg-break { box-shadow: inset 3px 0 0 var(--ball), inset 0 2px 0 #fff; }
+/* Название тренировки бывает длиннее колонки — на телефоне она ýже
+   половины экрана. Обрезаем многоточием, иначе подпись выезжает на
+   соседний корт. */
+.cell .tag { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #55636A; pointer-events: none; white-space: nowrap; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
+.cell.mine .tag { color: #fff; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 4px 0; font-size: 13px; color: var(--ink-soft); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); display: inline-block; }
+.sw.free { background: #fff; }
+.sw.busy { background: #C9D1D4; }
+.sw.regular { background: repeating-linear-gradient(45deg, #C9D1D4 0 4px, #A9B9C6 4px 8px); }
+.sw.openplay { background: var(--ball-tint); box-shadow: inset 3px 0 0 var(--ball); }
+.sw.closed { background: repeating-linear-gradient(45deg, #B3BCC0 0 4px, #A2ADB2 4px 8px); }
+.sw.tournament { background: var(--court-tint); box-shadow: inset 3px 0 0 var(--court); }
+.sw.mine { background: var(--grass); }
+.sw.past { background: #DFE4E7; }
+
+/* ---------- Нижняя панель ---------- */
+.bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 24px rgba(34,39,44,.09); transform: translateY(110%); transition: transform .18s ease-out; }
+.bar.show { transform: none; }
+.bar-inner { max-width: 920px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.bar .info { flex: 1 1 210px; min-width: 0; }
+.bar .info .t1 { font-weight: 600; }
+.bar .info .t2 { font-size: 14px; color: var(--ink-soft); }
+.bar .info .switch-note { color: var(--warn-dk); }
+.bar .info .switch-note:empty { display: none; }
+
+/* ---------- Рейтинг в кабинете ---------- */
+.rating-box { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.rating-box.low { border-color: var(--warn-line); background: var(--warn-tint); }
+.ball-rating { width: 46px; height: 46px; flex: 0 0 auto; }
+.rating-text .t1 { font-weight: 600; }
+.rating-text .t2 { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+
+/* ---------- Мои брони ---------- */
+.item { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+.item.past { opacity: .72; }
+.item .t1 { font-weight: 600; }
+.item .t2 { font-size: 14px; color: var(--ink-soft); margin-top: 2px; }
+.item .t3 { font-size: 13px; color: var(--warn-dk); margin-top: 4px; }
+.item .acts { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- Модальные окна ---------- */
+.backdrop { position: fixed; inset: 0; background: rgba(34,39,44,.5); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.backdrop.show { display: flex; }
+.modal { background: var(--surface); border-radius: 14px; max-width: 420px; width: 100%; max-height: 90vh; overflow: auto; padding: 20px; }
+.modal h3 { margin: 0 0 4px; font-size: 19px; }
+.modal .m-sub { color: var(--ink-soft); font-size: 14px; margin-bottom: 16px; }
+.modal .m-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.tabs2 { display: flex; gap: 6px; margin-bottom: 16px; }
+.tabs2 button { flex: 1; appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 9px; cursor: pointer; }
+.tabs2 button.on { background: var(--court); border-color: var(--court); color: #fff; font-weight: 600; }
+
+/* Код сверки при входе через Telegram: его читают глазами и сравнивают
+   с сообщением бота, поэтому он крупный и с разрядкой. */
+.tg-or { display: flex; align-items: center; gap: 10px; color: var(--ink-soft); font-size: 13px; margin: 16px 0 12px; }
+.tg-or::before, .tg-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.tg-code { font-size: 32px; font-weight: 700; letter-spacing: .22em; text-align: center;
+  background: var(--court-tint); border-radius: 10px; padding: 14px 10px 14px 18px; margin: 14px 0; }
+/* Команда для бота на случай, когда ссылка не доехала: её выделяют и
+   копируют целиком, поэтому перенос по любому месту, а не по словам. */
+.tg-cmd-note { margin-top: 10px; }
+.tg-cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; user-select: all;
+  background: #fff; border: 1px solid var(--warn-line); border-radius: 8px;
+  padding: 8px 10px; margin: 6px 0 10px; word-break: break-all; }
+
+.summary { background: var(--court-tint); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+.summary .s-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; padding: 2px 0; }
+.summary .s-row.total { font-weight: 600; font-size: 16px; border-top: 1px solid var(--court-line); margin-top: 6px; padding-top: 8px; }
+.rent { margin-bottom: 14px; }
+.rent-head { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+.rent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px; }
+.rent-row.on { border-color: var(--ball); background: var(--ball-tint); }
+.rent-name b { display: block; font-size: 14px; font-weight: 600; }
+.rent-name span { font-size: 12.5px; color: var(--ink-soft); }
+.stepper { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+/* Кнопки крупные не для красоты: по ним попадают пальцем на телефоне,
+   а промах здесь стоит лишней ракетки в счёте. */
+.stepper-b { width: 34px; height: 34px; border: 1px solid var(--line); background: #fff;
+  border-radius: 9px; font-size: 18px; line-height: 1; cursor: pointer; color: var(--ink); }
+.stepper-b:active { background: var(--court-tint); }
+.stepper-n { min-width: 22px; text-align: center; font-weight: 600; font-size: 15px; }
+.rent-note { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+
+.toast { position: fixed; left: 50%; bottom: 104px; transform: translateX(-50%) translateY(12px); background: var(--ink); color: #fff; font-size: 14px; padding: 11px 17px; border-radius: 10px; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 60; max-width: 90vw; text-align: center; }
+.toast.show { opacity: 1; transform: translateX(-50%); }
+
+.state { padding: 40px 10px; text-align: center; color: var(--ink-soft); }
+
+/* Главная */
+.cta { background: var(--court); color: #fff; border-radius: var(--radius); padding: 18px 16px; margin-top: 18px; }
+.cta h2 { margin: 0 0 4px; font-size: 19px; }
+/* Цена и часы стоят здесь, у самой кнопки, теми же чипами, что и в
+   шапке: там они были вторым экземпляром той же строки. */
+.cta .facts { margin: 12px 0 0; }
+.cta .fact.accent { font-size: 15px; padding: 7px 14px; }
+.cta p { margin: 12px 0 14px; font-size: 14px; color: rgba(255,255,255,.82); line-height: 1.45; }
+.cta .btn { background: var(--ball); color: #2C3A08; }
+.cta .btn:hover { background: #93C400; }
+
+/* Скидочные окна — отдельной плашкой над призывом, а не чипом внутри
+   него: чипом они стояли в ряду с «2 крытых корта» и читались как ещё
+   одна справка, а это единственная причина прийти днём в будни. Лайм
+   берём мячовый — он на странице значит «сюда», и другого такого пятна
+   на главной нет. Дни недели здесь обязательны: «1 600 ₽ 07:00–11:00»
+   без них человек честно прочитает как «всегда». */
+.promo { background: var(--ball); color: #2C3A08; border-radius: var(--radius); padding: 14px 16px; margin-top: 18px; }
+.promo-head { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .72; }
+.promo-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 8px; }
+.promo-row + .promo-row { border-top: 1px solid rgba(44,58,8,.18); padding-top: 8px; }
+.promo-price { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.promo-was { font-size: 14px; text-decoration: line-through; opacity: .6; }
+.promo-when { flex: 1 1 100%; font-size: 15px; font-weight: 600; }
+.promo-label { font-weight: 400; opacity: .78; }
+
+/* Итоги тренировки — круговая таблица с корта. Узкая по своей природе:
+   на телефоне она уезжает вбок внутри своей рамки, а страница при этом
+   остаётся на месте. */
+.rt-wrap { overflow-x: auto; margin: 8px 0 4px; }
+.rt { border-collapse: collapse; font-size: 13px; width: 100%; }
+.rt th, .rt td { border: 1px solid var(--line); padding: 5px 6px; text-align: center; white-space: nowrap; }
+.rt th { background: var(--bg); font-weight: 600; }
+.rt .rt-name { text-align: left; white-space: normal; min-width: 140px; }
+.rt .rt-self { background: #E6EAEC; }
+.rt .rt-sum { font-weight: 600; }
+.rt-note { font-size: 13px; color: var(--ink-soft); margin-top: 4px; white-space: pre-line; }
+.ev { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+.ev-when { flex: 0 0 auto; text-align: center; min-width: 52px; }
+.ev-when .d { font-size: 20px; font-weight: 600; line-height: 1.1; }
+.ev-when .m { font-size: 12px; color: var(--ink-soft); text-transform: uppercase; }
+.ev-what { min-width: 0; }
+.ev-what .t1 { font-weight: 600; }
+/* Описание турнира владелец пишет строками — место, условия, ссылка на
+   регистрацию. Разбивку сохраняем: сплошным текстом объявление не
+   читается. Переносы приходят с сервера, там же и вычищены. */
+.ev-what .t2 { font-size: 14px; color: var(--ink-soft); margin-top: 3px; white-space: pre-line; }
+.post { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.post:last-of-type { border-bottom: 0; }
+.post-pic { border-radius: 10px; overflow: hidden; margin-bottom: 10px; max-width: 460px; }
+.post-pic img { width: 100%; display: block; }
+.post-when { font-size: 12px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+.post-text { margin-top: 5px; font-size: 15px; line-height: 1.5; white-space: pre-line; }
+.goods-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.goods-card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+.goods-pic { aspect-ratio: 4 / 3; background: #fff; }
+.goods-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.goods-pic.no-pic { background: repeating-linear-gradient(45deg, #F2F4F5 0 8px, #E9EDEE 8px 16px); }
+.goods-body { padding: 10px 11px 12px; }
+.goods-body .t1 { font-weight: 600; font-size: 15px; line-height: 1.25; }
+.goods-body .t-price { margin-top: 4px; font-weight: 600; color: var(--court-dk); }
+.goods-body .t2 { margin-top: 5px; font-size: 13px; color: var(--ink-soft); line-height: 1.4; white-space: pre-line; }
+.goods-body .btn { margin-top: 10px; }
+/* Услуга со снимком: фотография слева, тарифы справа. Место под неё
+   берётся у пустоты между названием тарифа и ценой — её там с избытком.
+   Без фотографии раскладка прежняя, в одну колонку. */
+.svc-item { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: start; padding-bottom: 4px; }
+.svc-item.no-photo { grid-template-columns: minmax(0, 1fr); }
+.svc-photo { width: 112px; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; cursor: zoom-in; }
+@media (max-width: 560px) {
+  .svc-item { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
+  .svc-photo { width: 76px; }
+}
+.svc-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 7px 2px; border-bottom: 1px dashed var(--line); font-size: 15px; }
+/* Название тарифа — тем же цветом и кеглем, что и всё остальное:
+   приглушённым оно читалось хуже цены напротив, а строка «клубная —
+   500 ₽» имеет смысл только целиком. Отступ слева и так показывает,
+   что это вариант услуги, а не отдельная услуга. */
+.svc-row.sub { padding-left: 14px; }
+.svc-row:last-child { border-bottom: 0; }
+.svc-row b { white-space: nowrap; }
+.links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.links .or { color: var(--ink-soft); font-size: 14px; }
+footer { max-width: 920px; margin: 26px auto 0; padding: 0 16px; color: var(--ink-soft); font-size: 13px; }
+footer a { color: var(--court-dk); }
+
+@media (max-width: 520px) {
+  .hero h1 { font-size: 18px; }
+  .logo { width: 48px; height: 48px; }
+  .cell, .g-time { height: 32px; }
+}
+
+/* Бывшие атрибуты style: политика безопасности запрещает встроенные стили */
+.empty.cancel-note { padding: 0 0 10px; }

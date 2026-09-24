@@ -1,0 +1,257 @@
+/* Палитра та же, что на клиентской странице: сетка — продолжение сайта,
+   а не отдельный продукт. */
+:root {
+  --ink: #22272C;
+  --ink-soft: #5F6B72;
+  --line: #DDE3E5;
+  --bg: #F2F4F5;
+  --surface: #FFFFFF;
+
+  --court: #3F6CA3;
+  --court-dk: #2F5480;
+  --court-tint: #E8F0F9;
+  --court-line: #C6D9EE;
+
+  --ball: #A4DB00;
+  --ball-dk: #4C6600;
+  --ball-tint: #F0F8D8;
+
+  /* Счёт в крестовине: выигрыш зелёным, проигрыш красным. Оливковый
+     --ball-dk тут не работал — он тёмный и читался как «просто текст». */
+  --win: #159B45;
+  --lose: #D4372F;
+  --pass: #159B45;
+  --pass-tint: #E7F6EC;
+
+  --warn: #C98A14;
+  --warn-tint: #FDF3DE;
+  --danger: #B23B3B;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(34,39,44,.06), 0 8px 24px rgba(34,39,44,.07);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--court-dk); }
+button { font: inherit; }
+
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 16px 48px; }
+
+.hero { background: linear-gradient(160deg, #1E3A5F 0%, #2C4F7C 100%); color: #fff; padding: 18px 16px 22px; }
+.hero-inner { max-width: 980px; margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+.logo { width: 78px; height: 48px; border-radius: 10px; background: #fff; padding: 4px 7px; flex: 0 0 auto; }
+.logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.hero h1 { margin: 0; font-size: 20px; line-height: 1.2; }
+.hero .sub { margin: 2px 0 0; font-size: 14px; color: rgba(255,255,255,.75); }
+.hero a { color: #fff; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px; margin-top: 16px;
+}
+.card h2 { margin: 0 0 10px; font-size: 17px; }
+.card h2 .tag { font-weight: 400; font-size: 14px; color: var(--ink-soft); }
+
+.pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 13px; }
+.pill.ok { background: var(--ball-tint); color: var(--ball-dk); }
+.pill.wait { background: var(--warn-tint); color: var(--warn); }
+.pill.grey { background: #EEF1F2; color: var(--ink-soft); }
+.pill.me { background: var(--court-tint); color: var(--court-dk); }
+
+.meta { color: var(--ink-soft); font-size: 14px; }
+.empty { color: var(--ink-soft); font-size: 14px; padding: 10px 0; }
+
+.acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.btn {
+  appearance: none; border: 0; border-radius: 999px; padding: 9px 16px; cursor: pointer;
+  background: var(--court); color: #fff;
+}
+.btn:hover { background: var(--court-dk); }
+.btn.sec { background: var(--court-tint); color: var(--court-dk); }
+.btn.sec:hover { background: var(--court-line); }
+
+/* ---------- Таблицы групп ---------- */
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 460px; }
+th { text-align: left; font-weight: 600; color: var(--ink-soft); font-size: 13px;
+  padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px; border-bottom: 1px solid #EEF1F2; }
+/* Выходящие в плей-офф. Бледной заливки было мало — её попросту не
+   замечали, поэтому к фону добавлена полоса слева. */
+tr.up td { background: var(--pass-tint); }
+tr.up td.pl:first-child { box-shadow: inset 3px 0 0 var(--pass); }
+tr.off td { color: var(--ink-soft); text-decoration: line-through; }
+tr.mine td b { color: var(--court-dk); }
+
+/* ---------- Крестовина группы ---------- */
+table.cross { min-width: 0; }
+table.cross th, table.cross td { text-align: center; padding: 6px 4px; }
+table.cross th.who, table.cross td.who { text-align: left; white-space: nowrap; padding-left: 8px; }
+table.cross th.pl, table.cross td.pl { width: 30px; color: var(--ink-soft); }
+table.cross th.sc, table.cross td.sc { min-width: 54px; font-variant-numeric: tabular-nums; }
+/* Клетка «сам с собой» — заштрихована, как в бумажных протоколах. */
+table.cross td.sc.self {
+  background: repeating-linear-gradient(-45deg, #F2F4F5 0 5px, #E7EBEC 5px 10px);
+}
+table.cross .w { color: var(--win); font-weight: 700; }
+table.cross .l { color: var(--lose); }
+table.cross .pend { color: var(--line); }
+table.cross .who .sub { font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+table.cross td.pts { background: #F7F9F8; }
+table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-soft); font-size: 13px; }
+.diff { font-weight: 700; }
+.diff.plus { color: var(--win); }
+.diff.minus { color: var(--lose); }
+.diff.zero { color: var(--ink-soft); }
+/* Номер участника рядом с именем — тот же, что был на мяче. */
+table.cross .no {
+  display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px;
+  border-radius: 999px; background: var(--court-tint); color: var(--court-dk);
+  font-size: 12px; font-weight: 600; text-align: center;
+}
+
+/* ---------- Матчи ---------- */
+.match {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid #EEF1F2;
+}
+.match:last-child { border-bottom: 0; }
+.match .who { flex: 1; min-width: 200px; }
+.match .win { font-weight: 600; }
+.match .score { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.medal { font-size: 18px; margin-right: 4px; }
+.round-title { font-size: 13px; color: var(--ink-soft); margin-top: 14px; text-transform: lowercase; }
+
+/* Сетка плей-офф колонками по кругам. На телефоне уезжает вбок, а не
+   ломается: сетка на восемь в один экран не влезает никак. */
+.bracket { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 6px; }
+.bracket .col { min-width: 220px; flex: 1 0 220px; display: flex; flex-direction: column;
+  justify-content: space-around; gap: 10px; }
+.bracket .col h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.slot {
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface);
+}
+.slot .side { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; font-size: 14px; }
+.slot .side + .side { border-top: 1px solid #EEF1F2; }
+.slot .side.win { background: var(--pass-tint); font-weight: 600; box-shadow: inset 3px 0 0 var(--pass); }
+.slot .side.win .score { color: var(--win); font-weight: 700; }
+.slot .side.empty { color: var(--ink-soft); }
+
+/* ---------- Церемония жеребьёвки ---------- */
+.stage {
+  position: fixed; inset: 0; z-index: 60; display: none;
+  background: linear-gradient(160deg, #16283F 0%, #24405F 100%); color: #fff;
+  padding: 18px; overflow: auto;
+}
+.stage.on { display: block; }
+.stage-inner { max-width: 980px; margin: 0 auto; }
+.stage h2 { margin: 0; font-size: 22px; }
+.stage .sub { color: rgba(255,255,255,.72); font-size: 14px; margin-top: 2px; }
+
+.pots { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 18px; }
+.pot { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 10px; }
+.pot h3 { margin: 0 0 8px; font-size: 14px; color: rgba(255,255,255,.8); font-weight: 600; }
+.cell {
+  border-radius: 8px; padding: 7px 10px; font-size: 14px; min-height: 34px;
+  background: rgba(255,255,255,.05); border: 1px dashed rgba(255,255,255,.18);
+  margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+  transition: background .25s, border-color .25s;
+}
+.cell.filled { background: rgba(164,219,0,.16); border: 1px solid rgba(164,219,0,.5); border-style: solid; }
+/* Вспышка в момент, когда мяч сел в ячейку: без неё глазу непонятно,
+   куда именно он приземлился. */
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.06); } 100% { transform: scale(1); } }
+.cell.hit { animation: pop .35s ease-out; }
+
+/* Мяч. Тот же фирменный лайм, что у знака клуба. */
+.ball {
+  width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto;
+  background: radial-gradient(circle at 32% 28%, #C9F53F 0%, var(--ball) 55%, #86B300 100%);
+  box-shadow: inset 0 -2px 4px rgba(0,0,0,.18);
+  position: relative;
+}
+/* Две дуги «швов» — мяч без них читается как жёлтый кружок. */
+.ball::before, .ball::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.75); border-color: transparent;
+}
+.ball::before { border-left-color: rgba(255,255,255,.75); transform: rotate(-18deg); }
+.ball::after { border-right-color: rgba(255,255,255,.75); transform: rotate(-18deg); }
+/* Номер участника на мяче — по нему следят за собой, когда имена
+   погасли. Поверх швов, поэтому z-index. */
+.ball .num {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #2C3A08; z-index: 1;
+}
+
+.drum {
+  margin-top: 20px; background: rgba(0,0,0,.18); border-radius: 14px; padding: 12px;
+  display: flex; flex-wrap: wrap; gap: 8px; min-height: 62px; align-items: center;
+}
+.chip {
+  display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 6px;
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px; font-size: 14px; white-space: nowrap;
+  transition: padding .45s ease, gap .45s ease;
+}
+/* Имена сбрасываются в барабан и пропадают: дальше мячи неотличимы, и
+   по очереди в барабане нельзя угадать, кого вытянут следующим. Раньше
+   чипы стояли в порядке вытягивания — очередь читалась заранее. */
+.chip .nm {
+  display: inline-block; overflow: hidden; max-width: 240px;
+  transition: max-width .45s ease, opacity .3s ease;
+}
+.drum.blind .chip { padding: 5px 6px; gap: 0; }
+.drum.blind .chip .nm { max-width: 0; opacity: 0; }
+.chip.gone { opacity: .18; }
+/* Барабан крутит мячи, пока выбирает следующего. */
+@keyframes shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  25% { transform: translate(-2px, 1px) rotate(-1.2deg); }
+  75% { transform: translate(2px, -1px) rotate(1.2deg); }
+}
+.drum.rolling { animation: shake .16s linear infinite; }
+
+/* Летящий мяч живёт в своём слое: он не должен двигать разметку. */
+.flier {
+  position: fixed; z-index: 70; display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px 5px 6px; background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.3); border-radius: 999px; color: #fff;
+  font-size: 14px; white-space: nowrap; pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+
+.stage .acts { margin-top: 20px; }
+.stage .btn.sec { background: rgba(255,255,255,.14); color: #fff; }
+.stage .btn.sec:hover { background: rgba(255,255,255,.24); }
+.seedline { margin-top: 14px; font-size: 12px; color: rgba(255,255,255,.5); word-break: break-all; }
+
+/* Люди, которым движение мешает, получают тот же результат без полёта. */
+@media (prefers-reduced-motion: reduce) {
+  .drum.rolling { animation: none; }
+  .cell.hit { animation: none; }
+  .flier { transition: none !important; }
+}
+
+/* ---------- Печать ---------- */
+/* Сетку вешают на стенд. Всё, что нельзя нажать на бумаге, с неё
+   убирается, а карточки разворачиваются в плоские таблицы. */
+@media print {
+  body { background: #fff; }
+  .hero, .acts, .stage, .noprint { display: none !important; }
+  .wrap { max-width: none; padding: 0; }
+  .card { box-shadow: none; border: 0; border-top: 1px solid #999; border-radius: 0;
+    margin: 0; padding: 8px 0; break-inside: avoid; }
+  .bracket { overflow: visible; }
+  .bracket .col { min-width: 0; flex: 1; }
+  table { min-width: 0; font-size: 12px; }
+  .print-head { display: block !important; }
+}
+.print-head { display: none; font-size: 13px; color: var(--ink-soft); }
