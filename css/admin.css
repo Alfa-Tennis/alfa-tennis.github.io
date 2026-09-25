@@ -294,11 +294,41 @@ a.btn.sec:visited { color: var(--ink); }
 .kpi { border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; }
 .kpi .v { font-size: 22px; font-weight: 600; }
 .kpi .l { font-size: 13px; color: var(--ink-soft); }
-.bars { display: flex; align-items: flex-end; gap: 3px; height: 150px; margin-top: 6px; }
-.bar-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
-.bar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
-.bar.low { background: #c3d5cb; }
-.bar-lb { font-size: 10px; color: var(--ink-soft); margin-top: 4px; }
+/* Загрузка по часам. Слева поле под шкалу, сверху — под цифру над
+   столбцом в 100%. */
+.chart { margin-top: 8px; }
+.chart-readout { font-size: 14px; min-height: 20px; margin-bottom: 18px; color: var(--ink); }
+.chart-plot { position: relative; height: 180px; margin-left: 38px; }
+.chart-grid { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line); }
+.chart-tick { position: absolute; right: 100%; margin-right: 6px; transform: translateY(-50%);
+  font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
+.chart-avg { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--ink); pointer-events: none; }
+.bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 3px; z-index: 1; }
+.bar-col { flex: 1; height: 100%; display: flex; align-items: flex-end; cursor: pointer; border-radius: 3px 3px 0 0; }
+.bar-col.on { background: var(--accent-tint); }
+.bar { position: relative; width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; }
+.bar-col.on .bar { background: var(--accent-dark); }
+/* Янтарь в палитре значит «требует внимания» — здесь это он и есть:
+   пустой час. Зелёный читался как «всё хорошо». */
+.bar.low { background: #E0B354; }
+.bar-col.on .bar.low { background: #C4952F; }
+.bar-val { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 2px;
+  font-size: 10px; color: var(--ink-soft); white-space: nowrap; }
+.bar-lbs { display: flex; gap: 3px; margin-left: 38px; margin-top: 4px; }
+.bar-lb { flex: 1; text-align: center; font-size: 11px; color: var(--ink-soft); }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 13px; color: var(--ink-soft); }
+.chart-legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }
+.chart-legend .sw.low { background: #E0B354; }
+.chart-legend .sw.avg { width: 16px; height: 0; border-radius: 0; background: none; border-top: 2px dashed var(--ink); }
+.chart-note { font-size: 13px; color: var(--ink-soft); margin-top: 6px; }
+/* На узком экране цифры над столбцами не помещаются — их заменяет
+   строка над графиком по нажатию. */
+@media (max-width: 640px) {
+  .bar-val { display: none; }
+  .bar-lb.odd { visibility: hidden; }
+  .chart-readout { margin-bottom: 8px; }
+}
 
 table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.tbl th { text-align: left; font-weight: 600; color: var(--ink-soft); font-size: 13px;

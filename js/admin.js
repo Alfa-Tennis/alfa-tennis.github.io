@@ -6958,21 +6958,11 @@ function renderStats(view) {
   load.appendChild(switcher);
 
   const list = s.load[state_stats.kind] || [];
-  const bars = el('div', 'bars');
-  list.forEach(h => {
-    const col = el('div', 'bar-col');
-    const bar = el('div', 'bar' + (h.load < 0.2 ? ' low' : ''));
-    bar.style.height = Math.max(2, Math.round(h.load * 100)) + '%';
-    bar.title = fmtRange(minutesToTime(h.hour * 60), minutesToTime(h.hour * 60 + 60))
-      + ' — ' + Math.round(h.load * 100) + '%';
-    col.appendChild(bar);
-    // Подписываем каждый второй час: иначе на телефоне цифры сливаются.
-    col.appendChild(txt('div', 'bar-lb', h.hour % 2 === 0 ? h.label.slice(0, 2) : ''));
-    bars.appendChild(col);
-  });
-  load.appendChild(bars);
+  const kindWord = state_stats.kind === 'weekend' ? 'выходные' : 'будни';
   if (!list.some(h => h.cells)) {
     load.appendChild(txt('div', 'empty', 'В этом месяце таких дней ещё не было.'));
+  } else {
+    load.appendChild(loadChart(list, kindWord));
   }
   view.appendChild(load);
 
@@ -7064,6 +7054,84 @@ function renderLedger(view) {
   card.appendChild(txt('div', 'empty',
     'Списание идёт по факту состоявшейся игры, через двое суток — столько есть у администратора, '
     + 'чтобы отметить неявку. За неявку часы не списываются: она наказывается рейтингом.'));
+}
+
+// Загрузка по часам. Цифры на столбцах и шкала — потому что без них
+// график читался только «вечером больше, днём меньше», а владелец решает
+// по нему, куда ставить скидку и где цену можно поднять. Подсказка
+// по наведению не годится: на телефоне её не вызвать.
+function loadChart(list, kindWord) {
+  const pct = v => Math.round(v * 100);
+  const range = h => fmtRange(minutesToTime(h.hour * 60), minutesToTime(h.hour * 60 + 60));
+  // Среднее взвешиваем числом ячеек: час, который был открыт реже
+  // (закрытия кортов), не должен тянуть его наравне с остальными.
+  const cellsSum = list.reduce((a, h) => a + h.cells, 0);
+  const avg = cellsSum ? list.reduce((a, h) => a + h.load * h.cells, 0) / cellsSum : 0;
+
+  const wrap = el('div', 'chart');
+  const readout = txt('div', 'chart-readout', 'Нажмите на столбец — покажу точное значение.');
+  wrap.appendChild(readout);
+
+  // Верх шкалы — по самому высокому столбцу, а не всегда 100%: в начале
+  // месяца и в тихий сезон иначе всё лежит у нуля. Подписи шкалы
+  // оставляют это честным.
+  const maxPct = Math.max(1, ...list.map(h => pct(h.load)));
+  const step = maxPct <= 20 ? 5 : maxPct <= 50 ? 10 : 25;
+  const top = Math.min(100, Math.ceil(maxPct / step) * step);
+  const y = v => (v / top * 100) + '%';
+
+  const plot = el('div', 'chart-plot');
+  for (let v = 0; v <= top; v += step) {
+    const line = el('div', 'chart-grid');
+    line.style.bottom = y(v);
+    line.appendChild(txt('span', 'chart-tick', v + '%'));
+    plot.appendChild(line);
+  }
+  const avgLine = el('div', 'chart-avg');
+  avgLine.style.bottom = y(pct(avg));
+  plot.appendChild(avgLine);
+
+  const bars = el('div', 'bars');
+  const labels = el('div', 'bar-lbs');
+  let selected = null;
+  list.forEach(h => {
+    const col = el('div', 'bar-col');
+    const bar = el('div', 'bar' + (h.load < 0.2 ? ' low' : ''));
+    bar.style.height = y(pct(h.load));
+    // Час, в который корт весь месяц был закрыт, — не «ноль», а «нечего
+    // считать», и подписан иначе.
+    bar.appendChild(txt('span', 'bar-val', h.cells ? pct(h.load) + '%' : '—'));
+    col.appendChild(bar);
+    const pick = () => {
+      if (selected) selected.classList.remove('on');
+      selected = col;
+      col.classList.add('on');
+      readout.textContent = range(h) + ', ' + kindWord + ': '
+        + (h.cells ? 'занято ' + pct(h.load) + '%' : 'корты закрыты');
+    };
+    col.addEventListener('click', pick);
+    col.addEventListener('mouseenter', pick);
+    bars.appendChild(col);
+    // На телефоне подписываем каждый второй час, иначе цифры сливаются.
+    labels.appendChild(txt('div', 'bar-lb' + (h.hour % 2 ? ' odd' : ''), h.label.slice(0, 2)));
+  });
+  plot.appendChild(bars);
+  wrap.appendChild(plot);
+  wrap.appendChild(labels);
+
+  const legend = el('div', 'chart-legend');
+  [['sw', 'занято 20% и больше'], ['sw low', 'меньше 20% — почти пусто'], ['sw avg', 'среднее за месяц — ' + pct(avg) + '%']]
+    .forEach(([cls, text]) => {
+      const item = el('span', 'lg');
+      item.appendChild(el('i', cls));
+      item.appendChild(document.createTextNode(text));
+      legend.appendChild(item);
+    });
+  wrap.appendChild(legend);
+  wrap.appendChild(txt('div', 'chart-note',
+    'Столбец — час от подписи до следующего: «18» — это 18:00–19:00. '
+    + '100% — все корты заняты весь этот час каждый такой день месяца.'));
+  return wrap;
 }
 
 function hoursNum(v) {
