@@ -738,6 +738,30 @@ function reserveYields(s, slot, dateIso) {
     && from < timeToMinutes(x.end) && timeToMinutes(x.start) < to);
 }
 
+// Открытой тренировке резерв уступает только её время — зеркало
+// reservePieces из backend/slots.js. Остаток дня держится за резервом,
+// пока владелец сам не снимет занятие.
+function reservePieces(s, slot, dateIso, items) {
+  const whole = [{ start: slot.start, end: slot.end }];
+  if (!s || !s.forTournaments) return whole;
+  const taken = (items || [])
+    .filter(b => (b.openPlay || b.source === 'openplay') && b.courtId === slot.courtId
+      && b.status !== 'cancelled')
+    .map(b => [timeToMinutes(b.start), timeToMinutes(b.end)])
+    .sort((a, b) => a[0] - b[0]);
+  if (!taken.length) return whole;
+  const pieces = [];
+  let cursor = timeToMinutes(slot.start);
+  const end = timeToMinutes(slot.end);
+  taken.forEach(([from, to]) => {
+    if (to <= cursor || from >= end) return;
+    if (from > cursor) pieces.push([cursor, from]);
+    cursor = Math.max(cursor, to);
+  });
+  if (cursor < end) pieces.push([cursor, end]);
+  return pieces.map(([a, b]) => ({ start: minutesToTime(a), end: minutesToTime(b) }));
+}
+
 function seriesColorOf(seriesId) {
   const s = seriesId ? db.series.find(x => x.id === seriesId) : null;
   return s && s.color ? s.color : null;
@@ -784,13 +808,13 @@ function dayBlocks(dateIso) {
     const cl = clientById(s.clientId);
     const slot = seriesSlotOn(s, dateIso);
     if (reserveYields(s, slot, dateIso)) return;
-    out.push({
+    reservePieces(s, slot, dateIso, items).forEach(p => out.push({
       kind: 'series', seriesId: s.id, color: s.color || null,
-      courtId: slot.courtId, start: slot.start, end: slot.end, moved: slot.moved,
+      courtId: slot.courtId, start: p.start, end: p.end, moved: slot.moved,
       clientName: s.title, clientPhone: cl ? cl.phone : '', clientId: s.clientId,
-      price: Math.round((timeToMinutes(slot.end) - timeToMinutes(slot.start)) / 60 * db.config.pricePerHour),
+      price: Math.round((timeToMinutes(p.end) - timeToMinutes(p.start)) / 60 * db.config.pricePerHour),
       status: 'confirmed', series: s, date: dateIso,
-    });
+    }));
   });
 
   db.exceptions.filter(x => x.date === dateIso).forEach(x => {
@@ -4429,6 +4453,37 @@ function openSessionForm(session, preset, roster) {
     [90, 120, 150, 180, 210, 240].forEach(m => selDur.appendChild(opt(m, hoursText(m))));
     selDur.value = String((preset && preset.durationMinutes) || 150);
     fDur.appendChild(selDur); body.appendChild(fDur);
+
+    // Время из резерва под турниры — одним выбором, как в форме турнира.
+    // Турнир отменился, и на его время собирают тренировки, обычно три
+    // подряд: после первой в списке остаётся хвост резерва, с него и
+    // начинается следующая. Резерв снимать не нужно — он уступит тренировке
+    // её время сам, а остаток дня продолжит держать.
+    const reserves = (db.tournamentReserves && db.tournamentReserves.reserves) || [];
+    if (reserves.length) {
+      const pick = document.createElement('select');
+      pick.appendChild(opt('', '— своё время —'));
+      reserves.forEach((r, i) => {
+        const courts = r.courts.length >= (db.courts || []).length
+          ? 'оба корта' : r.courts.map(courtName).join(' и ');
+        pick.appendChild(opt(String(i), longDate(r.date) + ' · ' + fmtRange(r.start, r.end) + ' · ' + courts));
+      });
+      pick.addEventListener('change', () => {
+        const r = reserves[Number(pick.value)];
+        if (!r) return;
+        inpDate.value = r.date;
+        selStart.value = r.start;
+        // Длительность не трогаем, если влезает: тренировка короче
+        // резерва, и выбранные два с половиной часа — обычное дело. Не
+        // влезает хвост — ужимаем до того, что помещается.
+        const room = timeToMinutes(r.end) - timeToMinutes(r.start);
+        if (Number(selDur.value) > room) {
+          const fit = [...selDur.options].map(o => Number(o.value)).filter(m => m <= room).pop();
+          if (fit) selDur.value = String(fit);
+        }
+      });
+      body.insertBefore(wrapFieldNode(el('div'), 'Взять время из резерва под турниры', pick), fDate);
+    }
 
     // Корт не выбирается: тренировка занимает центр целиком. Сказать об
     // этом надо здесь, а не после отказа «время занято».
