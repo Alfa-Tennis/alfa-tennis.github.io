@@ -1976,7 +1976,20 @@ function openNewBooking(date, courtId, start) {
     label: 'Клиент',
     placeholder: 'Имя или телефон — пусто значит «с улицы»',
     onChange: (id) => { guest.hidden = !!id; },
+    // Никого не нашли — значит, человек новый, и набранное в поиске
+    // пригодится ниже: номер в «Телефон», имя в «Имя». Иначе его
+    // приходилось набирать второй раз. Чужой ввод не затираем.
+    onEmpty: (query) => {
+      const letters = /[a-zа-яё]/i.test(query);
+      const target = letters ? inpName : inpPhone;
+      if (target.value.trim() && target.value !== autoFilled[letters ? 'name' : 'phone']) return '';
+      target.value = letters ? query : formatPhoneInput(query);
+      autoFilled[letters ? 'name' : 'phone'] = target.value;
+      return letters ? 'Никого не нашлось — имя перенесено ниже, добавьте телефон'
+        : 'Никого не нашлось — номер перенесён ниже, впишите имя';
+    },
   });
+  const autoFilled = { name: '', phone: '' };
 
   const fName = el('label', 'field'); fName.innerHTML = '<span>Имя</span>';
   const inpName = document.createElement('input'); inpName.placeholder = 'Имя человека — не заметки';
@@ -3710,7 +3723,10 @@ function clientPicker(parent, initialId, opts) {
       // Однофамильцев в клубе будет много, и разбирать их по имени
       // бесполезно — поэтому телефон стоит в самой кнопке, а искать по
       // нему можно так же, как по имени (сервер сверяет цифры).
-      if (!shown.length) row.appendChild(txt('span', 't2', 'Никого не нашлось — попробуйте телефон'));
+      if (!shown.length) {
+        const hint = o.onEmpty ? o.onEmpty(query) : '';
+        row.appendChild(txt('span', 't2', hint || 'Никого не нашлось — попробуйте телефон'));
+      }
       else if (found.clients.length > shown.length) {
         row.appendChild(txt('span', 't2', 'Показаны первые ' + shown.length
           + ' из ' + found.clients.length + ' — уточните запрос'));
