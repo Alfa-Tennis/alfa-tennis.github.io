@@ -130,7 +130,13 @@ const ERRORS = {
   'outside-hours': 'Время выходит за часы работы центра.',
   'invalid-name': 'Укажите имя и фамилию.',
   'invalid-phone': 'Проверьте номер телефона.',
-  'client-blocked': 'Клиент заблокирован — запись не прошла. Если его простили, сначала разблокируйте во вкладке «Клиенты».',
+  'no-seats': 'Мест нет — сначала освободите место или добавьте его в «Изменить состав».',
+  'not-single': 'Свести можно только двух одиночек — у кого-то из них уже есть пара.',
+  'has-results': 'У этих игроков уже внесён счёт — пару менять нельзя, таблица бы поехала.',
+  'not-pair': 'Это не пара.',
+  'same-signup': 'Выберите двух разных людей.',
+  'not-signed': 'Этого человека в составе уже нет — обновите страницу.',
+  'client-blocked':'Клиент заблокирован — запись не прошла. Если его простили, сначала разблокируйте во вкладке «Клиенты».',
   'invalid-duration': 'Длительность не по шагу сетки.',
   'invalid-time': 'Время не по шагу сетки.',
   'not-movable': 'Такую бронь перенести нельзя.',
@@ -4187,8 +4193,8 @@ function rosterBlock(s, roster) {
 
   const pairs = op.format === 'pairs';
   if (!op.signups.length) wrap.appendChild(txt('div', 'empty', 'Никто ещё не записался.'));
-  op.signups.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, false, pairs)));
-  op.queue.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, true, pairs)));
+  op.signups.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, false, pairs, roster)));
+  op.queue.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, true, pairs, roster)));
 
   // Одиночки без пары — то, что владельцу осталось разобрать. Кнопка
   // только у владельца: пары сводит он, администратор на стойке — нет.
@@ -4238,7 +4244,7 @@ function rosterBlock(s, roster) {
   return wrap;
 }
 
-function signupRow(s, p, num, inQueue, pairsFormat) {
+function signupRow(s, p, num, inQueue, pairsFormat, roster) {
   const row = el('div', 't2');
   const who = num + '. ' + p.name
     + (p.partnerName ? ' + ' + p.partnerName + ' (пара)' : '')
@@ -4255,17 +4261,44 @@ function signupRow(s, p, num, inQueue, pairsFormat) {
     + (!p.clientId ? ' <span class="pill grey">без учётки</span>' : '');
 
   const acts = el('div', 'acts');
-  if (pairsFormat && !inQueue && p.partnerName && me && me.role === 'owner') {
+  const owner = !!(me && me.role === 'owner');
+  if (pairsFormat && !inQueue && p.partnerName && owner) {
     acts.appendChild(btn('Разбить пару', 'btn sm sec', () => act(
       () => api('adminSplitPair', { date: s.date, bookingId: s.id, signupId: p.id }),
       'Пара разбита — оба снова без пары')));
   }
+  // Одиночке — партнёра сразу из базы: записать и свести одним шагом.
+  if (pairsFormat && !inQueue && !p.partnerName && owner) {
+    acts.appendChild(btn('Подобрать пару', 'btn sm', () => openAddSignup(s, roster, p)));
+  }
   acts.appendChild(btn('Перенести', 'btn sm sec', () => openMoveSignup(s, p)));
-  acts.appendChild(btn('Убрать', 'btn sm sec', () => act(
-    () => api('adminRemoveSignup', { date: s.date, bookingId: s.id, signupId: p.id }),
-    'Снят с тренировки')));
+  // У пары «Убрать» спрашивает кого: раньше уходили оба разом, молча.
+  acts.appendChild(btn('Убрать', 'btn sm sec', () => (p.partnerName
+    ? openRemoveFromPair(s, p)
+    : act(() => api('adminRemoveSignup', { date: s.date, bookingId: s.id, signupId: p.id }),
+      'Снят с тренировки'))));
   row.appendChild(acts);
   return row;
+}
+
+function openRemoveFromPair(s, p) {
+  const body = el('div');
+  body.innerHTML = '<h3>Кого убрать?</h3><div class="m-sub">'
+    + escapeHtml(p.name + ' + ' + p.partnerName) + '</div>';
+  body.appendChild(txt('div', 'empty', 'Убрать можно одного — второй останется в составе без пары, '
+    + 'и ему можно подобрать нового партнёра. Или обоих разом.'));
+  const acts = el('div', 'm-acts');
+  const go = (part, text) => () => {
+    closeModal();
+    act(() => api('adminRemoveSignup', Object.assign({ date: s.date, bookingId: s.id, signupId: p.id },
+      part ? { part } : {})), text);
+  };
+  acts.appendChild(btn('Только ' + p.partnerName, 'btn', go('partner', p.partnerName + ' снят, ' + p.name + ' без пары')));
+  acts.appendChild(btn('Только ' + p.name, 'btn', go('lead', p.name + ' снят, ' + p.partnerName + ' без пары')));
+  acts.appendChild(btn('Обоих', 'btn danger', go(null, 'Пара снята с тренировки')));
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
 }
 
 // Два выбора, а не перетаскивание: на телефоне перетаскивание капризное,
@@ -4744,11 +4777,13 @@ function openRepeatDay(sample) {
 
 // ---------- Состав ----------
 
-function openAddSignup(s, roster) {
+// pairWith — одиночка, которому подбирают партнёра: записанный сразу
+// встаёт с ним в пару.
+function openAddSignup(s, roster, pairWith) {
   const which = roster === 'alt' ? 'alt' : 'main';
   const target = which === 'alt' ? s.rival : s.openPlay;
   const body = el('div');
-  body.innerHTML = '<h3>Записать на тренировку</h3>'
+  body.innerHTML = '<h3>' + (pairWith ? 'Пара для ' + escapeHtml(pairWith.name) : 'Записать на тренировку') + '</h3>'
     + '<div class="m-sub">' + escapeHtml(target.title + ' · ' + longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
 
   // Тот же поиск, что и при записи на корт: списком в три сотни имён
@@ -4772,13 +4807,17 @@ function openAddSignup(s, roster) {
   const fPair = el('label', 'field');
   fPair.innerHTML = '<span>Партнёр — если пришли парой, займут два места</span>';
   const inpPair = document.createElement('input'); inpPair.placeholder = 'Имя партнёра';
-  fPair.appendChild(inpPair); body.appendChild(fPair);
+  fPair.appendChild(inpPair);
+  if (!pairWith) body.appendChild(fPair);
 
   const note = el('div', 'empty');
-  note.textContent = (target.full
-    ? 'Мест нет — запись уйдёт в очередь.'
-    : 'Свободно мест: ' + target.left + '.')
-    + (s.rival ? ' Человек может стоять только в одном из двух составов.' : '');
+  note.textContent = pairWith
+    ? (target.full ? 'Мест нет — сначала освободите место или добавьте его в «Изменить состав».'
+      : 'Записанный сразу встанет в пару с ' + pairWith.name + '.')
+    : (target.full
+      ? 'Мест нет — запись уйдёт в очередь.'
+      : 'Свободно мест: ' + target.left + '.')
+      + (s.rival ? ' Человек может стоять только в одном из двух составов.' : '');
   body.appendChild(note);
 
   const acts = el('div', 'm-acts');
@@ -4791,8 +4830,9 @@ function openAddSignup(s, roster) {
       clientId: who.id || undefined,
       name: who.id ? undefined : inpName.value.trim(),
       phone: who.id ? undefined : inpPhone.value.trim(),
-      partnerName: inpPair.value.trim() || undefined,
-    }), 'Записан');
+      partnerName: pairWith ? undefined : (inpPair.value.trim() || undefined),
+      pairWith: pairWith ? pairWith.id : undefined,
+    }), pairWith ? 'Записан и сведён в пару' : 'Записан');
   }));
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   body.appendChild(acts);
