@@ -2485,6 +2485,12 @@ function openSessionCard(idOrSession, roster) {
   body.appendChild(info);
 
   if (op.note) body.appendChild(txt('div', 'empty', op.note));
+  // Парная: пришедших поодиночке сводит в пары организатор — человек
+  // должен знать это до записи, а не гадать, с кем он будет играть.
+  if (op.format === 'pairs') {
+    body.appendChild(txt('div', 'notice', 'Игра парами. Записывайтесь и без партнёра — '
+      + 'пары из пришедших поодиночке составит организатор, о своём партнёре вы узнаете заранее.'));
+  }
 
   const list = el('div', 'card');
   if (!op.signups.length) {
@@ -2494,6 +2500,7 @@ function openSessionCard(idOrSession, roster) {
       const row = el('div', 'item');
       row.innerHTML = '<div class="t1">' + (i + 1) + '. ' + escapeHtml(p.name)
         + (p.partnerName ? ' + ' + escapeHtml(p.partnerName) : '')
+        + (op.format === 'pairs' && !p.partnerName ? ' <span class="pill wait">ищет пару</span>' : '')
         + (p.mine ? ' <span class="pill ok">это вы</span>' : '') + '</div>';
       list.appendChild(row);
     });

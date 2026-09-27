@@ -4180,13 +4180,23 @@ function rosterBlock(s, roster) {
     + ' <span class="pill ' + (op.full ? 'ok' : 'wait') + '">'
     + op.taken + ' из ' + op.seats + '</span>'
     + (op.signupsClosed ? ' <span class="pill grey">набор закрыт</span>' : '')
+    + (op.format === 'pairs' ? ' <span class="pill ok">парная</span>' : '')
     + '</div>'
     + '<div class="t2">' + escapeHtml(op.level) + '</div>'
     + (op.note ? '<div class="t2">' + escapeHtml(op.note) + '</div>' : '');
 
+  const pairs = op.format === 'pairs';
   if (!op.signups.length) wrap.appendChild(txt('div', 'empty', 'Никто ещё не записался.'));
-  op.signups.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, false)));
-  op.queue.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, true)));
+  op.signups.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, false, pairs)));
+  op.queue.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, true, pairs)));
+
+  // Одиночки без пары — то, что владельцу осталось разобрать. Кнопка
+  // только у владельца: пары сводит он, администратор на стойке — нет.
+  const singles = pairs ? op.signups.filter(p => !p.partnerName) : [];
+  if (singles.length) {
+    wrap.appendChild(txt('div', 't2', 'Без пары: ' + singles.length
+      + (singles.length % 2 ? ' — одному пары не хватает' : '')));
+  }
 
   // Кнопки у обоих составов одни и те же и называются одинаково: «этот
   // состав» — то, что внутри рамки. Раньше у первого правка называлась
@@ -4198,6 +4208,9 @@ function rosterBlock(s, roster) {
 
   const acts = el('div', 'acts');
   acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s, roster)));
+  if (singles.length >= 2 && me && me.role === 'owner') {
+    acts.appendChild(btn('Свести в пару', 'btn sm', () => openPairForm(s, singles)));
+  }
   acts.appendChild(btn('Изменить состав', 'btn sm sec', () => openSessionForm(s, null, roster)));
   // Результаты нужны и до игры: с пустой таблицей это лист на планшетку,
   // который заполняют ручкой на корте.
@@ -4225,14 +4238,16 @@ function rosterBlock(s, roster) {
   return wrap;
 }
 
-function signupRow(s, p, num, inQueue) {
+function signupRow(s, p, num, inQueue, pairsFormat) {
   const row = el('div', 't2');
   const who = num + '. ' + p.name
     + (p.partnerName ? ' + ' + p.partnerName + ' (пара)' : '')
     + (p.phone ? ' · ' + fmtPhone(p.phone) : '')
+    + (p.partnerPhone ? ' / ' + fmtPhone(p.partnerPhone) : '')
     + (p.ntrp ? ' · уровень ' + String(p.ntrp).replace('.', ',') : '');
 
   row.innerHTML = (inQueue ? '<span class="pill grey">в очереди</span> ' : '')
+    + (pairsFormat && !inQueue && !p.partnerName ? '<span class="pill wait">без пары</span> ' : '')
     + escapeHtml(who)
     // Без Telegram человеку придётся звонить руками — это надо видеть
     // до того, как понадеешься на автоматическое уведомление.
@@ -4240,12 +4255,45 @@ function signupRow(s, p, num, inQueue) {
     + (!p.clientId ? ' <span class="pill grey">без учётки</span>' : '');
 
   const acts = el('div', 'acts');
+  if (pairsFormat && !inQueue && p.partnerName && me && me.role === 'owner') {
+    acts.appendChild(btn('Разбить пару', 'btn sm sec', () => act(
+      () => api('adminSplitPair', { date: s.date, bookingId: s.id, signupId: p.id }),
+      'Пара разбита — оба снова без пары')));
+  }
   acts.appendChild(btn('Перенести', 'btn sm sec', () => openMoveSignup(s, p)));
   acts.appendChild(btn('Убрать', 'btn sm sec', () => act(
     () => api('adminRemoveSignup', { date: s.date, bookingId: s.id, signupId: p.id }),
     'Снят с тренировки')));
   row.appendChild(acts);
   return row;
+}
+
+// Два выбора, а не перетаскивание: на телефоне перетаскивание капризное,
+// а два нажатия работают везде.
+function openPairForm(s, singles) {
+  const body = el('div');
+  body.innerHTML = '<h3>Свести в пару</h3><div class="m-sub">'
+    + escapeHtml(longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
+  const label = p => p.name + (p.ntrp ? ' · уровень ' + String(p.ntrp).replace('.', ',') : '');
+  const a = document.createElement('select');
+  const b = document.createElement('select');
+  singles.forEach(p => { a.appendChild(opt(p.id, label(p))); b.appendChild(opt(p.id, label(p))); });
+  b.selectedIndex = 1;
+  wrapField(body, 'Первый', a);
+  wrapField(body, 'Второй', b);
+  body.appendChild(txt('div', 'empty', 'Оба увидят пару у себя в кабинете, а у кого есть Telegram — '
+    + 'получат сообщение, с кем играют. Разбить пару можно кнопкой у её строки.'));
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Свести', 'btn', () => {
+    if (a.value === b.value) return toast('Выберите двух разных людей');
+    closeModal();
+    act(() => api('adminPairSignups', { date: s.date, bookingId: s.id, signupId: a.value, partnerSignupId: b.value }),
+      'Пара сведена');
+  }));
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
 }
 
 // ---------- Результаты тренировки ----------
@@ -4508,6 +4556,13 @@ function openSessionForm(session, preset, roster) {
   inpTitle.value = op ? op.title : ((preset && preset.title) || '');
   fTitle.appendChild(inpTitle); body.appendChild(fTitle);
 
+  // Формат: в парной одиночек сводит владелец, таблица и лист — по парам.
+  const selFormat = document.createElement('select');
+  selFormat.appendChild(opt('singles', 'Одиночки — каждый сам за себя'));
+  selFormat.appendChild(opt('pairs', 'Пары — микст, парная игра'));
+  selFormat.value = op && op.format === 'pairs' ? 'pairs' : ((preset && preset.format) || 'singles');
+  wrapField(body, 'Формат', selFormat);
+
   const fLevel = el('div', 'field');
   fLevel.innerHTML = '<span>Игровой уровень — пусто значит «любой»</span>';
   const levelRow = el('div', 'row');
@@ -4566,6 +4621,7 @@ function openSessionForm(session, preset, roster) {
   acts.appendChild(btn(session ? 'Сохранить' : 'Создать', 'btn', () => {
     const payloadOp = {
       title: inpTitle.value.trim(),
+      format: selFormat.value,
       note: inpNote.value.trim(),
       ntrpMin: selMin.value === '' ? null : Number(selMin.value),
       ntrpMax: selMax.value === '' ? null : Number(selMax.value),
