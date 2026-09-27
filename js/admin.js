@@ -130,6 +130,7 @@ const ERRORS = {
   'outside-hours': 'Время выходит за часы работы центра.',
   'invalid-name': 'Укажите имя и фамилию.',
   'invalid-phone': 'Проверьте номер телефона.',
+  'client-blocked': 'Клиент заблокирован — запись не прошла. Если его простили, сначала разблокируйте во вкладке «Клиенты».',
   'invalid-duration': 'Длительность не по шагу сетки.',
   'invalid-time': 'Время не по шагу сетки.',
   'not-movable': 'Такую бронь перенести нельзя.',
@@ -209,7 +210,10 @@ async function act(fn, okText) {
     return result;
   } catch (e) {
     if (e.code === 'unauthorized' || e.code === 'token-revoked') return logout();
-    toast(errorText(e.code), 4000);
+    // detail — уточнение от сервера, например чья карточка нашлась по
+    // номеру: вписанное в форму имя могло быть другим.
+    const detail = e.data && e.data.detail ? ' ' + e.data.detail : '';
+    toast(errorText(e.code) + detail, detail ? 7000 : 4000);
     return null;
   }
 }
