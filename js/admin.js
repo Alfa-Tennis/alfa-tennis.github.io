@@ -500,6 +500,9 @@ async function loadAll() {
   // Скидочные окна редактируются на вкладке настроек и показываются в
   // статистике — берём их из публичных настроек, других тарифов нет.
   config.rules = pub.config.pricing.rules || [];
+  // Инвентарь напрокат — для формы записи. Без него администратору некуда
+  // было вписать ракетки, и они уезжали в имя клиента.
+  config.inventory = pub.config.pricing.inventory || [];
   // Окно ленты «Что нового» — настройка панели, наружу её не отдаём,
   // поэтому приезжает она вместе с самой лентой, а не в публичных
   // настройках.
@@ -1765,7 +1768,8 @@ function openBooking(b) {
     + (b.courtLocked ? ' <span class="pill wait">' + LOCK_MARK + ' корт выбран клиентом</span>' : '')
     + (b.prepayRequired ? ' <span class="pill bad">предоплата</span>' : '') + '</div>'
     + (extras.length ? '<div class="t2">🎾 ' + escapeHtml(extras.map(x => x.name + ' ×' + x.qty).join(', '))
-      + ' · ' + money(b.extrasTotal) + '</div>' : '');
+      + ' · ' + money(b.extrasTotal) + '</div>' : '')
+    + (b.comment ? '<div class="t2">💬 ' + escapeHtml(b.comment) + '</div>' : '');
   body.appendChild(info);
 
   if (b.groupId) {
@@ -1782,7 +1786,7 @@ function openBooking(b) {
   note.innerHTML = '<span>Причина отмены или отказа</span>';
   const ta = document.createElement('textarea');
   ta.rows = 2; ta.value = '';
-  ta.placeholder = b.comment ? ('комментарий к брони: ' + b.comment) : 'необязательно';
+  ta.placeholder = 'необязательно';
   note.appendChild(ta);
   body.appendChild(note);
 
@@ -1975,7 +1979,7 @@ function openNewBooking(date, courtId, start) {
   });
 
   const fName = el('label', 'field'); fName.innerHTML = '<span>Имя</span>';
-  const inpName = document.createElement('input'); inpName.placeholder = 'Как записать';
+  const inpName = document.createElement('input'); inpName.placeholder = 'Имя человека — не заметки';
   fName.appendChild(inpName);
   const fPhone = el('label', 'field'); fPhone.innerHTML = '<span>Телефон</span>';
   const inpPhone = document.createElement('input');
@@ -1995,14 +1999,46 @@ function openNewBooking(date, courtId, start) {
   selCoach.appendChild(opt('split', 'Сплит · ' + money(db.config.coachSplitPerHour) + '/час'));
   fCoach.appendChild(selCoach); body.appendChild(fCoach);
 
+  // Инвентарь напрокат — тот же, что клиент берёт на сайте. Сумму
+  // пересчитает сервер по своим ценам, здесь только прикидка.
+  const inventory = db.config.inventory || [];
+  const invSel = {};
+  if (inventory.length) {
+    const inv = el('div', 'inv-row');
+    inventory.forEach(item => {
+      const f = el('label', 'field');
+      f.appendChild(txt('span', '', item.name + ' · ' + money(item.pricePerHour) + '/час'));
+      const s = document.createElement('select');
+      for (let q = 0; q <= item.max; q++) s.appendChild(opt(q, q ? String(q) : 'не нужно'));
+      s.addEventListener('change', () => updPrice());
+      invSel[item.id] = s;
+      f.appendChild(s);
+      inv.appendChild(f);
+    });
+    body.appendChild(inv);
+  }
+  const extrasPicked = () => inventory
+    .map(item => ({ item, qty: Number(invSel[item.id].value) }))
+    .filter(x => x.qty > 0);
+
+  const fComment = el('label', 'field'); fComment.innerHTML = '<span>Комментарий к брони</span>';
+  const inpComment = document.createElement('input');
+  inpComment.maxLength = 500;
+  inpComment.placeholder = 'необязательно — всё, чему нет своего поля';
+  fComment.appendChild(inpComment); body.appendChild(fComment);
+
   const price = el('div', 'empty');
   const rateNow = () => (selCoach.value === 'individual' ? db.config.coachIndividualPerHour
     : selCoach.value === 'split' ? db.config.coachSplitPerHour
       : db.config.pricePerHour);
-  const updPrice = () => {
-    price.textContent = 'К оплате: ' + money(Number(selDur.value) / 60 * rateNow())
+  function updPrice() {
+    const hours = Number(selDur.value) / 60;
+    const court = hours * rateNow();
+    const extras = extrasPicked().reduce((s, x) => s + Math.round(x.qty * hours * x.item.pricePerHour), 0);
+    price.textContent = 'К оплате: ' + money(court + extras)
+      + (extras ? ' · из них аренда ' + money(extras) : '')
       + (selCoach.value ? ' · тренировка вместе с кортом' : '');
-  };
+  }
   selDur.addEventListener('change', updPrice);
   selCoach.addEventListener('change', updPrice);
   updPrice();
@@ -2098,6 +2134,8 @@ function openNewBooking(date, courtId, start) {
       date, start, durationMinutes: dur, courtId, exactCourt: exact.on,
       repack: useRepack ? { courtId: useRepack.courtId, move: useRepack.move } : undefined,
       coaching: selCoach.value || undefined,
+      extras: extrasPicked().map(x => ({ id: x.item.id, qty: x.qty })),
+      comment: inpComment.value.trim() || undefined,
       clientId: who.id || undefined,
       clientName: who.id ? undefined : inpName.value.trim(),
       clientPhone: who.id ? undefined : inpPhone.value.trim(),

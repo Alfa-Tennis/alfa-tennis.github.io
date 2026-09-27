@@ -272,6 +272,9 @@ a.btn.sec:visited { color: var(--ink); }
 .thumb.big { width: 120px; height: 120px; margin-bottom: 8px; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb.empty-thumb { background: repeating-linear-gradient(45deg, #F2F4F5 0 6px, #EAEDEE 6px 12px); }
+/* Аренда в форме записи: позиции рядом, а не столбиком — их обычно
+   две-три, и форма и так длинная. */
+.inv-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 10px; }
 .field-label { font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
 .opt-row { display: flex; gap: 8px; margin-bottom: 6px; }
 .opt-row input:first-child { flex: 1; }
