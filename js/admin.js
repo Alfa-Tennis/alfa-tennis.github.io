@@ -252,7 +252,14 @@ function addDays(dateIso, n) {
   return d.toISOString().slice(0, 10);
 }
 function weekday(dateIso) { return new Date(dateIso + 'T00:00:00Z').getUTCDay(); }
-function stamp(dateIso, time) { return new Date(dateIso + 'T' + time + ':00' + TZ).getTime(); }
+// Ночное время внутри — «24:30», «25:00», и `new Date` такое не
+// разбирает: выходил NaN, а NaN не меньше «сейчас». Ночные клетки
+// прошедших дней оставались «будущими» — белыми и кликабельными.
+function stamp(dateIso, time) {
+  const min = timeToMinutes(time);
+  if (min >= 1440) return new Date(addDays(dateIso, 1) + 'T' + minutesToTime(min - 1440) + ':00' + TZ).getTime();
+  return new Date(dateIso + 'T' + time + ':00' + TZ).getTime();
+}
 function isPast(dateIso, time) { return stamp(dateIso, time) < Date.now(); }
 
 const MONTHS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
