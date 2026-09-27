@@ -275,6 +275,10 @@ a.btn.sec:visited { color: var(--ink); }
 /* Аренда в форме записи: позиции рядом, а не столбиком — их обычно
    две-три, и форма и так длинная. */
 .inv-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 10px; }
+/* Остаток знаков под полем с пределом: предупредить до того, как
+   дописать уже нельзя. */
+.field-hint { font-size: 12px; color: var(--ink-soft); margin: -6px 0 10px; text-align: right; }
+.field-hint.full { color: var(--warn); font-weight: 600; }
 .field-label { font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
 .opt-row { display: flex; gap: 8px; margin-bottom: 6px; }
 .opt-row input:first-child { flex: 1; }

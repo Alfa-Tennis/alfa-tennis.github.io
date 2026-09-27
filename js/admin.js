@@ -1203,14 +1203,18 @@ document.addEventListener('touchmove', (e) => {
   if (drag && drag.active) e.preventDefault();
 }, { passive: false });
 
+// Верх первой строки берём у ячейки времени, а не у низа шапки кортов:
+// шапка липкая и при прокрутке стоит на месте, а строки уезжают под неё.
+// Прежний отсчёт от шапки сбивался ровно на прокрученное — бронь
+// «прыгала» тем дальше, чем ниже пролистан день.
 function dragGeometry(grid) {
   const rect = grid.getBoundingClientRect();
-  const heads = [...grid.querySelectorAll('.g-head')];
-  const headBottom = heads.length ? heads[0].getBoundingClientRect().bottom : rect.top;
   const timeCol = grid.querySelector('.g-time');
-  const timeW = timeCol ? timeCol.getBoundingClientRect().width : 58;
-  const rowH = timeCol ? timeCol.getBoundingClientRect().height : 32;
-  return { rect, headBottom, timeW, rowH };
+  const timeRect = timeCol ? timeCol.getBoundingClientRect() : null;
+  const firstRowTop = timeRect ? timeRect.top : rect.top;
+  const timeW = timeRect ? timeRect.width : 58;
+  const rowH = timeRect ? timeRect.height : 32;
+  return { rect, firstRowTop, timeW, rowH };
 }
 
 // Куда указывает палец: номер колонки (день × корт) и строка сетки.
@@ -1220,7 +1224,9 @@ function dragTarget(evt, ctx) {
   const g = dragGeometry(ctx.grid);
   const colW = (g.rect.width - g.timeW) / (ctx.dates.length * db.courts.length);
   const col = Math.floor((evt.clientX - g.rect.left - g.timeW) / colW);
-  const row = Math.floor((evt.clientY - g.headBottom) / g.rowH);
+  // Минус строка, за которую взяли блок: схватили двухчасовую бронь за
+  // низ — она и едет низом под пальцем, а не прыгает верхом к курсору.
+  const row = Math.floor((evt.clientY - g.firstRowTop) / g.rowH) - (ctx.grabRow || 0);
   if (col < 0 || col >= ctx.dates.length * db.courts.length) return null;
 
   const dayIdx = Math.floor(col / db.courts.length);
@@ -1331,10 +1337,14 @@ function makeDraggable(block, b, ctx) {
   block.addEventListener('pointerdown', (evt) => {
     if (evt.button != null && evt.button !== 0) return;
     const span = (timeToMinutes(b.end) - timeToMinutes(b.start)) / db.config.slotStep;
+    // Какой по счёту строкой блока его взяли — от его же верха.
+    const rowH = dragGeometry(ctx.grid).rowH;
+    const grabRow = Math.max(0, Math.min(span - 1,
+      Math.floor((evt.clientY - block.getBoundingClientRect().top) / rowH)));
     drag = {
       id: (b.booking || b).id, x: evt.clientX, y: evt.clientY,
       active: false, touch: evt.pointerType === 'touch',
-      ctx: Object.assign({ spanRows: span }, ctx),
+      ctx: Object.assign({ spanRows: span, grabRow }, ctx),
     };
     // Захват указателя нужен, чтобы события шли в блок, даже когда палец
     // ушёл на соседний корт. Не во всех браузерах он доступен, и без
@@ -4516,7 +4526,20 @@ function openSessionForm(session, preset, roster) {
   const inpNote = document.createElement('input');
   inpNote.placeholder = 'Например: с тренером, мячи центра';
   inpNote.value = op ? op.note : '';
+  // Тот же предел, что на сервере: лишнее раньше обрезалось молча, и
+  // конец примечания пропадал без следа.
+  inpNote.maxLength = 300;
   fNote.appendChild(inpNote); body.appendChild(fNote);
+  const noteLeft = el('div', 'field-hint');
+  const updNoteLeft = () => {
+    const left = inpNote.maxLength - inpNote.value.length;
+    noteLeft.textContent = left > 0 ? 'Осталось ' + left + ' из ' + inpNote.maxLength
+      : 'Больше не поместится — ' + inpNote.maxLength + ' знаков предел';
+    noteLeft.classList.toggle('full', left <= 0);
+  };
+  inpNote.addEventListener('input', updNoteLeft);
+  updNoteLeft();
+  body.appendChild(noteLeft);
 
   // Второй состав можно завести сразу: владелец обычно так и вешает —
   // две конкурирующие группы на один хороший вечерний час.
