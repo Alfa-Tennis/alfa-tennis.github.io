@@ -402,6 +402,12 @@ async function load() {
   // тот же случай, что и Telegram: человек шёл занимать корт.
   showView(telegramInitData() || askedDate || /[#&]book\b/.test(location.hash) ? 'book' : 'home');
   if (state.auth) refreshMine();
+
+  // Кнопка «Записаться на сайте» под постом турнира в группе клуба ведёт
+  // сюда с номером турнира: человек шёл записываться, и искать турнир на
+  // главной ему незачем — открываем сразу его окно.
+  const askedTournament = asked.get('tournament');
+  if (askedTournament && /^t_[a-f0-9]{10}$/.test(askedTournament)) openTournamentCard(askedTournament);
 }
 
 async function refreshAvailability() {
@@ -2744,10 +2750,12 @@ function showTournamentCard() {
   body.innerHTML = '<h3>' + escapeHtml(t.title)
     + ' <span class="pill ' + st[0] + '">' + escapeHtml(st[1]) + '</span></h3>'
     + '<div class="m-sub">' + escapeHtml(tournamentDates(t)) + ' · ' + escapeHtml(t.level)
+    + '<br>Формат: ' + escapeHtml(tournamentFormat(t))
     + '<br>Матч играется до: ' + escapeHtml(T_SCORING_LABEL[t.scoring.mode] || '')
     + (t.fee ? '<br>Взнос ' + escapeHtml(money(t.fee)) + ', оплата на месте' : '<br>Без взноса')
     + '</div>'
-    + (t.note ? '<div class="notice">' + escapeHtml(t.note) + '</div>' : '');
+    // Подробности — объявление владельца целиком, с абзацами, как в афише.
+    + (t.note ? '<div class="notice t-note">' + escapeHtml(t.note) + '</div>' : '');
 
   const list = el('div');
   list.innerHTML = '<div class="t2">Записались (' + t.taken + ' из ' + t.maxParticipants + '):</div>';
@@ -2806,6 +2814,15 @@ function showTournamentCard() {
 }
 
 const T_SCORING_LABEL = { set1: 'один сет', set2: 'два сета', proset8: 'про-сет до 8' };
+
+// Как устроен турнир — одной строкой, словами клуба: «группы, потом
+// плей-офф» и сетка БЕТА для тех, кто не вышел.
+function tournamentFormat(t) {
+  const f = t.format || {};
+  if (!f.groupCount) return 'сразу навылет, без групп';
+  return (f.groupCount === 1 ? 'круговой, потом плей-офф' : 'группы, потом плей-офф')
+    + (f.consolation ? '; для не вышедших — сетка БЕТА' : '');
+}
 
 async function joinTournament(t) {
   if (!state.auth || !state.auth.client) { openAuth('login'); return; }

@@ -66,6 +66,9 @@ button { font: inherit; }
 .pill.me { background: var(--court-tint); color: var(--court-dk); }
 
 .meta { color: var(--ink-soft); font-size: 14px; }
+.t-note { margin-top: 6px; }
+.t-note summary { cursor: pointer; color: var(--ink-soft); font-size: 14px; }
+.t-note .meta { white-space: pre-line; line-height: 1.45; margin-top: 6px; }
 .empty { color: var(--ink-soft); font-size: 14px; padding: 10px 0; }
 
 .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

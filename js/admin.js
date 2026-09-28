@@ -137,6 +137,8 @@ const ERRORS = {
   'same-signup': 'Выберите двух разных людей.',
   'not-signed': 'Этого человека в составе уже нет — обновите страницу.',
   'client-blocked':'Клиент заблокирован — запись не прошла. Если его простили, сначала разблокируйте во вкладке «Клиенты».',
+  'invalid-chat': 'Бот не состоит в этой группе — выберите чат из списка заново.',
+  'no-telegram-target': 'Турнир не публикуется в Telegram — выберите группу в «Изменить».',
   'invalid-duration': 'Длительность не по шагу сетки.',
   'invalid-time': 'Время не по шагу сетки.',
   'not-movable': 'Такую бронь перенести нельзя.',
@@ -349,6 +351,20 @@ const PAY_VIA = [
 function payViaLabel(via) {
   const found = PAY_VIA.find(x => x[0] === via);
   return found ? found[1] : 'наличными';
+}
+// Что закроет абонемент и что всё-таки взять на месте. Одна строка на
+// карточку брони и на «Не оплачено». Прокат — всегда деньгами:
+// абонемент только про корт.
+function passCoverText(cover) {
+  const h = n => String(n).replace('.', ',') + ' ч';
+  let s = 'Спишется с абонемента: ' + h(cover.hours) + ' (на абонементе ' + h(cover.left) + ').';
+  if (cover.due > 0) {
+    const why = [];
+    if (cover.short > 0) why.push('не хватает ' + h(cover.short));
+    if (cover.extras > 0) why.push('прокат');
+    s += ' Взять на месте ' + money(cover.due) + (why.length ? ' — ' + why.join(' и ') : '') + '.';
+  }
+  return s;
 }
 function hoursText(min) { return (Math.round(min / 60 * 10) / 10).toString().replace('.', ',') + ' ч'; }
 function escapeHtml(s) {
@@ -784,6 +800,9 @@ function unpaidDebt(b, dateIso) {
   if (b.openPlay || b.source === 'openplay') return false;
   if (b.status !== 'confirmed') return false;
   if (b.paidAt || b.passSpentAt) return false;
+  // Закроет абонемент — ночью, через двое суток после игры. Звать
+  // человека к кассе за неё не надо.
+  if (b.byPass) return false;
   return isPast(dateIso || b.date, b.end);
 }
 
@@ -845,10 +864,10 @@ function requestCount() {
   // Неоплаченные — тоже «требует решения»: пока бронь не закрыта
   // деньгами или неявкой, день не досчитан.
   //
-  // Полный список за месяц приезжает только на вкладке «Заявки» — тридцать
-  // файлов дней при каждом обновлении сетки того не стоят. Пока его нет,
-  // считаем по свежим: незакрытые сыгранные брони и так лежат в склейке
-  // (`review.played`), и значок не молчит с первого экрана.
+  // Список за всё окно приезжает в каждой склейке: пока он был только на
+  // вкладке «Заявки», значок до захода считал долги за двое суток и
+  // прыгал 4 → 5 → 4. Свежие из `review.played` — запас на случай, если
+  // эта часть склейки не пришла: значок не должен молчать совсем.
   const debts = db.unpaid ? db.unpaid.unpaid.length
     : ((db.review && db.review.played) || []).filter(b => unpaidDebt(b, b.date)).length;
   return pendingBookings().length + pendingClients().length + items + debts;
@@ -1873,6 +1892,9 @@ function openBooking(b) {
       const who = clientById(b.paidBy);
       payLine.textContent = 'Оплачено ' + payViaLabel(b.paidVia)
         + ' · ' + shortDateTime(b.paidAt) + (who ? ' · отметил ' + who.name : '');
+    } else if (b.byPass) {
+      payLine.textContent = '🎫 ' + passCoverText(b.byPass)
+        + ' Часы спишутся сами после игры — отмечать оплату не нужно.';
     } else {
       payLine.textContent = finished ? 'Оплата не отмечена — бронь висит в списке «Не оплачено».'
         : 'Оплата не отмечена. Отметить можно и заранее — если человек заплатил вперёд.';
@@ -1881,12 +1903,36 @@ function openBooking(b) {
 
     const pay = el('div', 'acts');
     if (!b.passSpentAt && !b.paidAt) {
-      PAY_VIA.forEach(([via, label]) => {
-        pay.appendChild(btn('Оплатил ' + label, 'btn sm', () => {
+      const payButtons = (into) => PAY_VIA.forEach(([via, label]) => {
+        into.appendChild(btn('Оплатил ' + label, 'btn sm', () => {
           closeModal();
           act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via }), 'Отмечено: ' + label);
         }));
       });
+      if (b.byPass) {
+        // Человек может сберечь часы и заплатить деньгами. Тогда отметка
+        // оплаты, и ночное задание эту игру не тронет. Кнопки спрятаны за
+        // одним нажатием: по привычке жать «наличными» здесь нельзя —
+        // это и была ошибка, отменявшая списание. Раскрытые — с
+        // объяснением и дорогой назад: без него администратор смотрит на
+        // кнопки и гадает, надо ли их жать.
+        const alt = btn('Клиент платит деньгами, а не абонементом', 'btn sm sec', () => {
+          pay.innerHTML = '';
+          pay.appendChild(txt('div', 'empty',
+            'Только если клиент сам просит заплатить деньгами. Отметите оплату — часы с '
+            + 'абонемента за эту игру не спишутся. Обычно ничего нажимать не нужно.'));
+          const row = el('div', 'acts');
+          payButtons(row);
+          row.appendChild(btn('Отмена', 'btn sm sec', () => {
+            pay.innerHTML = '';
+            pay.appendChild(alt);
+          }));
+          pay.appendChild(row);
+        });
+        pay.appendChild(alt);
+      } else {
+        payButtons(pay);
+      }
     } else if (b.paidAt) {
       // Снимает отметку любой администратор, а не только владелец: на
       // стойке легко промахнуться, а звонок владельцу из-за каждого
@@ -2514,7 +2560,10 @@ function renderRequests(view) {
 // тренировок тоже — там платят участники по отдельности.
 function renderUnpaid() {
   const card = el('div', 'card');
-  card.innerHTML = '<h2>Не оплачено <span class="sub">сыгранные брони без отметки</span></h2>';
+  // Окно пишем в заголовке: оно живёт в настройках бакета, и видно
+  // сразу, какое действует на самом деле.
+  card.innerHTML = '<h2>Не оплачено <span class="sub">сыгранные брони без отметки'
+    + (db.unpaid ? ' за ' + plural(db.unpaid.windowDays, 'день', 'дня', 'дней') : '') + '</span></h2>';
 
   if (!db.unpaid) {
     card.appendChild(txt('div', 'empty', 'Загружаем…'));
@@ -2526,6 +2575,7 @@ function renderUnpaid() {
     card.appendChild(txt('div', 'empty',
       'Долгов нет — все сыгранные брони закрыты за последние '
       + plural(db.unpaid.windowDays, 'день', 'дня', 'дней') + '.'));
+    renderByPass(card);
     return card;
   }
 
@@ -2559,7 +2609,41 @@ function renderUnpaid() {
     card.appendChild(it);
   });
 
+  renderByPass(card);
   return card;
+}
+
+// Сыгранные по абонементу — в той же карточке, но не долгом: денег с
+// человека не берут, в значок они не идут. Показываем ради неявки — её
+// отмечают здесь, пока ночное задание не списало часы.
+function renderByPass(card) {
+  const rows = (db.unpaid && db.unpaid.byPass) || [];
+  if (!rows.length) return;
+
+  card.appendChild(txt('div', 't1', 'Спишутся с абонемента'));
+  card.appendChild(txt('div', 'empty',
+    'Это не долг: часы снимутся сами через '
+    + plural((db.review && db.review.settleDelayDays) || 2, 'день', 'дня', 'дней')
+    + ' после игры. Если человек не пришёл — отметьте, тогда часы не спишутся.'));
+
+  rows.forEach(b => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(b.clientName)
+      + ' <span class="pill grey">абонемент</span></div>'
+      + '<div class="t2">' + escapeHtml(longDate(b.date) + ' · ' + fmtRange(b.start, b.end)
+        + ' · ' + courtName(b.courtId))
+      + (b.clientPhone ? ' · ' + escapeHtml(fmtPhone(b.clientPhone)) : '') + '</div>'
+      + '<div class="t2">' + escapeHtml(passCoverText(b.byPass)) + '</div>';
+
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Не пришли', 'btn sm sec', () => act(
+      () => api('adminMarkNoShow', { date: b.date, bookingId: b.id }), 'Отмечена неявка, рейтинг снижен')));
+    acts.appendChild(btn('Открыть день', 'btn sm sec', () => {
+      state.date = b.date; state.tab = 'day'; reload();
+    }));
+    it.appendChild(acts);
+    card.appendChild(it);
+  });
 }
 
 // Очередь ожидания — заявки на уже занятое время.
@@ -2694,6 +2778,9 @@ const CLIENT_SORTS = [
   { id: 'old', label: 'сначала давние' },
   { id: 'no-tg', label: 'сначала без Telegram' },
   { id: 'games', label: 'сначала кто больше играл' },
+  // Не порядок, а отбор: уровень проставляют по списку, и тем, у кого он
+  // уже есть, в этом списке делать нечего.
+  { id: 'no-ntrp', label: 'только без игрового уровня' },
 ];
 
 function sortedClients() {
@@ -2719,6 +2806,7 @@ function sortedClients() {
     case 'old': return list.sort((a, b) => at(a) - at(b) || byName(a, b));
     case 'no-tg': return list.sort((a, b) => (a.tg === b.tg) ? byName(a, b) : (a.tg ? 1 : -1));
     case 'games': return list.sort((a, b) => b.completedCount - a.completedCount || byName(a, b));
+    case 'no-ntrp': return list.filter(c => c.ntrp == null).sort(byName);
     // Порядок сервера: ждущие проверки сверху, дальше по имени.
     default: return list;
   }
@@ -2729,9 +2817,11 @@ function renderClients(view) {
   // и посев. Администратору поле не показываем — сервер его всё равно
   // не примет.
   const owner = !!(me && me.role === 'owner');
+  const shown = sortedClients();
   const card = el('div', 'card');
   card.innerHTML = '<h2>Клиенты <span class="sub">' + db.clients.length
-    + (state.clientQuery ? ' по запросу' : ' человек') + '</span></h2>';
+    + (state.clientQuery ? ' по запросу' : ' человек')
+    + (shown.length !== db.clients.length ? ', показано ' + shown.length : '') + '</span></h2>';
 
   const search = document.createElement('input');
   search.placeholder = 'Поиск по имени или телефону';
@@ -2789,12 +2879,13 @@ function renderClients(view) {
   card.appendChild(list);
   view.appendChild(card);
 
-  if (!db.clients.length) {
-    list.appendChild(txt('div', 'empty', 'Никого не нашлось.'));
+  if (!shown.length) {
+    list.appendChild(txt('div', 'empty', db.clients.length
+      ? 'Под этот отбор никто не подходит.' : 'Никого не нашлось.'));
     return;
   }
 
-  sortedClients().forEach(c => {
+  shown.forEach(c => {
     const it = el('div', 'item');
     const flags = [];
     flags.push(c.status === 'verified' ? '<span class="pill ok">проверенный</span>'
@@ -5505,7 +5596,7 @@ function renderTournaments(view) {
       reload().catch(() => toast('Не удалось загрузить турнир'));
     }));
     if (canEdit) {
-      acts.appendChild(btn('Изменить', 'btn sm sec', () => openTournamentForm(t)));
+      acts.appendChild(btn('Изменить', 'btn sm sec', () => editTournament(t.id)));
       acts.appendChild(btn('Удалить', 'btn sm danger', () => confirmDelete(
         'Удалить турнир?', t.title + ' · ' + tournamentDates(t),
         'Пропадут состав, жеребьёвка и все результаты. Отменить это нельзя.',
@@ -5522,6 +5613,20 @@ function renderTournaments(view) {
   }
 
   renderTourPoints(view, canEdit);
+}
+
+// Строка списка — это сводка: формата, счёта и подробностей в ней нет, и
+// форма на ней падала молча, кнопка казалась неживой. Правим полный
+// турнир — открываем карточку, и форма встаёт поверх неё.
+async function editTournament(id) {
+  state.tournamentId = id;
+  try {
+    await reload();
+  } catch (e) {
+    toast('Не удалось загрузить турнир');
+    return;
+  }
+  if (db.tournament && db.tournament.id === id) openTournamentForm(db.tournament);
 }
 
 // Зачёт очков — второй картой на той же вкладке. Устроен как таблицы
@@ -5683,7 +5788,7 @@ function renderTournamentCard(view) {
       ? (t.scoring.decider === 'tb10' ? ', решающий — тай-брейк до 10' : ', решающий — полный сет') : '')
     + (t.fee ? ' · взнос ' + t.fee + ' ₽, собрано ' + t.feeTotal + ' ₽' : ' · без взноса')
     + '</div>'
-    + (t.note ? '<div class="t2">' + escapeHtml(t.note) + '</div>' : '');
+    + (t.note ? '<div class="t2 pre">' + escapeHtml(t.note) + '</div>' : '');
   view.appendChild(head);
 
   const acts = el('div', 'acts');
@@ -5696,6 +5801,10 @@ function renderTournamentCard(view) {
   link.rel = 'noopener';
   link.textContent = 'Сетка и печать';
   acts.appendChild(link);
+
+  // Правка карточки — отсюда же: время кортов ужимают, глядя на состав,
+  // и уходить ради этого в список незачем.
+  if (canEdit) acts.appendChild(btn('Изменить', 'btn sm sec', () => openTournamentForm(t)));
 
   if (canEdit && !t.drawnAt) {
     acts.appendChild(btn('Провести жеребьёвку', 'btn sm', () => confirmDraw(t)));
@@ -5764,6 +5873,8 @@ function renderTournamentCard(view) {
     head.appendChild(row);
   }
 
+  renderTournamentPosts(head, t, canEdit);
+
   if (t.countedAt) {
     head.appendChild(txt('div', 'empty',
       'Турнир завершён, сыгранное записано участникам в профиль.'
@@ -5794,6 +5905,89 @@ function renderTournamentCard(view) {
   renderThirdPlace(view, t, t.third, 'Матч за третье место АЛЬФА');
   renderTournamentBracket(view, t, 'consolation', 'БЕТА', betaSub(t));
   renderThirdPlace(view, t, t.consThird, 'Матч за третье место БЕТА');
+}
+
+// Посты турнира в группе клуба: куда ушли, живы ли и что делать, если нет.
+// Отказ Telegram показываем словами — иначе владелец ждёт пост, которого нет.
+function renderTournamentPosts(head, t, canEdit) {
+  const tgs = t.telegram;
+  // Ушло хоть что-то по-настоящему: запись об отказе — ещё не пост.
+  const posted = !!tgs && ['announce', 'roster'].some(k => tgs.posts[k] && tgs.posts[k].at);
+  if (!tgs || (!tgs.announce && !tgs.roster && !posted)) {
+    if (canEdit && db.chats) {
+      head.appendChild(txt('div', 'empty',
+        'В группу не публикуется. Выбрать тему — «Изменить» → «Публикация в Telegram».'));
+    }
+    return;
+  }
+
+  const chat = db.chats && (db.chats.chats || []).find(c => String(c.id) === tgs.chatId);
+  const topic = chat && (chat.topics || []).find(x => String(x.id) === tgs.threadId);
+  const where = (chat ? chat.title : 'группа клуба')
+    + (tgs.threadId ? ' → ' + (topic && topic.title ? '«' + topic.title + '»' : 'тема №' + tgs.threadId) : '');
+  const partText = (on, post, label) => {
+    if (!on) return null;
+    if (post && post.lost) return label + ': удалено в группе';
+    if (post && post.at) return label + ' ✓';
+    return label + ': ещё не ушло';
+  };
+  const parts = [
+    partText(tgs.announce, tgs.posts.announce, 'объявление'),
+    partText(tgs.roster, tgs.posts.roster, 'состав'),
+  ].filter(Boolean);
+  head.appendChild(txt('div', 'empty', 'Telegram: ' + where
+    + (parts.length ? ' · ' + parts.join(' · ') : ' · больше не ведётся')
+    + (tgs.syncedAt ? ' · обновлено ' + shortDateTime(tgs.syncedAt) : '')
+    + '. Записи с сайта попадают в состав в течение пяти минут, записанные здесь — сразу.'));
+
+  if (tgs.lastError) {
+    const warn = el('div', 'notice');
+    warn.textContent = 'Пост не обновился: ' + tgErrorText(tgs.lastError)
+      + ' Поправьте и нажмите «Обновить пост».';
+    head.appendChild(warn);
+  }
+
+  const lost = ['announce', 'roster'].some(k => tgs[k] && tgs.posts[k] && tgs.posts[k].lost);
+  const row = el('div', 'acts');
+  if (tgs.announce || tgs.roster) {
+    row.appendChild(btn('Обновить пост', 'btn sm sec', () =>
+      act(() => api('adminTournamentPost', { id: t.id, op: 'sync' }), 'Пост обновлён')));
+  }
+  if (canEdit && lost) {
+    row.appendChild(btn('Выложить заново', 'btn sm', () =>
+      act(() => api('adminTournamentPost', { id: t.id, op: 'republish' }), 'Выложено заново')));
+  }
+  if (canEdit && posted) {
+    row.appendChild(btn('Убрать из Telegram', 'btn sm danger', () => confirmDelete(
+      'Убрать посты из группы?', t.title,
+      'Бот удалит своё объявление и состав и больше не будет их вести. Старше двух суток Telegram '
+      + 'удалить не даст, если бот не администратор группы, — тогда удалите их руками.',
+      async () => {
+        const res = await act(() => api('adminTournamentPost', { id: t.id, op: 'remove' }));
+        if (!res) return;
+        toast(res.left && res.left.length
+          ? 'Telegram не дал удалить — удалите в группе руками. Вести посты бот перестал.'
+          : 'Посты убраны из группы', 6000);
+      })));
+  }
+  if (row.children.length) head.appendChild(row);
+}
+
+// Отказы Telegram приходят по-английски. Частые переводим в то, что
+// владельцу делать; незнакомый показываем как есть — лучше непонятный
+// ответ, чем никакого.
+function tgErrorText(raw) {
+  const s = String(raw || '');
+  if (/thread not found|topic_deleted/i.test(s)) return 'тема не найдена — возможно, её удалили.';
+  if (/topic_closed/i.test(s)) return 'тема закрыта — откройте её в группе.';
+  if (/not enough rights|have no rights|chat_write_forbidden|need administrator/i.test(s)) {
+    return 'у бота нет прав писать в эту тему — проверьте его права в группе.';
+  }
+  if (/not a member|chat not found|kicked|bot was blocked/i.test(s)) return 'бота нет в этой группе.';
+  if (/too many requests/i.test(s)) return 'Telegram просит подождать — бот повторит сам.';
+  if (/not-configured/i.test(s)) return 'бот не настроен — нет токена.';
+  if (/удалено/i.test(s)) return s + '.';
+  return 'Telegram ответил: ' + s + '.';
 }
 
 // Кого собрали в БЕТА — подпись читается с настройки турнира, чтобы
@@ -6017,9 +6211,8 @@ function renderTournamentRoster(view, t, canEdit) {
             { id: t.id, op: 'remove', participantId: p.id }), 'Убран из состава')));
       } else {
         acts.appendChild(btn('Заменить', 'btn sm sec', () => openPickClient(t,
-          'Кем заменить: ' + p.name, (clientId) =>
-            act(() => api('adminTournamentParticipant',
-              { id: t.id, op: 'replace', participantId: p.id, clientId }), 'Участник заменён'))));
+          'Кем заменить: ' + p.name,
+          pickIntoTournament(t, 'replace', { participantId: p.id }, 'Участник заменён'))));
         acts.appendChild(btn('Снять с турнира', 'btn sm danger', () => openWithdrawForm(t, p)));
       }
     }
@@ -6029,8 +6222,8 @@ function renderTournamentRoster(view, t, canEdit) {
 
   if (!t.drawnAt) {
     const add = el('div', 'acts');
-    add.appendChild(btn('Добавить участника', 'btn sm', () => openPickClient(t, 'Кого записать', (clientId) =>
-      act(() => api('adminTournamentParticipant', { id: t.id, op: 'add', clientId }), 'Записан'))));
+    add.appendChild(btn('Добавить участника', 'btn sm', () => openPickClient(t, 'Кого записать',
+      pickIntoTournament(t, 'add', {}, 'Записан'))));
     card.appendChild(add);
   }
 
@@ -6331,14 +6524,19 @@ function openWithdrawForm(t, p) {
   showModal(body);
 }
 
-// Выбор клиента из базы: участник турнира — всегда карточка клиента,
-// с улицы в сетку не попасть. Ищем по тому же списку, что и на вкладке
-// «Клиенты», — он уже приехал вместе с панелью.
+// Выбор участника: участник турнира — всегда карточка клиента, иначе нет
+// ни уровня для жеребьёвки, ни зачёта сыгранного. Ищем по тому же списку,
+// что и на вкладке «Клиенты», — он уже приехал вместе с панелью. Приезжего,
+// которого в базе нет, заводим здесь же, именем и телефоном: гонять
+// администратора ради одной карточки на другую вкладку — лишний круг.
+//
+// onPick получает { clientId } или { newClient: { name, phone } } — ровно
+// те поля, что уходят на сервер.
 function openPickClient(t, title, onPick) {
   const body = el('div');
   body.innerHTML = '<h3>' + escapeHtml(title) + '</h3>'
-    + '<div class="m-sub">В турнир записываются только клиенты центра. '
-    + 'Если человека нет в списке — сначала заведите ему карточку на вкладке «Клиенты».</div>';
+    + '<div class="m-sub">В турнир записываются клиенты центра. Нет человека в списке — '
+    + 'заведите карточку прямо здесь: имя и телефон, как при записи аренды.</div>';
 
   const search = document.createElement('input');
   search.placeholder = 'Имя или телефон';
@@ -6347,23 +6545,75 @@ function openPickClient(t, title, onPick) {
   const list = el('div', 'picklist');
   body.appendChild(list);
 
+  // Новая карточка. Совпадёт телефон с уже заведённым — сервер возьмёт
+  // того человека, а не заведёт двойника.
+  const fresh = el('div', 'item');
+  fresh.appendChild(txt('div', 't1', 'Нет в базе — завести карточку и записать'));
+  const name = document.createElement('input');
+  name.placeholder = 'Например: Андрей Секачев';
+  wrapField(fresh, 'Имя и фамилия', name);
+  const phone = document.createElement('input');
+  phone.type = 'tel';
+  phone.placeholder = '+7 918 000-00-00';
+  wrapField(fresh, 'Телефон', phone);
+  const freshActs = el('div', 'acts');
+  freshActs.appendChild(btn('Завести и записать', 'btn sm', () => {
+    if (name.value.trim().length < 2) { toast('Укажите имя и фамилию'); return; }
+    if (phone.value.replace(/\D/g, '').length < 10) { toast('Проверьте номер телефона'); return; }
+    closeModal();
+    onPick({ newClient: { name: name.value.trim(), phone: phone.value.trim() } });
+  }));
+  fresh.appendChild(freshActs);
+  body.appendChild(fresh);
+
+  const openFresh = btn('Нет в списке — завести карточку', 'btn sm sec', () => showFresh(true));
+  const openRow = el('div', 'acts');
+  openRow.appendChild(openFresh);
+  body.appendChild(openRow);
+
+  // Вписанное руками в форму не трогаем: поиск дальше может сузиться,
+  // а набранное имя пропадать не должно.
+  let touched = false;
+  [name, phone].forEach(x => x.addEventListener('input', () => { touched = true; }));
+  function showFresh(on) {
+    fresh.style.display = on ? '' : 'none';
+    openRow.style.display = on ? 'none' : '';
+  }
+
   const taken = new Set();
   (t.participants || []).concat(t.waitlist || []).forEach(p => (p.players || []).forEach(id => taken.add(id)));
 
   function draw() {
-    const q = search.value.trim().toLowerCase();
+    const raw = search.value.trim();
+    const q = raw.toLowerCase();
+    // Телефон хранится без кода страны, а на стойке набирают с начала:
+    // «8918…», «+7918…». Ведущую 7 или 8 одиннадцатизначного номера
+    // отбрасываем, иначе свой человек не находится и заводится двойник.
+    const qd = raw.replace(/\D/g, '');
+    const digits = qd.length === 11 && /^[78]/.test(qd) ? qd.slice(1) : qd;
     list.innerHTML = '';
     const found = (db.clients || [])
       .filter(c => !taken.has(c.id))
-      .filter(c => !q || c.name.toLowerCase().indexOf(q) >= 0 || String(c.phone || '').indexOf(q) >= 0)
+      .filter(c => !q || c.name.toLowerCase().indexOf(q) >= 0
+        || (digits.length >= 3 && String(c.phone || '').indexOf(digits) >= 0))
       .slice(0, 20);
-    if (!found.length) { list.appendChild(txt('div', 'empty', 'Никого не нашли.')); return; }
+    if (!found.length) {
+      list.appendChild(txt('div', 'empty', 'Никого не нашли.'));
+      // Набранное в поиске — это и есть данные нового человека: номер
+      // или имя, смотря что вводили.
+      if (!touched) {
+        if (digits.length >= 5) { phone.value = raw; name.value = ''; } else { name.value = raw; phone.value = ''; }
+      }
+      showFresh(true);
+      return;
+    }
+    if (!touched) showFresh(false);
     found.forEach(c => {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(c.name) + '</div>'
         + '<div class="t2">' + escapeHtml(c.phone || '')
         + (c.ntrp == null ? ' · уровень неизвестен' : ' · уровень ' + String(c.ntrp).replace('.', ',')) + '</div>';
-      it.addEventListener('click', () => { closeModal(); onPick(c.id); });
+      it.addEventListener('click', () => { closeModal(); onPick({ clientId: c.id }); });
       list.appendChild(it);
     });
   }
@@ -6375,6 +6625,19 @@ function openPickClient(t, title, onPick) {
   body.appendChild(acts);
   showModal(body);
   setTimeout(() => search.focus(), 50);
+}
+
+// Запись из окна выбора. Приезжего сервер заводит сам — говорим, завёл
+// ли он карточку или нашёл по номеру уже существующую: вписанное в форму
+// имя могло быть другим.
+function pickIntoTournament(t, op, extra, okText) {
+  return who => act(() => api('adminTournamentParticipant', Object.assign({ id: t.id, op }, extra, who)))
+    .then(res => {
+      if (!res) return;
+      if (!res.walkIn) { toast(okText); return; }
+      toast(okText + (res.walkIn.created ? ' · заведена карточка: ' : ' · найден по телефону: ')
+        + res.walkIn.name, 3500);
+    });
 }
 
 // Как лягут люди по группам: поровну, остаток по первым. Тот же расчёт,
@@ -6989,11 +7252,17 @@ function openTournamentForm(existing) {
   decider.value = existing ? existing.scoring.decider : 'tb10';
   const deciderField = wrapFieldNode(body, 'При 1:1 по сетам играется', decider);
 
+  // Подробности — это объявление целиком: его люди читают на сайте в
+  // «Подробнее» и его же бот выкладывает в группу. Абзацы сохраняются.
   const note = document.createElement('textarea');
-  note.rows = 3;
+  note.rows = 8;
+  note.maxLength = 3000;
   note.value = existing ? existing.note : '';
-  note.placeholder = 'Время начала, как оплачивается взнос, что взять с собой';
-  wrapField(body, 'Подробности — необязательно', note);
+  note.placeholder = 'Объявление целиком: формат, кто допускается, питание, как платить взнос, '
+    + 'что взять с собой. Абзацы сохранятся — и на сайте, и в посте в группе.';
+  wrapField(body, 'Подробности — объявление для сайта и группы', note);
+
+  const tgPick = tournamentTelegramFields(body, existing, gender);
 
   const closed = document.createElement('select');
   closed.appendChild(opt('open', 'Открыта'));
@@ -7058,6 +7327,9 @@ function openTournamentForm(existing) {
       note: note.value,
       signupsClosed: closed.value === 'closed',
     };
+    // Нет списка чатов (не владелец, бот ещё не видел групп) — поле не
+    // шлём вовсе, и сервер оставит публикацию как была.
+    if (tgPick) payload.telegram = tgPick.value();
     if (existing) payload.id = existing.id;
     closeModal();
     act(async () => {
@@ -7069,6 +7341,13 @@ function openTournamentForm(existing) {
         const who = clashNames(res.closure.bookings || []);
         setTimeout(() => toast('Корты не закрыты — это время занято: ' + who, 6000), 1400);
       }
+      // Так же и с постом: карточка сохранена, а Telegram мог отказать —
+      // нет прав писать в тему, сеть. Молчать об этом нельзя: владелец
+      // будет ждать пост, которого нет.
+      const posted = res && res.tournament && res.tournament.telegram;
+      if (posted && posted.lastError) {
+        setTimeout(() => toast('Пост в Telegram не ушёл: ' + tgErrorText(posted.lastError), 7000), 1400);
+      }
       return res;
     }, existing ? 'Турнир изменён' : 'Турнир создан');
   }));
@@ -7076,6 +7355,110 @@ function openTournamentForm(existing) {
 
   showModal(body);
   setTimeout(() => title.focus(), 50);
+}
+
+// Куда постить турнир в группе клуба. Выбор — из чатов, где бот состоит и
+// что-то видел (как в «Настройках → Чат центра»), и из тем этого чата.
+// Список приходит только владельцу; нет его — поля не рисуем, и сервер
+// оставит публикацию как была.
+//
+// Новому турниру предлагаем тему, куда ушёл прошлый турнир того же пола:
+// мужские одиночки живут в своей теме, женские — в своей.
+function tournamentTelegramFields(body, existing, genderSel) {
+  const chats = (db.chats && db.chats.chats) || [];
+  if (!db.chats) return null;
+
+  const box = el('div', 'item');
+  box.appendChild(txt('div', 't1', 'Публикация в Telegram'));
+  body.appendChild(box);
+
+  if (!chats.length) {
+    box.appendChild(txt('div', 'empty',
+      'Бот пока не видел ни одной группы — публиковать некуда. Добавьте его в группу центра '
+      + 'и напишите там что-нибудь: группа появится здесь в течение минуты.'));
+    return null;
+  }
+
+  const now = existing && existing.telegram;
+  const targets = db.chats.tournamentTargets || {};
+  const remembered = () => targets[genderSel.value || 'any'] || null;
+  const start = now || remembered();
+  const draft = {
+    announce: now ? now.announce : !!start,
+    roster: now ? now.roster : !!start,
+  };
+
+  const chatSel = document.createElement('select');
+  chatSel.appendChild(opt('', 'Не публиковать'));
+  chats.forEach(c => chatSel.appendChild(opt(String(c.id), c.title)));
+  chatSel.value = start ? String(start.chatId) : '';
+  wrapField(box, 'Группа', chatSel);
+
+  const threadSel = document.createElement('select');
+  const fillThreads = (want) => {
+    const chat = chats.find(c => String(c.id) === chatSel.value);
+    const topics = (chat && chat.topics) || [];
+    threadSel.innerHTML = '';
+    threadSel.appendChild(opt('', topics.length ? 'Без темы — в общую ленту' : 'Тем в этом чате не видно'));
+    topics.forEach(t => threadSel.appendChild(opt(String(t.id), t.title || ('тема №' + t.id))));
+    threadSel.value = want || '';
+    threadSel.disabled = !topics.length;
+  };
+  fillThreads(start ? start.threadId : '');
+  chatSel.addEventListener('change', () => fillThreads(threadSel.value));
+  const threadField = wrapFieldNode(box, 'Тема', threadSel);
+
+  const annBox = check('Объявление', draft.announce, v => { draft.announce = v; },
+    'Название и подробности — отдельным сообщением.');
+  const rosBox = check('Состав участников', draft.roster, v => { draft.roster = v; },
+    'Нумерованный список. Бот правит это же сообщение при каждой записи, а не шлёт новое.');
+  box.appendChild(annBox);
+  box.appendChild(rosBox);
+
+  const sync = () => {
+    const on = !!chatSel.value;
+    threadField.style.display = on ? '' : 'none';
+    annBox.style.display = on ? '' : 'none';
+    rosBox.style.display = on ? '' : 'none';
+  };
+  // Выбрали группу, а галочек нет ни одной — ставим обе: публикация,
+  // которая ничего не публикует, была бы молчаливой ловушкой. Лишнюю
+  // снимут руками (у турнира, объявленного вручную, — объявление).
+  chatSel.addEventListener('change', () => {
+    if (chatSel.value && !draft.announce && !draft.roster) {
+      draft.announce = true;
+      draft.roster = true;
+      annBox.querySelector('input').checked = true;
+      rosBox.querySelector('input').checked = true;
+    }
+    sync();
+  });
+  sync();
+
+  // Пол сменили в новом турнире, а публикацию руками не трогали — пусть
+  // тема подстроится под пол.
+  let touched = !!now;
+  [chatSel, threadSel].forEach(x => x.addEventListener('change', () => { touched = true; }));
+  genderSel.addEventListener('change', () => {
+    if (touched) return;
+    const r = remembered();
+    chatSel.value = r ? String(r.chatId) : '';
+    fillThreads(r ? r.threadId : '');
+    sync();
+  });
+
+  box.appendChild(txt('div', 'empty',
+    'Бот правит только свои сообщения: пост, написанный руками, он не подхватит. '
+    + 'Имена в составе — полностью, как в карточках клиентов.'));
+
+  return {
+    value: () => ({
+      chatId: chatSel.value,
+      threadId: chatSel.value ? threadSel.value : '',
+      announce: !!chatSel.value && draft.announce,
+      roster: !!chatSel.value && draft.roster,
+    }),
+  };
 }
 
 // ============================================================

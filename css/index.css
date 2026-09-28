@@ -110,6 +110,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 
 .notice { margin: 14px 0 0; background: var(--warn-tint); border: 1px solid var(--warn-line); color: var(--warn-dk); border-radius: var(--radius); padding: 10px 14px; font-size: 14px; }
 .notice.info { background: var(--court-tint); border-color: var(--court-line); color: var(--court-dk); }
+.notice.t-note { white-space: pre-line; line-height: 1.45; }
 .empty { color: var(--ink-soft); font-size: 14px; padding: 4px 2px; }
 
 /* ---------- Кнопки ---------- */

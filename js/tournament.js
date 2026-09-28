@@ -82,7 +82,11 @@ function render() {
     + ' · матч: ' + escapeHtml(SCORING[t.scoring.mode] || '')
     + (t.fee ? ' · взнос ' + t.fee + ' ₽' : '')
     + ' · участников: ' + t.taken + '</div>'
-    + (t.note ? '<div class="meta">' + escapeHtml(t.note) + '</div>' : '')
+    // Подробности — объявление целиком, до трёх тысяч знаков. Над сеткой
+    // оно заслоняло бы саму сетку, а на печатный лист не нужно вовсе:
+    // свёрнуто и в печать не идёт.
+    + (t.note ? '<details class="t-note noprint"><summary>Условия турнира</summary>'
+      + '<div class="meta">' + escapeHtml(t.note) + '</div></details>' : '')
     + '<div class="print-head">Теннисный центр «Альфа», Краснодар</div>';
 
   const acts = el('div', 'acts noprint');
