@@ -2752,23 +2752,38 @@ function showTournamentCard() {
     + '<div class="m-sub">' + escapeHtml(tournamentDates(t)) + ' · ' + escapeHtml(t.level)
     + '<br>Формат: ' + escapeHtml(tournamentFormat(t))
     + '<br>Матч играется до: ' + escapeHtml(T_SCORING_LABEL[t.scoring.mode] || '')
-    + (t.fee ? '<br>Взнос ' + escapeHtml(money(t.fee)) + ', оплата на месте' : '<br>Без взноса')
+    + (t.fee
+      ? '<br>Взнос ' + escapeHtml(money(t.fee))
+        + (t.payFirst ? ' — место в составе после оплаты' : ', оплата на месте')
+      : '<br>Без взноса')
     + '</div>'
     // Подробности — объявление владельца целиком, с абзацами, как в афише.
     + (t.note ? '<div class="notice t-note">' + escapeHtml(t.note) + '</div>' : '');
 
   const list = el('div');
-  list.innerHTML = '<div class="t2">Записались (' + t.taken + ' из ' + t.maxParticipants + '):</div>';
+  list.innerHTML = '<div class="t2">' + (t.payFirst ? 'В составе' : 'Записались')
+    + ' (' + t.taken + ' из ' + t.maxParticipants + '):</div>';
   if (!t.participants.length) {
-    list.appendChild(txt('div', 't2', 'Пока никого. Будете первым.'));
+    list.appendChild(txt('div', 't2', t.payFirst ? 'Пока никого — места за теми, кто оплатил первым.'
+      : 'Пока никого. Будете первым.'));
   }
   t.participants.forEach(p => {
     list.appendChild(txt('div', 't1', p.name + (p.mine ? ' — это вы' : '')));
   });
+  // Заявки, ждущие оплаты, — числом: видно, что места разбирают.
+  if (t.feePending) {
+    list.appendChild(txt('div', 't2', 'Подали заявку и ждут оплаты: ' + t.feePending + '.'));
+  }
   body.appendChild(list);
 
+  // Своя заявка в листе ожидания — объясняем по её причине: «ждёт
+  // оплаты» и «не подошёл уровень» — разные истории для человека.
   const waiting = t.waitlist.some(p => p.mine);
-  if (waiting) {
+  if (waiting && t.myWaitReason === 'fee') {
+    body.appendChild(txt('div', 'notice',
+      'Заявка принята. Место в составе — после оплаты взноса ' + money(t.fee)
+      + ': как оплатить — в описании выше. Получив оплату, организатор переведёт вас в состав.'));
+  } else if (waiting) {
     body.appendChild(txt('div', 'notice',
       'Вы в листе ожидания: центр посмотрит заявку и решит сам. Мест это пока не занимает.'));
   }
@@ -2786,7 +2801,7 @@ function showTournamentCard() {
   }
 
   if (t.mine && !t.drawnAt) {
-    acts.appendChild(btn('Отменить запись', 'btn danger', () => leaveTournament(t)));
+    acts.appendChild(btn(waiting ? 'Отменить заявку' : 'Отменить запись', 'btn danger', () => leaveTournament(t)));
   } else if (t.mine) {
     body.appendChild(txt('div', 'notice',
       'Жеребьёвка проведена — сняться самому уже нельзя. Если не сможете играть, '
@@ -2833,11 +2848,12 @@ async function joinTournament(t) {
     showTournamentCard();
     // Уровень здесь строгий, в отличие от тренировок: так решил центр.
     // Отказом это не считается — заявку смотрит владелец.
-    toast(res.placed === 'waitlist'
-      ? (res.reason === 'level'
-        ? 'Ваш уровень вне диапазона турнира — заявка ушла на рассмотрение'
-        : 'Мест уже нет — вы в листе ожидания')
-      : 'Вы записаны на турнир', 4500);
+    const why = {
+      fee: 'Заявка принята — место в составе после оплаты взноса',
+      level: 'Ваш уровень вне диапазона турнира — заявка ушла на рассмотрение',
+      full: 'Мест уже нет — вы в листе ожидания',
+    };
+    toast(res.placed === 'waitlist' ? (why[res.reason] || why.full) : 'Вы записаны на турнир', 4500);
   } catch (e) {
     toast(errorText(e.code), 4000);
   }

@@ -6184,7 +6184,12 @@ function renderTournamentRoster(view, t, canEdit) {
         ? ' · очки сезона ' + pointsOfPlayer(p)
           + (carryOfPlayer(p) ? ' (перенос ' + carryOfPlayer(p) + ')' : '')
         : '')
-      + (p.replacedFrom ? ' · заменил: ' + escapeHtml(p.replacedFrom) : '') + '</div>';
+      + (p.replacedFrom ? ' · заменил: ' + escapeHtml(p.replacedFrom) : '')
+      // Кто и когда принял взнос — спор «я же платил» разбирают по этому.
+      + (p.paid && p.paidAt
+        ? ' · взнос принят ' + escapeHtml(shortDateTime(p.paidAt))
+          + (clientById(p.paidBy) ? ', ' + escapeHtml(clientById(p.paidBy).name) : '')
+        : '') + '</div>';
 
     const acts = el('div', 'acts');
     if (!t.drawnAt && p.status !== 'withdrawn') {
@@ -6227,11 +6232,46 @@ function renderTournamentRoster(view, t, canEdit) {
     card.appendChild(add);
   }
 
-  if (t.waitlist.length) {
+  // Заявки, ждущие оплаты взноса. Место в составе они не занимают:
+  // «зарегистрирован только после оплаты». Получили деньги — одна кнопка,
+  // и человек в составе с отметкой, кто принял.
+  const feeWait = t.waitlist.filter(p => p.waitReason === 'fee');
+  if (feeWait.length) {
+    const left = Math.max(0, t.maxParticipants - t.taken);
+    const box = el('div', 'card');
+    box.innerHTML = '<h2>Ждут оплаты <span class="sub">' + plural(feeWait.length, 'заявка', 'заявки', 'заявок')
+      + ' · ' + (left ? 'мест осталось ' + left : 'мест нет') + '</span></h2>';
+    view.appendChild(box);
+    box.appendChild(txt('div', 'empty',
+      'Место в составе — после оплаты взноса ' + t.fee + ' ₽. Прислали скриншот оплаты — нажмите '
+      + '«Взнос получен»: человек встанет в состав. '
+      + (left ? '' : 'Мест уже нет — взнос у этих людей брать не нужно.')));
+    feeWait.forEach(p => {
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(p.name) + '</div>'
+        + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
+        + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
+        + (p.at ? ' · заявка ' + escapeHtml(shortDateTime(p.at)) : '') + '</div>';
+      const acts = el('div', 'acts');
+      if (!t.drawnAt && left) {
+        acts.appendChild(btn('Взнос получен — в состав', 'btn sm', () =>
+          act(() => api('adminTournamentParticipant',
+            { id: t.id, op: 'promote', participantId: p.id, paid: true }), 'Взнос отмечен, в составе')));
+      }
+      acts.appendChild(btn('Убрать', 'btn sm danger', () =>
+        act(() => api('adminTournamentParticipant',
+          { id: t.id, op: 'remove', participantId: p.id }), 'Заявка убрана')));
+      it.appendChild(acts);
+      box.appendChild(it);
+    });
+  }
+
+  const otherWait = t.waitlist.filter(p => p.waitReason !== 'fee');
+  if (otherWait.length) {
     const wait = el('div', 'card');
     wait.innerHTML = '<h2>Лист ожидания <span class="sub">уровень не подошёл или состав полон</span></h2>';
     view.appendChild(wait);
-    t.waitlist.forEach(p => {
+    otherWait.forEach(p => {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(p.name) + '</div>'
         + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
@@ -6239,9 +6279,12 @@ function renderTournamentRoster(view, t, canEdit) {
         + (p.phone ? ' · ' + escapeHtml(p.phone) : '') + '</div>';
       const acts = el('div', 'acts');
       if (!t.drawnAt) {
-        acts.appendChild(btn('В состав', 'btn sm', () =>
+        // У турнира «место после оплаты» допуск не отменяет взноса:
+        // допущенный встаёт ждать оплаты, и кнопка так и называется.
+        acts.appendChild(btn(t.payFirst ? 'Допустить — ждёт оплаты' : 'В состав', 'btn sm', () =>
           act(() => api('adminTournamentParticipant',
-            { id: t.id, op: 'promote', participantId: p.id }), 'Переведён в состав')));
+            { id: t.id, op: 'promote', participantId: p.id }),
+          t.payFirst ? 'Допущен — ждёт оплаты взноса' : 'Переведён в состав')));
       }
       acts.appendChild(btn('Убрать', 'btn sm danger', () =>
         act(() => api('adminTournamentParticipant',
@@ -6640,6 +6683,17 @@ function pickIntoTournament(t, op, extra, okText) {
     });
 }
 
+// Скольким участникам ушло письмо о жеребьёвке. Остальным Telegram не
+// привязан — им группу и соперников говорят сами, иначе они узнают о
+// турнире только у стойки.
+function drawNoticeText(res, t) {
+  const total = t.taken || 0;
+  const sent = res.notified || 0;
+  if (!total) return '';
+  return sent >= total ? '. Письма с группой и соперниками ушли всем.'
+    : '. Письмо с группой ушло ' + sent + ' из ' + total + ' — у остальных нет Telegram.';
+}
+
 // Как лягут люди по группам: поровну, остаток по первым. Тот же расчёт,
 // что на сервере, — здесь он только для показа, решает всё равно сервер.
 function groupSizes(count, groupCount) {
@@ -6764,8 +6818,8 @@ function confirmDraw(t) {
   acts.appendChild(btn('Разыграть', 'btn', () => {
     closeModal();
     act(() => api('adminTournamentDraw', Object.assign({ id: t.id },
-      withGroups ? { groupCount, advance: Number(advance.value) } : {})),
-    'Жеребьёвка проведена');
+      withGroups ? { groupCount, advance: Number(advance.value) } : {})))
+      .then(res => { if (res) toast('Жеребьёвка проведена' + drawNoticeText(res, t), 5000); });
   }));
   body.appendChild(acts);
   showModal(body);
@@ -6816,7 +6870,7 @@ function openManualDraw(t) {
     closeModal();
     act(() => api('adminTournamentDraw', {
       id: t.id, manual: true, seats, advance: Number(advance.value),
-    }), 'Группы записаны');
+    })).then(res => { if (res) toast('Группы записаны' + drawNoticeText(res, t), 5000); });
   });
   acts.appendChild(save);
   body.appendChild(acts);
@@ -7166,6 +7220,17 @@ function openTournamentForm(existing) {
   fee.value = existing ? String(existing.fee) : '0';
   wrapField(body, 'Взнос, ₽ — 0, если без взноса', fee);
 
+  // Место в составе — после оплаты: так клуб объявляет турниры. Запись с
+  // сайта становится заявкой, в состав её переводит «Взнос получен».
+  const payFirstSel = document.createElement('select');
+  payFirstSel.appendChild(opt('yes', 'Только после оплаты взноса — запись с сайта ждёт оплаты'));
+  payFirstSel.appendChild(opt('no', 'Сразу при записи — взнос на месте'));
+  payFirstSel.value = existing && existing.payFirst === false ? 'no' : 'yes';
+  const payFirstField = wrapFieldNode(body, 'Место в составе', payFirstSel);
+  const syncFee = () => { payFirstField.style.display = Number(fee.value) > 0 ? '' : 'none'; };
+  fee.addEventListener('input', syncFee);
+  syncFee();
+
   const size = document.createElement('input');
   size.type = 'number'; size.min = '4'; size.max = '24';
   size.value = existing ? String(existing.maxParticipants) : '16';
@@ -7313,6 +7378,7 @@ function openTournamentForm(existing) {
       gender: gender.value || null,
       category: category.value === '' ? null : Number(category.value),
       fee: Number(fee.value) || 0,
+      payFirst: payFirstSel.value !== 'no',
       maxParticipants: Number(size.value),
       ntrpMin: ntrpMin.value === '' ? null : Number(ntrpMin.value),
       ntrpMax: ntrpMax.value === '' ? null : Number(ntrpMax.value),
