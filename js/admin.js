@@ -5897,6 +5897,7 @@ function renderTournamentCard(view) {
     view.appendChild(board);
   }
 
+  if (t.status !== 'finished') renderFirstMatches(view, t, canEdit);
   renderTournamentRoster(view, t, canEdit);
   (t.groups || []).forEach(g => renderTournamentGroup(view, t, g));
   // Клуб зовёт сетки «АЛЬФА» и «БЕТА», и людям знакомы именно эти
@@ -5988,6 +5989,135 @@ function tgErrorText(raw) {
   if (/not-configured/i.test(s)) return 'бот не настроен — нет токена.';
   if (/удалено/i.test(s)) return s + '.';
   return 'Telegram ответил: ' + s + '.';
+}
+
+// Время первых матчей — после жеребьёвки. Время бывает только у матчей
+// первого круга: к ним люди и приезжают, а дальше играют те, кто на месте
+// и готов (решение владельца). Форма заполняет заранее: первый матч
+// группы — её начало, следующий — через FIRST_MATCH_STEP минут, как
+// 10:00 и 10:40 в объявлениях клуба; владелец правит руками.
+//
+// «Разослать» — письмо каждому участнику (группа, первый соперник, время)
+// и пост «Группы и первые матчи» в тему группы. До рассылки время —
+// черновик: на сайте его не видно.
+const FIRST_MATCH_STEP = 40;
+const SCHEDULE_NOTE_DEFAULT = 'Время ориентировочное — большая просьба быть в центре заранее. '
+  + 'Дальше играют те, кто на месте и готов.';
+
+function renderFirstMatches(view, t, canEdit) {
+  const firsts = t.firstMatches || [];
+  if (!t.drawnAt || !firsts.length) return;
+
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Время первых матчей <span class="sub">остальные — по ходу турнира</span></h2>';
+  view.appendChild(card);
+
+  const nameOf = id => participantName(t, id);
+  const addMin = (hhmm, min) => {
+    const base = timeToMinutes(hhmm);
+    return Number.isFinite(base) ? minutesToTime(base + min) : '';
+  };
+
+  if (t.schedulePublishedAt) {
+    const all = t.taken || 0;
+    const sent = t.scheduleNotified || 0;
+    card.appendChild(txt('div', 'empty', 'Разослано ' + shortDateTime(t.schedulePublishedAt)
+      + ' · письма ушли ' + sent + ' из ' + all
+      + (sent < all ? ' — у остальных нет Telegram, им скажите сами.' : '.')
+      + ' Исправили время — «Разослать заново»: пост в группе поправится, письма придут ещё раз.'));
+  } else {
+    card.appendChild(txt('div', 'empty',
+      'Ещё не разослано: участники не знают своего времени, на сайте его не видно.'));
+  }
+
+  // Порядок групп — как их выдал сервер; у турнира навылет группы нет.
+  const keys = [];
+  firsts.forEach(m => { const k = m.group || ''; if (keys.indexOf(k) === -1) keys.push(k); });
+
+  if (!canEdit) {
+    keys.forEach(k => {
+      const box = el('div', 'item');
+      box.appendChild(txt('div', 't1', k ? 'Группа ' + k : 'Первый круг'));
+      firsts.filter(m => (m.group || '') === k).forEach(m => box.appendChild(txt('div', 't2',
+        (m.time ? fmtTime(m.time) : '—') + ' · ' + nameOf(m.a) + ' — ' + nameOf(m.b))));
+      card.appendChild(box);
+    });
+    return;
+  }
+
+  const inputs = new Map();
+  // Поле, которое правили руками, «Начало» группы уже не переписывает.
+  const touched = new Set();
+  keys.forEach(k => {
+    const ms = firsts.filter(m => (m.group || '') === k);
+    const box = el('div', 'item');
+    box.appendChild(txt('div', 't1', k ? 'Группа ' + k : 'Первый круг'));
+
+    const start = document.createElement('input');
+    start.type = 'time';
+    start.value = (ms.find(m => m.time) || {}).time || t.timeFrom || '10:00';
+    wrapField(box, 'Начало' + (k ? ' группы' : ''), start);
+
+    ms.forEach((m, i) => {
+      const inp = document.createElement('input');
+      inp.type = 'time';
+      inp.value = m.time || addMin(start.value, i * FIRST_MATCH_STEP);
+      inp.addEventListener('input', () => touched.add(m.id));
+      inputs.set(m.id, inp);
+      wrapField(box, nameOf(m.a) + ' — ' + nameOf(m.b), inp);
+    });
+    start.addEventListener('input', () => ms.forEach((m, i) => {
+      if (!touched.has(m.id)) inputs.get(m.id).value = addMin(start.value, i * FIRST_MATCH_STEP);
+    }));
+    card.appendChild(box);
+  });
+
+  const note = document.createElement('textarea');
+  note.rows = 2;
+  note.maxLength = 500;
+  note.value = t.scheduleNote || SCHEDULE_NOTE_DEFAULT;
+  wrapField(card, 'Строка под временем — в письме и в посте', note);
+
+  const payload = publish => ({
+    id: t.id,
+    times: Array.from(inputs.entries()).reduce((o, [id, inp]) => Object.assign(o, { [id]: inp.value }), {}),
+    note: note.value,
+    publish,
+  });
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Сохранить', 'btn sm sec', () =>
+    act(() => api('adminTournamentSchedule', payload(false)), 'Время сохранено — ещё не разослано')));
+  acts.appendChild(btn(t.schedulePublishedAt ? 'Разослать заново' : 'Разослать', 'btn sm', () =>
+    confirmPublishSchedule(t, payload(true))));
+  card.appendChild(acts);
+}
+
+function confirmPublishSchedule(t, payload) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + (t.schedulePublishedAt ? 'Разослать заново?' : 'Разослать время первых матчей?') + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(t.title) + '</div>';
+  body.appendChild(txt('div', 'empty',
+    'Каждый участник с Telegram получит письмо: его группа, первый соперник и время. '
+    + (t.telegram && (t.telegram.announce || t.telegram.roster)
+      ? 'В тему группы уйдёт пост «Группы и первые матчи». ' : '')
+    + 'Время появится на сайте и на странице сетки.'
+    + (t.schedulePublishedAt ? ' Письма придут ещё раз, а пост в группе будет исправлен, а не продублирован.' : '')));
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Разослать', 'btn', () => {
+    closeModal();
+    act(() => api('adminTournamentSchedule', payload)).then(res => {
+      if (!res) return;
+      const all = (res.tournament && res.tournament.taken) || 0;
+      const post = res.post || {};
+      toast('Разослано: письма ушли ' + (res.notified || 0) + ' из ' + all
+        + (post.error ? '. Пост в группу не ушёл: ' + tgErrorText(post.error)
+          : (post.skipped ? '. В группу турнир не публикуется.' : '. Пост в группе — готово.')), 7000);
+    });
+  }));
+  body.appendChild(acts);
+  showModal(body);
 }
 
 // Кого собрали в БЕТА — подпись читается с настройки турнира, чтобы
@@ -6683,17 +6813,6 @@ function pickIntoTournament(t, op, extra, okText) {
     });
 }
 
-// Скольким участникам ушло письмо о жеребьёвке. Остальным Telegram не
-// привязан — им группу и соперников говорят сами, иначе они узнают о
-// турнире только у стойки.
-function drawNoticeText(res, t) {
-  const total = t.taken || 0;
-  const sent = res.notified || 0;
-  if (!total) return '';
-  return sent >= total ? '. Письма с группой и соперниками ушли всем.'
-    : '. Письмо с группой ушло ' + sent + ' из ' + total + ' — у остальных нет Telegram.';
-}
-
 // Как лягут люди по группам: поровну, остаток по первым. Тот же расчёт,
 // что на сервере, — здесь он только для показа, решает всё равно сервер.
 function groupSizes(count, groupCount) {
@@ -6819,7 +6938,7 @@ function confirmDraw(t) {
     closeModal();
     act(() => api('adminTournamentDraw', Object.assign({ id: t.id },
       withGroups ? { groupCount, advance: Number(advance.value) } : {})))
-      .then(res => { if (res) toast('Жеребьёвка проведена' + drawNoticeText(res, t), 5000); });
+      .then(res => { if (res) toast('Жеребьёвка проведена. Проставьте время первых матчей и нажмите «Разослать».', 6000); });
   }));
   body.appendChild(acts);
   showModal(body);
@@ -6870,7 +6989,7 @@ function openManualDraw(t) {
     closeModal();
     act(() => api('adminTournamentDraw', {
       id: t.id, manual: true, seats, advance: Number(advance.value),
-    })).then(res => { if (res) toast('Группы записаны' + drawNoticeText(res, t), 5000); });
+    })).then(res => { if (res) toast('Группы записаны. Проставьте время первых матчей и нажмите «Разослать».', 6000); });
   });
   acts.appendChild(save);
   body.appendChild(acts);

@@ -143,6 +143,7 @@ function render() {
     return;
   }
 
+  renderFirstMatches(view, t);
   (t.groups || []).forEach(g => renderGroup(view, t, g));
   // «АЛЬФА» и «БЕТА» — те же названия, что в объявлениях турнира: люди
   // ищут на странице именно их, а не «плей-офф с утешительной».
@@ -166,6 +167,34 @@ function button(label, cls, onClick) {
 // помещается на один экран.
 //
 // Столбцы подписаны номерами участников — теми же, что были на мячах.
+// Первые матчи со временем — то, к чему люди и приезжают. Время есть
+// только у них: дальше играют те, кто на месте и готов. Приходит сюда
+// после рассылки владельца, до неё список пуст. Карточка идёт и на
+// печатный лист — его вешают на стойку в день турнира.
+function renderFirstMatches(view, t) {
+  const list = t.firstMatches || [];
+  if (!list.some(m => m.time) || t.status === 'finished') return;
+  const me = (t.participants || []).find(p => p.mine);
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Первые матчи</h2>';
+  const keys = [];
+  list.forEach(m => { const k = m.group || ''; if (keys.indexOf(k) === -1) keys.push(k); });
+  keys.forEach(k => {
+    if (k) card.appendChild(txt('div', 'meta', 'Группа ' + k));
+    list.filter(m => (m.group || '') === k).forEach(m => {
+      const mine = me && (m.a === me.id || m.b === me.id);
+      const row = el('div', 'match');
+      row.innerHTML = '<div class="who">' + escapeHtml(m.aName || nameOf(t, m.a))
+        + ' — ' + escapeHtml(m.bName || nameOf(t, m.b))
+        + (mine ? ' <span class="pill me">это вы</span>' : '') + '</div>'
+        + '<div class="score">' + escapeHtml(m.time || '—') + '</div>';
+      card.appendChild(row);
+    });
+  });
+  if (t.scheduleNote) card.appendChild(txt('div', 'empty', t.scheduleNote));
+  view.appendChild(card);
+}
+
 function renderGroup(view, t, g) {
   const card = el('div', 'card');
   const left = g.matches.filter(m => !m.winner).length;

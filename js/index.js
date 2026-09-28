@@ -2776,6 +2776,15 @@ function showTournamentCard() {
   }
   body.appendChild(list);
 
+  // Свой первый матч — после рассылки владельца. Только первый: дальше
+  // порядок и время всё равно поменяются.
+  const meP = (t.participants || []).find(p => p.mine);
+  const myFirst = meP && (t.firstMatches || []).find(m => m.a === meP.id || m.b === meP.id);
+  if (myFirst && myFirst.time) {
+    body.appendChild(txt('div', 'notice info', 'Ваш первый матч — ориентировочно в ' + fmtTime(myFirst.time)
+      + ', соперник — ' + (myFirst.a === meP.id ? myFirst.bName : myFirst.aName) + '.'));
+  }
+
   // Своя заявка в листе ожидания — объясняем по её причине: «ждёт
   // оплаты» и «не подошёл уровень» — разные истории для человека.
   const waiting = t.waitlist.some(p => p.mine);
