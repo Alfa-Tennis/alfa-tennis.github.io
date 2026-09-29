@@ -113,6 +113,7 @@ const ERRORS = {
   'bad-credentials': 'Неверный телефон или пароль.',
   'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
   'slot-taken': 'Это время уже занято.',
+  'leaves-gap': 'Останутся пустые полчаса — такое время записывается только отметкой «Исключение».',
   'duration-too-long': 'Слишком долгая бронь — больше потолка в настройках. Запишите двумя бронями.',
   'repack-stale': 'Пока окно было открыто, расписание изменилось — перекладка больше не подходит. Откройте запись заново.',
   'invalid-repack': 'Перекладка не подходит к выбранному корту — откройте запись заново.',
@@ -480,6 +481,8 @@ function mapConfig(booking) {
     allowCourtSwitch: booking.allowCourtSwitch,
     maxSwitches: booking.maxSwitches,
     packCourts: booking.packCourts,
+    avoidGaps: booking.avoidGaps === true,
+    gapOpenHours: booking.gapOpenHours == null ? 12 : booking.gapOpenHours,
     horizonDays: booking.horizonDays,
     minLeadMinutes: booking.minLeadMinutes,
     pricePerHour: 0, // подставляется из getConfig ниже
@@ -1305,6 +1308,22 @@ function moveGhost(evt, b, ctx) {
 // Корт выбрал сам клиент — фильтром на сайте или попросив по телефону.
 // У постоянной брони отметка живёт в серии.
 const LOCK_MARK = '📌';
+
+// Исключение: администратор записал время, которое клиентам система
+// сейчас не даёт, — рядом остались пустые полчаса. Это допустимо лишь в
+// редких случаях, поэтому отметка видна в сетке и карточке с именем и
+// временем: если исключения станут правилом, владелец это увидит.
+// Знак — ⚠, а не 🕳: «дыра» в Windows рисуется чёрной чёрточкой, и в
+// мелкой клетке сетки её принимали бы за соринку.
+const GAP_MARK = '⚠';
+function gapExceptionOf(b) { return (b.booking || b).gapException || null; }
+function gapExceptionLine(b) {
+  const x = gapExceptionOf(b);
+  if (!x) return '';
+  return '<div class="t2">' + GAP_MARK + ' Записано исключением: остались пустыми '
+    + escapeHtml((x.gaps || []).map(g => courtName(g.courtId) + ' ' + fmtRange(g.start, g.end)).join(', '))
+    + ' · ' + escapeHtml((x.byName || 'администратор') + ', ' + shortDateTime(x.at)) + '</div>';
+}
 function courtLocked(b) {
   const bk = b.booking || b;
   return !!(bk.courtLocked || (b.series && b.series.courtLocked));
@@ -1329,6 +1348,48 @@ function confirmCourtChange(b, toCourtId, go) {
   showModal(body);
 }
 
+// Перенос администратором. Время, которое оставит пустые полчаса, пока
+// до игры далеко, сервер без отметки «исключение» не примет — тогда
+// спрашиваем, и только согласие шлёт перенос второй раз. Позже срока окно
+// разрешено, но о нём всё равно говорим: пока клиент рядом, можно
+// сдвинуть ещё на полчаса.
+async function moveAndWarn(payload, okText) {
+  let res;
+  try {
+    res = await api('adminMoveBooking', payload);
+  } catch (e) {
+    if (e.code === 'leaves-gap' && !payload.gapException) {
+      confirmGapException((e.data && e.data.gaps) || [],
+        () => moveAndWarn(Object.assign({}, payload, { gapException: true }), okText));
+      return;
+    }
+    if (e.code === 'unauthorized' || e.code === 'token-revoked') { logout(); return; }
+    toast(errorText(e.code), 4000);
+    return;
+  }
+  await reload();
+  const gaps = res.gaps || [];
+  if (!gaps.length) { toast(okText); return; }
+  toast(okText + '. ' + GAP_MARK + ' Осталось пустым: '
+    + gaps.map(g => courtName(g.courtId) + ' ' + fmtRange(g.start, g.end)).join(', ')
+    + ' — это время никто не сможет забронировать.', 7000);
+}
+
+function confirmGapException(gaps, go) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + GAP_MARK + ' Останутся пустые полчаса</h3>'
+    + '<div class="m-sub">' + escapeHtml(gaps.map(g => courtName(g.courtId) + ' ' + fmtRange(g.start, g.end)).join(', '))
+    + '</div>';
+  body.appendChild(txt('div', 'empty', 'Клиентам система это время сейчас не даёт: полчаса рядом никто не сможет '
+    + 'забронировать. Переносите сюда только в исключительном случае — в брони останется отметка '
+    + GAP_MARK + ' с вашим именем и временем.'));
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Перенести как исключение', 'btn danger', () => { closeModal(); go(); }));
+  acts.appendChild(btn('Не переносить', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
 function endDrag(b, ctx) {
   const t = drag && drag.target;
   const moved = drag && drag.active;
@@ -1344,13 +1405,13 @@ function endDrag(b, ctx) {
   if (isPast(t.date, t.start)) { toast('Это время уже прошло'); return true; }
   if (t.courtId === b.courtId && t.start === b.start) return true;
 
-  confirmCourtChange(b, t.courtId, () => act(() => api('adminMoveBooking', {
+  confirmCourtChange(b, t.courtId, () => moveAndWarn({
     date: b.date,
     bookingId: (b.booking || b).id,
     start: t.start,
     courtId: t.courtId,
     exactCourt: true,
-  }), 'Бронь перенесена на ' + fmtTime(t.start) + ', ' + courtName(t.courtId)));
+  }, 'Бронь перенесена на ' + fmtTime(t.start) + ', ' + courtName(t.courtId)));
   return true;
 }
 
@@ -1676,10 +1737,12 @@ function buildWeekGrid(dates) {
       // В недельной клетке помещается одна строка: время занимает её
       // целиком, а имя дописывается только у окон от полутора часов.
       div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end))
-        + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + (courtLocked(b) ? ' ' + LOCK_MARK : '') + '</div>'
+        + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + (courtLocked(b) ? ' ' + LOCK_MARK : '')
+        + (gapExceptionOf(b) ? ' ' + GAP_MARK : '') + '</div>'
         + ((to - from) >= 3 ? '<div class="b-n">' + escapeHtml(b.clientName) + '</div>' : '');
       div.title = fmtRange(b.start, b.end) + ' · ' + b.clientName
-        + (courtLocked(b) ? ' · корт выбран клиентом' : '');
+        + (courtLocked(b) ? ' · корт выбран клиентом' : '')
+        + (gapExceptionOf(b) ? ' · исключение: рядом пустые полчаса' : '');
       div.addEventListener('click', () => openBlock(b));
       makeDraggable(div, b, { grid, dates });
       grid.appendChild(div);
@@ -1753,6 +1816,7 @@ function buildDayGrid(date, blocks) {
       + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + '</div>'
       + '<div class="b-n">' + label + escapeHtml(b.clientName) + (b.groupId ? ' ⇄' : '')
       + (courtLocked(b) ? ' ' + LOCK_MARK : '')
+      + (gapExceptionOf(b) ? ' ' + GAP_MARK : '')
       + (b.kind === 'openplay' && b.openPlay
         ? ' · ' + seatsTakenRaw(b.openPlay) + '/' + b.openPlay.seats
           // Второй состав — со своим названием и своим счётом. Раньше в
@@ -1766,7 +1830,10 @@ function buildDayGrid(date, blocks) {
       // на две строки они вытесняют время и название.
       + (b.kind === 'openplay' && b.openPlay && (to - from) >= 3 && signupNames(b.openPlay)
         ? '<div class="b-x">' + escapeHtml(signupNames(b.openPlay)) + '</div>' : '');
-    if (courtLocked(b)) div.title = 'Корт выбран клиентом — на соседний без его согласия не переносить';
+    div.title = [
+      courtLocked(b) ? 'Корт выбран клиентом — на соседний без его согласия не переносить' : '',
+      gapExceptionOf(b) ? 'Записано исключением: рядом остались пустые полчаса' : '',
+    ].filter(Boolean).join('. ');
     div.addEventListener('click', () => openBlock(b));
     makeDraggable(div, b, { grid, dates: [date] });
     grid.appendChild(div);
@@ -1829,7 +1896,9 @@ function openBooking(b) {
     + ' · ' + statusPill(b.status)
     + (b.groupId ? ' <span class="pill grey">с переходом</span>' : '')
     + (b.courtLocked ? ' <span class="pill wait">' + LOCK_MARK + ' корт выбран клиентом</span>' : '')
-    + (b.prepayRequired ? ' <span class="pill bad">предоплата</span>' : '') + '</div>'
+    + (b.prepayRequired ? ' <span class="pill bad">предоплата</span>' : '')
+    + (b.gapException ? ' <span class="pill wait">' + GAP_MARK + ' исключение</span>' : '') + '</div>'
+    + gapExceptionLine(b)
     + (extras.length ? '<div class="t2">🎾 ' + escapeHtml(extras.map(x => x.name + ' ×' + x.qty).join(', '))
       + ' · ' + money(b.extrasTotal) + '</div>' : '')
     + (b.comment ? '<div class="t2">💬 ' + escapeHtml(b.comment) + '</div>' : '');
@@ -2025,10 +2094,10 @@ function openMove(b) {
     const newStart = selTime.value;
     const toCourt = Number(selCourt.value);
     closeModal();
-    confirmCourtChange(b, toCourt, () => act(() => api('adminMoveBooking', {
+    confirmCourtChange(b, toCourt, () => moveAndWarn({
       date: b.date, bookingId: b.id, start: newStart,
       courtId: toCourt, exactCourt: true,
-    }), 'Перенесено'));
+    }, 'Перенесено'));
   }));
   acts.appendChild(btn('Назад', 'btn sec', () => openBooking(b)));
   body.appendChild(acts);
@@ -2162,6 +2231,7 @@ function openNewBooking(date, courtId, start) {
   const planBox = el('div');
   body.appendChild(planBox);
   const repackPick = { option: null, on: false };
+  const gapPick = { needed: false, on: false };
   let planFits = true;
   let planSeq = 0;
 
@@ -2170,6 +2240,7 @@ function openNewBooking(date, courtId, start) {
     const seq = ++planSeq;
     planBox.innerHTML = '';
     repackPick.option = null; repackPick.on = false;
+    gapPick.needed = false; gapPick.on = false;
     planFits = true;
     if (timeToMinutes(start) + dur > timeToMinutes(db.config.closeTime)) return;
     planBox.appendChild(txt('div', 'empty', 'Проверяю корты…'));
@@ -2181,7 +2252,11 @@ function openNewBooking(date, courtId, start) {
       const plan = res.plan;
       planFits = !!plan;
       if (plan && plan.switches === 0) {
-        planBox.appendChild(txt('div', 'empty', 'Всё время на корте «' + courtName(plan.segments[0].courtId) + '».'));
+        planBox.appendChild(txt('div', 'empty', 'Всё время на корте «' + courtName(plan.segments[0].courtId) + '».'
+          // Нажали на один корт, а бронь встаёт на другой — без причины
+          // это выглядит ошибкой панели.
+          + (res.courtSwapped ? ' На «' + courtName(courtId) + '» после неё остались бы пустые полчаса. '
+            + 'Клиенту нужен именно «' + courtName(courtId) + '» — отметьте «Только ' + courtName(courtId) + '».' : '')));
       } else if (plan) {
         const sw = plan.segments[1];
         const warn = el('div', 'item');
@@ -2193,6 +2268,32 @@ function openNewBooking(date, courtId, start) {
         planBox.appendChild(txt('div', 'empty', exact.on
           ? 'На этом корте время занято. Снимите отметку — может, поместится с переходом.'
           : 'Не помещается ни на один корт, даже с переходом.'));
+      }
+
+      // Пустые полчаса: говорим сейчас, пока клиент на линии, и сразу —
+      // что предложить взамен. Раньше срока клиентам система такое время
+      // не даёт, и администратору — только осознанным исключением:
+      // клиенту говорят «система не позволяет», а галочка — для редкого
+      // случая, когда иначе нельзя.
+      if (plan && res.gaps && res.gaps.length) {
+        const warn = el('div', 'item');
+        const alt = res.cleanStarts || [];
+        const where = res.gaps.map(g => courtName(g.courtId) + ' ' + fmtRange(g.start, g.end)).join(', ');
+        const offer = alt.length ? ' Без окна — с ' + alt.map(fmtTime).join(' или с ') + '.' : '';
+        warn.innerHTML = '<div class="t1">' + GAP_MARK + ' Останется пустым: ' + escapeHtml(where) + '</div>'
+          + '<div class="t2">' + escapeHtml(res.gapBlocked
+            ? 'Клиентам система это время сейчас не даёт' + (res.opensAt ? ' — откроется ' + shortDateTime(res.opensAt) : '')
+              + '. Так и скажите: «система не позволяет записать на это время».' + offer
+            : (res.gapUnavoidable
+              ? 'Здесь окна не избежать: свободного на полчаса больше, чем нужно. Записать можно.'
+              : 'До игры меньше ' + hoursText((db.config.gapOpenHours || 0) * 60)
+                + ' — такое время уже открыто для всех.') + offer) + '</div>';
+        planBox.appendChild(warn);
+        if (res.gapBlocked) {
+          gapPick.needed = true;
+          planBox.appendChild(check('Исключение — записать с пустыми полчаса', false, v => { gapPick.on = v; },
+            'Только в исключительном случае. В брони останется отметка ' + GAP_MARK + ' с вашим именем и временем.'));
+        }
       }
 
       const rp = res.repack;
@@ -2226,6 +2327,12 @@ function openNewBooking(date, courtId, start) {
       return toast(repackPick.option ? 'Без перекладки не помещается — отметьте её или выберите другое время'
         : 'Это время занято', 3600);
     }
+    // Перекладка двигает соседей, и окно после неё другое — сервер его
+    // там не проверяет, поэтому и галочку не требуем.
+    if (gapPick.needed && !gapPick.on && !useRepack) {
+      return toast('Система не даёт это время — останутся пустые полчаса. Предложите соседнее '
+        + 'или отметьте «Исключение», если иначе нельзя.', 5000);
+    }
 
     // Занятость корта проверяет сервер ещё раз, уже на свежих данных:
     // между открытием окна и нажатием кнопки время могли занять.
@@ -2236,6 +2343,7 @@ function openNewBooking(date, courtId, start) {
     act(() => api('adminCreateBooking', {
       date, start, durationMinutes: dur, courtId, exactCourt: exact.on,
       repack: useRepack ? { courtId: useRepack.courtId, move: useRepack.move } : undefined,
+      gapException: gapPick.on || undefined,
       coaching: selCoach.value || undefined,
       extras: extrasPicked().map(x => ({ id: x.item.id, qty: x.qty })),
       comment: inpComment.value.trim() || undefined,
@@ -7989,6 +8097,9 @@ function renderSettings(view) {
       ['Запись открыта на', cfg.horizonDays + ' дн.'],
       ['Брони с переходом между кортами', cfg.allowCourtSwitch ? 'разрешены' : 'запрещены'],
       ['Уплотнять занятость кортов', cfg.packCourts ? 'да' : 'нет'],
+      ['Время с пустыми полчаса', !cfg.avoidGaps ? 'бронируется как обычно'
+        : (cfg.gapOpenHours ? 'открывается за ' + cfg.gapOpenHours + ' ч до игры, раньше — только исключением'
+          : 'только исключением')],
     ].forEach(([label, value]) => {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(label) + '</div>'
@@ -8070,7 +8181,7 @@ function renderClubInfo(view) {
 // числом. Скидочных часов тоже нет — у них будет свой редактор, когда
 // появится статистика простоя.
 function renderSettingsForm(card, cfg) {
-  const draft = { allowCourtSwitch: cfg.allowCourtSwitch, packCourts: cfg.packCourts };
+  const draft = { allowCourtSwitch: cfg.allowCourtSwitch, packCourts: cfg.packCourts, avoidGaps: cfg.avoidGaps };
 
   const price = numField(card, 'Цена за час, ₽', cfg.pricePerHour);
 
@@ -8121,6 +8232,14 @@ function renderSettingsForm(card, cfg) {
   card.appendChild(check('Уплотнять занятость кортов',
     draft.packCourts, v => { draft.packCourts = v; },
     'Складывать брони плотнее, оставляя второй корт цельным под длинные брони.'));
+  card.appendChild(check('Не оставлять пустых полчаса',
+    draft.avoidGaps, v => { draft.avoidGaps = v; },
+    'Бронь от часа, поэтому полчаса между двумя бронями не купит никто. Время, которое оставит такое окно, '
+    + 'система не записывает, пока до игры далеко: клиенту предлагают соседнее и говорят, когда время '
+    + 'откроется. Корт по возможности подбирается соседний. Администратор записать может — только '
+    + 'отметкой «Исключение», она видна в брони.'));
+  const gapOpen = numField(card, '…такое время открывается для всех за, ч до игры (0 — никогда)',
+    cfg.gapOpenHours == null ? 12 : cfg.gapOpenHours);
 
   const acts = el('div', 'acts');
   acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
@@ -8141,6 +8260,8 @@ function renderSettingsForm(card, cfg) {
         recentWindowHours: Number(recent.value),
         allowCourtSwitch: draft.allowCourtSwitch,
         packCourts: draft.packCourts,
+        avoidGaps: draft.avoidGaps,
+        gapOpenHours: Number(gapOpen.value),
       },
       pricing: {
         pricePerHour: Number(price.value),

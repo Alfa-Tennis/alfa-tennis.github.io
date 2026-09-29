@@ -183,6 +183,10 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .opt .o-time { display: block; font-weight: 600; font-size: 15px; }
 .opt .o-court { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap; }
 .opt.split .o-court { color: var(--warn-dk); }
+/* Время, после которого останутся пустые полчаса: есть, но сейчас не записать. */
+.opt.gap { border-style: dashed; }
+.opt.gap .o-time { color: var(--ink-soft); }
+.opt.gap .o-court { color: var(--warn-dk); white-space: normal; }
 .opts-empty { font-size: 14px; color: var(--ink-soft); padding: 2px; }
 .picker-foot { margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--ink-soft); }
 .grid-hint { margin: 10px 4px 0; font-size: 13px; color: var(--ink-soft); }
@@ -273,6 +277,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .bar .info .t2 { font-size: 14px; color: var(--ink-soft); }
 .bar .info .switch-note { color: var(--warn-dk); }
 .bar .info .switch-note:empty { display: none; }
+.bar .info .switch-note + .switch-note { margin-top: 2px; }
 
 /* ---------- Рейтинг в кабинете ---------- */
 .rating-box { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line);
@@ -319,6 +324,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .summary .s-row.total { font-weight: 600; font-size: 16px; border-top: 1px solid var(--court-line); margin-top: 6px; padding-top: 8px; }
 .rent { margin-bottom: 14px; }
 .rent-head { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+.gap-head { font-weight: 600; font-size: 14px; margin: 14px 0 8px; }
 .rent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px; }
 .rent-row.on { border-color: var(--ball); background: var(--ball-tint); }

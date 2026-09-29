@@ -164,6 +164,7 @@ function attachPhoneMask(input) {
 
 const ERRORS = {
   'slot-taken': 'Это время только что заняли. Выберите другое или встаньте в очередь на него.',
+  'leaves-gap': 'Система не позволяет записать это время сейчас: на корте останутся пустые полчаса, которые никто не займёт. Выберите соседнее время.',
   'too-many-active': 'У вас уже две активные брони. Отмените одну, чтобы записаться снова.',
   'not-verified': 'Администратор ещё не подтвердил вашу заявку.',
   'too-many-no-shows': 'Из-за пропущенных броней записывает администратор. Позвоните в центр.',
@@ -1436,9 +1437,17 @@ function planBooking(dateIso, grid, fromIdx, toIdx, opts) {
   const whole = state.config.courts.map(c => c.id)
     .filter(id => (!onlyCourtId || id === onlyCourtId) && rangeFreeOn(grid, id, fromIdx, toIdx));
 
-  if (preferCourtId && whole.indexOf(preferCourtId) !== -1) return single(preferCourtId);
   if (whole.length) {
-    return single(cfg.packCourts === false ? whole[0] : pickPackedCourt(dateIso, whole, startMin, endMin));
+    // Как на сервере: клик по корту — пожелание, и если на нём останутся
+    // пустые полчаса, а на соседнем нет, бронь встаёт на соседний.
+    let pool = whole;
+    if (options.avoidGaps && whole.length > 1) {
+      const ranks = whole.map(id => gapRank(dateIso, grid, single(id)));
+      const best = Math.min.apply(null, ranks);
+      pool = whole.filter((id, i) => ranks[i] === best);
+    }
+    if (preferCourtId && pool.indexOf(preferCourtId) !== -1) return single(preferCourtId);
+    return single(cfg.packCourts === false ? pool[0] : pickPackedCourt(dateIso, pool, startMin, endMin));
   }
   if (onlyCourtId) return null;
   if (cfg.allowCourtSwitch === false) return null;
@@ -1459,6 +1468,123 @@ function findOptions(dateIso, durationMinutes, opts) {
     if (plan) out.push(plan);
   }
   return out;
+}
+
+// ---------- Пустые окна ----------
+//
+// Зеркало backend/slots.js. Корт сдаётся от часа, поэтому полчаса между
+// двумя бронями не купит никто. Время, которое оставляет такое окно не
+// вынужденно, система не записывает, пока до игры больше gapOpenHours, —
+// ближе к игре оно открывается для всех. Страница считает это заранее,
+// чтобы сказать человеку до нажатия и назвать, когда время откроется.
+// Решает всё равно сервер.
+//
+// Сетка здесь — buildFreeGrid: прошедшие и уже закрытые для записи
+// клетки в ней не свободны, как и на сервере.
+
+function gapRule() { return state.config.booking.avoidGaps === true; }
+
+function gridWithPlan(grid, plan) {
+  const out = grid.map(list => list.slice());
+  plan.segments.forEach(s => {
+    for (let i = s.fromIdx; i <= s.toIdx; i++) out[i] = out[i].filter(id => id !== s.courtId);
+  });
+  return out;
+}
+function cellSellable(dateIso, grid, courtId, idx) {
+  const cfg = state.config.booking;
+  const need = Math.ceil(cfg.minBookingMinutes / cfg.slotStep);
+  for (let from = idx - need + 1; from <= idx; from++) {
+    if (from < 0 || from + need - 1 >= grid.length) continue;
+    const plan = planBooking(dateIso, grid, from, from + need - 1, { preferCourtId: courtId });
+    if (plan && plan.segments.some(s => s.courtId === courtId && s.fromIdx <= idx && idx <= s.toIdx)) return true;
+  }
+  return false;
+}
+function gapsLeftBy(dateIso, grid, plan) {
+  const cfg = state.config.booking;
+  const need = Math.ceil(cfg.minBookingMinutes / cfg.slotStep);
+  const after = gridWithPlan(grid, plan);
+  const last = after.length - 1;
+  const free = (i, id) => i >= 0 && i <= last && after[i].indexOf(id) !== -1;
+  const slotAt = (i) => minutesToTime(timeToMinutes(state.data.slots[0]) + i * cfg.slotStep);
+  const out = [];
+  const seen = {};
+  const consider = (courtId, from, to) => {
+    if (seen[courtId + ':' + from]) return;
+    seen[courtId + ':' + from] = true;
+    for (let i = from; i <= to; i++) if (cellSellable(dateIso, after, courtId, i)) return;
+    out.push({ courtId, start: slotAt(from), end: slotAt(to + 1) });
+  };
+  plan.segments.forEach(s => {
+    let a = s.fromIdx - 1;
+    while (free(a, s.courtId)) a--;
+    const before = s.fromIdx - 1 - a;
+    if (before > 0 && before < need && a >= 0) consider(s.courtId, a + 1, s.fromIdx - 1);
+    let b = s.toIdx + 1;
+    while (free(b, s.courtId)) b++;
+    const behind = b - s.toIdx - 1;
+    if (behind > 0 && behind < need && b <= last) consider(s.courtId, s.toIdx + 1, b - 1);
+  });
+  return out;
+}
+function touchesNeighbor(grid, plan) {
+  const free = (i, id) => i >= 0 && i < grid.length && grid[i].indexOf(id) !== -1;
+  const first = plan.segments[0];
+  const last = plan.segments[plan.segments.length - 1];
+  return !free(first.fromIdx - 1, first.courtId) || !free(last.toIdx + 1, last.courtId);
+}
+// clean — окна нет или оно неизбежно; ok — можно записать сейчас (clean
+// или до игры уже меньше gapOpenHours); opensAt — когда откроется.
+function gapVerdict(dateIso, grid, plan) {
+  if (!gapRule()) return { ok: true, clean: true, gaps: [], opensAt: null };
+  const gaps = gapsLeftBy(dateIso, grid, plan);
+  const clean = gaps.length === 0 || touchesNeighbor(grid, plan);
+  const hours = Number(state.config.booking.gapOpenHours) || 0;
+  const opensAt = clean || hours <= 0 ? null
+    : slotTimestamp(dateIso, state.data.slots[plan.fromIdx]) - hours * 3600000;
+  const open = opensAt !== null && Date.now() >= opensAt;
+  return { gaps, clean, ok: clean || open, opensAt: open ? null : opensAt };
+}
+function gapRank(dateIso, grid, plan) {
+  const v = gapVerdict(dateIso, grid, plan);
+  return v.gaps.length === 0 ? 0 : (v.clean ? 1 : 2);
+}
+// «откроется ср, 30 сен, 20:30» — или ничего, если порог выключен.
+function opensText(opensAt) {
+  return opensAt ? 'откроется ' + clubMoment(new Date(opensAt).toISOString()) : '';
+}
+// Ближайшие начала той же длины совсем без окна: одно раньше, одно
+// позже, не дальше двух часов.
+function cleanStartsNear(dateIso, grid, plan, opts) {
+  const need = plan.toIdx - plan.fromIdx + 1;
+  const reach = Math.round(120 / state.config.booking.slotStep);
+  const planOpts = Object.assign({}, opts || {}, { avoidGaps: true });
+  const fits = (i) => {
+    if (i < 0 || i + need - 1 >= grid.length) return null;
+    const p = planBooking(dateIso, grid, i, i + need - 1, planOpts);
+    if (!p || (state.noSwitch && p.switches > 0)) return null;
+    return gapVerdict(dateIso, grid, p).gaps.length === 0 ? p : null;
+  };
+  const out = [];
+  for (let d = 1; d <= reach; d++) { const p = fits(plan.fromIdx - d); if (p) { out.push(p); break; } }
+  for (let d = 1; d <= reach; d++) { const p = fits(plan.fromIdx + d); if (p) { out.push(p); break; } }
+  return out;
+}
+function courtNameOf(id) {
+  const c = state.config.courts.find(x => x.id === id);
+  return c ? c.name : 'Корт';
+}
+// «на «Корт 1» с 20:00 до 20:30» — где именно останется окно.
+function gapsText(gaps) {
+  return gaps.map(g => 'на «' + courtNameOf(g.courtId) + '» с ' + fmtTime(g.start) + ' до ' + fmtTime(g.end)).join(' и ');
+}
+// При брони от часа окно всегда получасовое, и «полчаса» людям понятнее
+// «окна». Но минимальную бронь владелец может поднять до полутора часов —
+// тогда окно бывает и часовым.
+function gapHead(gaps) {
+  const half = gaps.every(g => timeToMinutes(g.end) - timeToMinutes(g.start) === 30);
+  return half ? 'Останутся пустые полчаса' : 'Останется пустое окно';
 }
 
 // ---------- Сетка ----------
@@ -1626,15 +1752,28 @@ function onCellClick(courtId, idx, date) {
       openLongBooking(state.date, state.data.slots[p.fromIdx], minutes);
       return;
     }
-    const extended = planBooking(state.date, grid, p.fromIdx, idx, { preferCourtId: p.segments[0].courtId });
-    if (extended) { setPlan(extended); return; }
+    const prefer = p.segments[0].courtId;
+    const extended = planBooking(state.date, grid, p.fromIdx, idx, { preferCourtId: prefer, avoidGaps: gapRule() });
+    if (extended) { setPlan(extended); explainCourtSwap(extended, prefer, grid); return; }
     toast('В это время оба корта заняты');
     return;
   }
 
-  const plan = planBooking(state.date, grid, idx, idx + minSlots - 1, { preferCourtId: courtId });
+  const plan = planBooking(state.date, grid, idx, idx + minSlots - 1, { preferCourtId: courtId, avoidGaps: gapRule() });
   if (!plan) { toast('Минимальная бронь — ' + hoursText(cfg.minBookingMinutes) + ' подряд'); return; }
   setPlan(plan);
+  explainCourtSwap(plan, courtId, grid);
+}
+
+// Человек нажал на Корт 1, а выбор встал на Корт 2. Молча так делать
+// нельзя — он решит, что промахнулся. Причина всегда одна: нажатый корт
+// был свободен, но на нём после брони остались бы пустые полчаса.
+function explainCourtSwap(plan, wantedCourtId, grid) {
+  if (!gapRule() || plan.switches !== 0 || plan.segments[0].courtId === wantedCourtId) return;
+  if (!rangeFreeOn(grid, wantedCourtId, plan.fromIdx, plan.toIdx)) return;
+  toast('Поставили на «' + courtNameOf(plan.segments[0].courtId) + '»: на «' + courtNameOf(wantedCourtId)
+    + '» остались бы пустые полчаса, которые никто не займёт. Нужен именно «' + courtNameOf(wantedCourtId)
+    + '» — выберите его в строке «Корт» над списком времени.', 7000);
 }
 
 // Ставка для получасовой ячейки. Повторяет расчёт сервера один в один:
@@ -1695,11 +1834,18 @@ function renderBar() {
   document.getElementById('selSwitch').textContent = info.switches === 0 ? ''
     : '⇄ ' + info.segments.slice(1).map(s => 'в ' + fmtTime(s.start) + ' переход на ' + s.court.name).join(', ');
 
+  // Предупреждаем заранее, ещё до кнопки: человек может продлить выбор, и
+  // окно исчезнет само — 20:30–22:30 рядом с бронью с 22:30 уже без окна.
+  const gap = gapVerdict(state.date, buildFreeGrid(state.date), state.plan);
+  document.getElementById('selGap').textContent = gap.ok ? ''
+    : '⚠ Сейчас не записать: ' + gapHead(gap.gaps).toLowerCase() + ' ' + gapsText(gap.gaps)
+      + (gap.opensAt ? '. Время ' + opensText(gap.opensAt) : '');
+
   bar.classList.add('show');
 }
 
 document.getElementById('selClear').addEventListener('click', () => setPlan(null));
-document.getElementById('selBook').addEventListener('click', startBooking);
+document.getElementById('selBook').addEventListener('click', () => startBooking());
 
 // ---------- Панель подбора ----------
 
@@ -1738,8 +1884,9 @@ function renderPicker() {
   // Конкретный корт и так исключает переходы — галочка ничего не решает.
   noSwitchBox.disabled = state.courtFilter !== null;
 
-  const opts = findOptions(state.date, state.duration, { onlyCourtId: state.courtFilter })
+  const opts = findOptions(state.date, state.duration, { onlyCourtId: state.courtFilter, avoidGaps: gapRule() })
     .filter(p => !(state.noSwitch && p.switches > 0));
+  const freeNow = buildFreeGrid(state.date);
 
   // Очередь должна быть видимым действием, а не находкой для тех, кто
   // случайно ткнул в занятую клетку.
@@ -1766,12 +1913,18 @@ function renderPicker() {
     const end = minutesToTime(timeToMinutes(state.data.slots[p.toIdx]) + cfg.slotStep);
     const active = state.plan && state.plan.fromIdx === p.fromIdx && state.plan.toIdx === p.toIdx;
     const courts = p.segments.map(s => (state.config.courts.find(c => c.id === s.courtId) || {}).name).join(' → ');
+    // Время с пустыми полчаса не прячем: человек видит, что оно есть, и
+    // когда откроется. Иначе «20:30 пропало из списка, хотя в сетке
+    // свободно» выглядело бы поломкой.
+    const gap = gapVerdict(state.date, freeNow, p);
 
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'opt' + (p.switches ? ' split' : '') + (active ? ' on' : '');
+    b.className = 'opt' + (p.switches ? ' split' : '') + (gap.ok ? '' : ' gap') + (active ? ' on' : '');
+    if (!gap.ok) b.title = 'Сейчас не записать: останутся пустые полчаса, которые никто не займёт';
     b.innerHTML = '<span class="o-time">' + escapeHtml(fmtRange(start, end)) + '</span>'
-      + '<span class="o-court">' + escapeHtml(courts) + (p.switches ? ' ⇄' : '') + '</span>';
+      + '<span class="o-court">' + escapeHtml(courts) + (p.switches ? ' ⇄' : '')
+      + (gap.ok ? '' : ' · ' + (gap.opensAt ? opensText(gap.opensAt) : 'не записать')) + '</span>';
     b.addEventListener('click', () => setPlan(p));
     wrap.appendChild(b);
   });
@@ -2186,6 +2339,11 @@ function startBooking() {
     return;
   }
 
+  // Время с пустыми полчаса сейчас не записать — говорим об этом до формы
+  // подтверждения, а не отказом после неё.
+  const gap = gapVerdict(state.date, buildFreeGrid(state.date), state.plan);
+  if (!gap.ok) { openGapBlocked(info, gap.gaps, gap.opensAt); return; }
+
   // От этой длительности и длиннее бронь подтверждает администратор.
   // Именно «от»: ровно три часа тоже уходят на проверку.
   const approvalFrom = state.config.booking.approvalFromMinutes || 180;
@@ -2334,10 +2492,71 @@ function startBooking() {
         openSlotTaken(taken);
         return;
       }
+      if (e.code === 'leaves-gap') {
+        // Пока человек выбирал, соседнее время заняли, и теперь его бронь
+        // оставит пустые полчаса. То же окно, что и из сетки, — с
+        // соседним временем без окна.
+        const d = e.data || {};
+        closeModal();
+        await refreshAvailability();
+        renderDays(); renderGrid(); renderPicker();
+        openGapBlocked(planInfo() || info, d.gaps || [], d.opensAt ? Date.parse(d.opensAt) : null);
+        return;
+      }
       toast(errorText(e.code), 4000);
     }
   });
   acts.appendChild(confirm);
+  acts.appendChild(btn('Назад', 'btn sec', closeModal));
+  body.appendChild(acts);
+
+  showModal(body);
+}
+
+// Время оставляет пустые полчаса, а до игры ещё далеко. Говорим прямо:
+// система сейчас не записывает, и почему, — и когда время откроется. Тут
+// же ближайшее время без окна: чаще всего человеку всё равно, 20:00 или
+// 20:30. Об администраторе здесь ни слова намеренно: исключения — его
+// решение в редких случаях, а не второй путь записи (решение 29.09.2026).
+function openGapBlocked(info, gaps, opensAt) {
+  const cfg = state.config.booking;
+  const grid = buildFreeGrid(state.date);
+  const alts = state.plan ? cleanStartsNear(state.date, grid, state.plan, { onlyCourtId: state.courtFilter }) : [];
+
+  const body = el('div');
+  body.innerHTML = '<h3>Сейчас это время не записать</h3>'
+    + '<div class="m-sub">' + escapeHtml(dayLabelLong(state.date, state.data.today) + ' · '
+      + fmtRange(info.start, info.end)) + '</div>';
+  body.appendChild(txt('div', 'empty', 'Система не позволяет записать это время сейчас: после такой брони '
+    + gapHead(gaps).toLowerCase() + ' ' + gapsText(gaps) + '. Бронь у нас от '
+    + hoursText(cfg.minBookingMinutes) + ', и это время никто не сможет занять — оно просто пропадёт.'));
+  if (opensAt) {
+    body.appendChild(txt('div', 'empty', 'Запись на это время ' + opensText(opensAt)
+      + ' — за ' + hoursText((cfg.gapOpenHours || 0) * 60) + ' до игры. Если к тому моменту оно будет свободно, '
+      + 'забронируете сами.'));
+  }
+
+  if (alts.length) {
+    body.appendChild(txt('div', 'gap-head', 'Рядом есть время без пустого окна'));
+    const wrap = el('div', 'opts');
+    alts.forEach(p => {
+      const start = state.data.slots[p.fromIdx];
+      const end = minutesToTime(timeToMinutes(state.data.slots[p.toIdx]) + cfg.slotStep);
+      const courts = p.segments.map(s => courtNameOf(s.courtId)).join(' → ');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'opt' + (p.switches ? ' split' : '');
+      b.innerHTML = '<span class="o-time">' + escapeHtml(fmtRange(start, end)) + '</span>'
+        + '<span class="o-court">' + escapeHtml(courts) + (p.switches ? ' ⇄' : '') + '</span>';
+      // Человек уже нажимал «Забронировать» — сразу к подтверждению, без
+      // второго захода через сетку.
+      b.addEventListener('click', () => { closeModal(); setPlan(p); startBooking(); });
+      wrap.appendChild(b);
+    });
+    body.appendChild(wrap);
+  }
+
+  const acts = el('div', 'm-acts');
   acts.appendChild(btn('Назад', 'btn sec', closeModal));
   body.appendChild(acts);
 
@@ -3272,13 +3491,26 @@ function openMoveBooking(g) {
       return !!(mine && (mine.group.key === g.key || mine.group.id === g.id));
     }).map(c => c.id));
 
+  // Корт подбирается как на сервере: выбранный фильтром остаётся, иначе
+  // исходный — пожелание, и ради пустых полчаса бронь может встать на
+  // соседний.
+  const planOpts = Object.assign(g.courtLocked
+    ? { onlyCourtId: g.segments[0].courtId }
+    : { preferCourtId: g.segments[0].courtId }, { avoidGaps: gapRule() });
+
   const options = [];
+  let hiddenForGaps = 0;
   state.data.slots.forEach((slot, idx) => {
     if (idx + need - 1 >= state.data.slots.length) return;
     if (slotTimestamp(g.date, slot) < Date.now() + leadMs) return;
     if (slot === g.start) return;
-    const plan = planBooking(g.date, grid, idx, idx + need - 1, { preferCourtId: g.segments[0].courtId });
-    if (plan) options.push({ slot, plan });
+    const plan = planBooking(g.date, grid, idx, idx + need - 1, planOpts);
+    if (!plan) return;
+    // Перенос в время с пустыми полчаса — по тому же правилу, что и
+    // запись. Такое время не предлагаем, но и не молчим о нём — ниже
+    // подсказка.
+    if (!gapVerdict(g.date, grid, plan).ok) { hiddenForGaps++; return; }
+    options.push({ slot, plan });
   });
 
   const body = el('div');
@@ -3286,9 +3518,17 @@ function openMoveBooking(g) {
     + '<div class="m-sub">' + escapeHtml(dayLabelLong(g.date, state.mine.today)
       + ' · сейчас ' + fmtRange(g.start, g.end)) + '</div>';
 
+  const openH = cfg.gapOpenHours || 0;
+  const gapNote = hiddenForGaps
+    ? txt('div', 'empty', 'Часть свободного времени не показана: система не позволяет перенести туда бронь '
+      + 'сейчас — на корте остались бы пустые полчаса, которые никто не займёт.'
+      + (openH ? ' Такое время открывается за ' + hoursText(openH * 60) + ' до игры.' : ''))
+    : null;
+
   if (!options.length) {
     body.appendChild(txt('div', 'empty',
       'Свободного времени такой длины в этот день не осталось. На другой день — отмените бронь и запишитесь заново.'));
+    if (gapNote) body.appendChild(gapNote);
     const acts0 = el('div', 'm-acts');
     acts0.appendChild(btn('Закрыть', 'btn sec', closeModal));
     body.appendChild(acts0);
@@ -3317,6 +3557,7 @@ function openMoveBooking(g) {
     opts.appendChild(b);
   });
   body.appendChild(opts);
+  if (gapNote) body.appendChild(gapNote);
 
   // Два предупреждения, которые человек должен прочитать до нажатия:
   // перенос ничего не стоит, но и не обнуляет дедлайн отмены.
