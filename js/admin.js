@@ -123,6 +123,10 @@ const ERRORS = {
   'too-old': 'Слишком давно: отметить неявку уже нельзя.',
   'already-cancelled': 'Бронь уже отменена.',
   'paid-by-pass': 'Эта бронь закрыта абонементом — часы за неё уже списаны.',
+  'already-paid': 'Бронь уже оплачена полностью — доплачивать нечего.',
+  'already-started': 'Игра уже началась — у неё можно поменять только окончание.',
+  'resize-started-group': 'У начавшейся брони с переходом окончание двигается только внутри последнего отрезка.',
+  'openplay-duration': 'У открытой тренировки длительность здесь не меняется.',
   'invalid-points': 'Очки — целое число от нуля.',
   'no-table': 'У турнира не выбраны пол или категория — зачёта у него нет.',
   'tournament-not-found': 'Турнир не найден — возможно, его только что удалили.',
@@ -802,11 +806,28 @@ function unpaidDebt(b, dateIso) {
   if (!b || b.kind === 'closed' || b.kind === 'series' || b.seriesId) return false;
   if (b.openPlay || b.source === 'openplay') return false;
   if (b.status !== 'confirmed') return false;
-  if (b.paidAt || b.passSpentAt) return false;
+  if (b.passSpentAt) return false;
+  // Оплаченная — долг, только если после отметки подорожала.
+  if (b.paidAt && bookingDue(b, dateIso) <= 0) return false;
   // Закроет абонемент — ночью, через двое суток после игры. Звать
   // человека к кассе за неё не надо.
   if (b.byPass) return false;
   return isPast(dateIso || b.date, b.end);
+}
+
+// Сколько по брони осталось заплатить — зеркало paymentDue на сервере.
+// Бронь продлили после отметки «оплачено» — разница и есть доплата;
+// отрицательное — переплата. Сумма по всем частям брони с переходом.
+function bookingDue(b, dateIso) {
+  const bk = b.booking || b;
+  const date = dateIso || bk.date;
+  const mates = bk.groupId ? (db.bookings[date] || []).filter(x => x.groupId === bk.groupId) : [];
+  const parts = mates.length ? mates : [bk];
+  const total = parts.reduce((s, x) => s + (x.price || 0) + (x.extrasTotal || 0), 0);
+  if (!bk.paidAt) return total;
+  if (bk.paidSum == null) return 0;
+  const extra = (Array.isArray(bk.paidExtra) ? bk.paidExtra : []).reduce((s, x) => s + (x.sum || 0), 0);
+  return total - bk.paidSum - extra;
 }
 
 function seatsTakenRaw(op) {
@@ -1369,8 +1390,12 @@ async function moveAndWarn(payload, okText) {
   }
   await reload();
   const gaps = res.gaps || [];
-  if (!gaps.length) { toast(okText); return; }
-  toast(okText + '. ' + GAP_MARK + ' Осталось пустым: '
+  // Оплаченная бронь подорожала или подешевела — сказать сразу, пока
+  // клиент у стойки: доплату берут сейчас, а не ищут потом в списке.
+  const money2 = res.due > 0 ? '. Бронь уже оплачена — доплатить ' + money(res.due)
+    : res.due < 0 ? '. Бронь уже оплачена — переплата ' + money(-res.due) : '';
+  if (!gaps.length) { toast(okText + money2, money2 ? 6000 : undefined); return; }
+  toast(okText + money2 + '. ' + GAP_MARK + ' Осталось пустым: '
     + gaps.map(g => courtName(g.courtId) + ' ' + fmtRange(g.start, g.end)).join(', ')
     + ' — это время никто не сможет забронировать.', 7000);
 }
@@ -1959,8 +1984,20 @@ function openBooking(b) {
       payLine.textContent = 'Оплачено абонементом — часы списаны ' + shortDateTime(b.passSpentAt) + '.';
     } else if (b.paidAt) {
       const who = clientById(b.paidBy);
+      const due = bookingDue(b);
+      // Каждая часть оплаты — отдельной строкой со своим способом: вечером
+      // кассу сверяют по способам, и «наличными 1800 + переводом 900»
+      // не должно слипнуться в одно «оплачено».
       payLine.textContent = 'Оплачено ' + payViaLabel(b.paidVia)
-        + ' · ' + shortDateTime(b.paidAt) + (who ? ' · отметил ' + who.name : '');
+        + (b.paidSum != null ? ' ' + money(b.paidSum) : '')
+        + ' · ' + shortDateTime(b.paidAt) + (who ? ' · отметил ' + who.name : '')
+        + (Array.isArray(b.paidExtra) ? b.paidExtra : []).map(x => {
+          const by = clientById(x.by);
+          return '. Доплата ' + payViaLabel(x.via) + ' ' + money(x.sum) + ' · ' + shortDateTime(x.at)
+            + (by ? ' · отметил ' + by.name : '');
+        }).join('')
+        + (due > 0 ? '. Бронь подорожала после оплаты — доплатить ' + money(due) + '.'
+          : due < 0 ? '. Бронь подешевела после оплаты — переплата ' + money(-due) + ': верните или зачтите.' : '');
     } else if (b.byPass) {
       payLine.textContent = '🎫 ' + passCoverText(b.byPass)
         + ' Часы спишутся сами после игры — отмечать оплату не нужно.';
@@ -2003,6 +2040,18 @@ function openBooking(b) {
         payButtons(pay);
       }
     } else if (b.paidAt) {
+      // Доплата — теми же тремя кнопками: сервер видит, что бронь уже
+      // оплачена, и кладёт отметку рядом с первой, на сумму разницы.
+      const due = bookingDue(b);
+      if (due > 0) {
+        PAY_VIA.forEach(([via, label]) => {
+          pay.appendChild(btn('Доплатил ' + label, 'btn sm', () => {
+            closeModal();
+            act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via }),
+              'Доплата ' + money(due) + ' отмечена: ' + label);
+          }));
+        });
+      }
       // Снимает отметку любой администратор, а не только владелец: на
       // стойке легко промахнуться, а звонок владельцу из-за каждого
       // случайного нажатия — плохая цена за след.
@@ -2044,8 +2093,11 @@ function openBooking(b) {
         if (marked) return;
         act(() => api('adminMarkNoShow', { date: b.date, bookingId: b.id }), 'Отмечена неявка, рейтинг снижен');
       }));
+    // «Доиграли лишние полчаса» записывают и после игры — пока часы
+    // абонемента за неё не списаны.
+    if (!marked && !b.passSpentAt) acts.appendChild(btn('Изменить окончание', 'btn sec', () => openMove(b)));
   } else {
-    acts.appendChild(btn('Перенести', 'btn sec', () => openMove(b)));
+    acts.appendChild(btn('Изменить', 'btn sec', () => openMove(b)));
     acts.appendChild(btn('Отменить бронь', 'btn danger', () => {
       closeModal();
       act(() => api('adminCancelBooking', { date: b.date, bookingId: b.id, reason: ta.value }), 'Бронь отменена');
@@ -2062,42 +2114,90 @@ function groupMates(b) {
   return (db.bookings[b.date] || []).filter(x => x.groupId && x.groupId === b.groupId);
 }
 
+// Изменить бронь: время, корт и длительность. Длительность — от получаса:
+// минимальная бронь — правило сайта, а здесь продлевают «не успевают
+// доиграть» и записывают разминку перед турниром. Раньше длительность не
+// менялась вовсе, и всё это было отменой и новой записью.
+//
+// У начавшейся игры меняется только окончание: сыгранное не переписываем,
+// корт посреди игры не меняем. Переноса на другую дату нет: это запись в
+// два файла сразу, а атомарной такая пара быть не может.
 function openMove(b) {
+  const step = db.config.slotStep;
+  const parts = (b.groupId ? groupMates(b) : [b]).slice()
+    .sort((x, y) => timeToMinutes(x.start) - timeToMinutes(y.start));
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  const dur0 = timeToMinutes(last.end) - timeToMinutes(first.start);
+  const started = isPast(b.date, first.start);
+
   const body = el('div');
-  body.innerHTML = '<h3>Перенести бронь</h3><div class="m-sub">' + escapeHtml(b.clientName) + '</div>';
+  body.innerHTML = '<h3>' + (started ? 'Изменить окончание' : 'Изменить бронь') + '</h3><div class="m-sub">'
+    + escapeHtml(b.clientName + ' · сейчас ' + fmtRange(first.start, last.end)) + '</div>';
 
-  const wrap = el('div', 'grid2');
-  const fCourt = el('label', 'field'); fCourt.innerHTML = '<span>Корт</span>';
-  const selCourt = document.createElement('select');
-  db.courts.forEach(c => selCourt.appendChild(opt(c.id, c.name)));
-  selCourt.value = b.courtId; fCourt.appendChild(selCourt);
+  let selCourt = null;
+  let selTime = null;
+  if (!started) {
+    const wrap = el('div', 'grid2');
+    const fCourt = el('label', 'field'); fCourt.innerHTML = '<span>Корт</span>';
+    selCourt = document.createElement('select');
+    db.courts.forEach(c => selCourt.appendChild(opt(c.id, c.name)));
+    selCourt.value = b.courtId; fCourt.appendChild(selCourt);
 
-  const fTime = el('label', 'field'); fTime.innerHTML = '<span>Начало</span>';
-  const selTime = document.createElement('select');
-  // Значение — клубное время («24:30»), подпись — человеческая.
-  startTimes().forEach(t => selTime.appendChild(opt(t, fmtTime(t))));
-  selTime.value = b.start; fTime.appendChild(selTime);
+    const fTime = el('label', 'field'); fTime.innerHTML = '<span>Начало</span>';
+    selTime = document.createElement('select');
+    // Значение — клубное время («24:30»), подпись — человеческая.
+    startTimes().forEach(t => selTime.appendChild(opt(t, fmtTime(t))));
+    selTime.value = first.start; fTime.appendChild(selTime);
 
-  wrap.appendChild(fCourt); wrap.appendChild(fTime);
-  body.appendChild(wrap);
+    wrap.appendChild(fCourt); wrap.appendChild(fTime);
+    body.appendChild(wrap);
+  }
 
-  // Переноса на другую дату нет: это запись в два файла сразу, а
-  // атомарной такая пара быть не может. Для другой даты — отменить
-  // и записать заново.
+  // Длительность — с часом окончания в подписи: у стойки думают «до
+  // скольки», а не «сколько».
+  const fDur = el('label', 'field'); fDur.innerHTML = '<span>Длительность</span>';
+  const selDur = document.createElement('select');
+  fDur.appendChild(selDur); body.appendChild(fDur);
+  // У начавшейся брони с переходом сыгранный отрезок на другом корте не
+  // трогаем: конец можно двигать только внутри последнего отрезка и дальше.
+  const minDur = started && parts.length > 1
+    ? timeToMinutes(last.start) - timeToMinutes(first.start) + step : step;
+  function fillDurations() {
+    const start = selTime ? selTime.value : first.start;
+    const keep = Number(selDur.value) || dur0;
+    const max = Math.min(db.config.adminMaxBookingMinutes, timeToMinutes(db.config.closeTime) - timeToMinutes(start));
+    selDur.innerHTML = '';
+    for (let m = minDur; m <= max; m += step) {
+      selDur.appendChild(opt(m, hoursText(m) + ' · до ' + fmtTime(minutesToTime(timeToMinutes(start) + m))));
+    }
+    selDur.value = String(keep);
+    if (!selDur.value && selDur.options.length) selDur.selectedIndex = selDur.options.length - 1;
+  }
+  fillDurations();
+  if (selTime) selTime.addEventListener('change', fillDurations);
+
   const hint = el('div', 'empty');
-  hint.textContent = 'Перенос внутри дня. Длительность сохраняется, цена пересчитывается. '
-    + 'На другую дату — отмените и запишите заново.';
+  hint.textContent = (started
+    ? 'Игра уже началась — меняется только окончание, начало и корт прежние. '
+    : 'Внутри дня. На другую дату — отмените и запишите заново. ')
+    + 'Цена пересчитается; если бронь уже оплачена и стала дороже — появится доплата. '
+    + 'Освободившееся время уйдёт в очередь ожидания.';
   body.appendChild(hint);
 
   const acts = el('div', 'm-acts');
-  acts.appendChild(btn('Перенести', 'btn', () => {
-    const newStart = selTime.value;
-    const toCourt = Number(selCourt.value);
-    closeModal();
-    confirmCourtChange(b, toCourt, () => moveAndWarn({
-      date: b.date, bookingId: b.id, start: newStart,
+  acts.appendChild(btn('Сохранить', 'btn', () => {
+    const toCourt = selCourt ? Number(selCourt.value) : first.courtId;
+    const payload = {
+      date: b.date, bookingId: first.id,
+      start: selTime ? selTime.value : first.start,
       courtId: toCourt, exactCourt: true,
-    }, 'Перенесено'));
+      durationMinutes: Number(selDur.value),
+    };
+    closeModal();
+    const go = () => moveAndWarn(payload, started ? 'Окончание изменено' : 'Сохранено');
+    if (started) go();
+    else confirmCourtChange(b, toCourt, go);
   }));
   acts.appendChild(btn('Назад', 'btn sec', () => openBooking(b)));
   body.appendChild(acts);
@@ -2117,7 +2217,9 @@ function openNewBooking(date, courtId, start) {
   // закрытия список не тянем — такую всё равно не записать.
   const durMax = Math.min(db.config.adminMaxBookingMinutes,
     timeToMinutes(db.config.closeTime) - timeToMinutes(start));
-  for (let m = db.config.minBookingMinutes; m <= durMax; m += db.config.slotStep) {
+  // От получаса, а не от минимальной брони сайта: разминка перед
+  // турниром и продление «не успели доиграть» — полчаса.
+  for (let m = db.config.slotStep; m <= durMax; m += db.config.slotStep) {
     selDur.appendChild(opt(m, hoursText(m)));
   }
   // Ни одна длительность до закрытия не влезает — оставляем минимальную,
@@ -2670,7 +2772,7 @@ function renderUnpaid() {
   const card = el('div', 'card');
   // Окно пишем в заголовке: оно живёт в настройках бакета, и видно
   // сразу, какое действует на самом деле.
-  card.innerHTML = '<h2>Не оплачено <span class="sub">сыгранные брони без отметки'
+  card.innerHTML = '<h2>Не оплачено <span class="sub">сыгранные брони без отметки или с доплатой'
     + (db.unpaid ? ' за ' + plural(db.unpaid.windowDays, 'день', 'дня', 'дней') : '') + '</span></h2>';
 
   if (!db.unpaid) {
@@ -2693,23 +2795,33 @@ function renderUnpaid() {
 
   rows.forEach(b => {
     const stale = b.date < addDays(todayIso(), -1);
+    // Доплата: бронь продлили после отметки «оплачено». Без строки «уже
+    // оплачено» сумма доплаты читалась бы как вся цена брони.
+    const topUp = b.paidBefore != null;
     const it = el('div', 'item' + (stale ? ' hl' : ''));
     it.innerHTML = '<div class="t1">' + escapeHtml(b.clientName) + ' · <b>' + money(b.sum) + '</b>'
+      + (topUp ? ' <span class="pill wait">доплата</span>' : '')
       + (b.coaching ? ' <span class="pill ok">' + escapeHtml(b.coaching.name) + '</span>' : '')
       + '</div>'
       + '<div class="t2">' + escapeHtml(longDate(b.date) + ' · ' + fmtRange(b.start, b.end)
         + ' · ' + courtName(b.courtId))
-      + (b.clientPhone ? ' · ' + escapeHtml(fmtPhone(b.clientPhone)) : '') + '</div>';
+      + (b.clientPhone ? ' · ' + escapeHtml(fmtPhone(b.clientPhone)) : '') + '</div>'
+      + (topUp ? '<div class="t2">Уже оплачено ' + escapeHtml(money(b.paidBefore))
+        + ' — бронь продлили после отметки, осталось взять разницу.</div>' : '');
 
     const acts = el('div', 'acts');
     PAY_VIA.forEach(([via, label]) => {
       acts.appendChild(btn(label.charAt(0).toUpperCase() + label.slice(1), 'btn sm', () => act(
-        () => api('adminSetPaid', { date: b.date, bookingId: b.id, via }), 'Отмечено: ' + label)));
+        () => api('adminSetPaid', { date: b.date, bookingId: b.id, via }),
+        (topUp ? 'Доплата отмечена: ' : 'Отмечено: ') + label)));
     });
     // Не пришёл — тоже закрытие долга, только другое: денег нет и
-    // не будет, а рейтинг за это снимается.
-    acts.appendChild(btn('Не пришли', 'btn sm sec', () => act(
-      () => api('adminMarkNoShow', { date: b.date, bookingId: b.id }), 'Отмечена неявка, рейтинг снижен')));
+    // не будет, а рейтинг за это снимается. У доплаты человек заведомо
+    // был — он уже платил.
+    if (!topUp) {
+      acts.appendChild(btn('Не пришли', 'btn sm sec', () => act(
+        () => api('adminMarkNoShow', { date: b.date, bookingId: b.id }), 'Отмечена неявка, рейтинг снижен')));
+    }
     acts.appendChild(btn('Открыть день', 'btn sm sec', () => {
       state.date = b.date; state.tab = 'day'; reload();
     }));
@@ -3207,7 +3319,8 @@ function openClientVisits(c, month) {
           // ним платят помесячно, а не за игру.
           + (v.kind === 'series' ? ''
             : (v.passSpentAt ? ' <span class="pill ok">абонемент</span>'
-              : (v.paidAt ? ' <span class="pill ok">оплачено</span>'
+              : (v.paidAt && v.due > 0 ? ' <span class="pill bad">доплата ' + escapeHtml(money(v.due)) + '</span>'
+              : v.paidAt ? ' <span class="pill ok">оплачено</span>'
                 : (isPast(v.date, v.end) && v.status === 'confirmed'
                   ? ' <span class="pill bad">не оплачено</span>' : ''))))
           + '</td>';
