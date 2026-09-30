@@ -3476,10 +3476,6 @@ function bookingItem(g, isPast) {
     acts.appendChild(btn(g.kind === 'series' ? 'Отменить занятие' : 'Отменить', 'btn sm sec',
       () => confirmCancel(g, late)));
     it.appendChild(acts);
-    if (g.extend === 'long') {
-      it.appendChild(txt('div', 't3', 'Продлить до ' + hoursText(state.config.booking.approvalFromMinutes || 180)
-        + ' и дольше можно только через администратора.'));
-    }
   }
 
   return it;
