@@ -114,6 +114,7 @@ const ERRORS = {
   'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
   'slot-taken': 'Это время уже занято.',
   'leaves-gap': 'Останутся пустые полчаса — такое время записывается только отметкой «Исключение».',
+  'night-closed': 'Запись на ночь уже закрыта, итог разослан — записать можно только отметкой «Сторож предупреждён».',
   'duration-too-long': 'Слишком долгая бронь — больше потолка в настройках. Запишите двумя бронями.',
   'repack-stale': 'Пока окно было открыто, расписание изменилось — перекладка больше не подходит. Откройте запись заново.',
   'invalid-repack': 'Перекладка не подходит к выбранному корту — откройте запись заново.',
@@ -487,6 +488,11 @@ function mapConfig(booking) {
     packCourts: booking.packCourts,
     avoidGaps: booking.avoidGaps === true,
     gapOpenHours: booking.gapOpenHours == null ? 12 : booking.gapOpenHours,
+    // Смена и срок записи на ночь. Старый сервер их не присылает — тогда
+    // ночи нет, и панель о ней молчит.
+    staffFrom: booking.staffFrom || null,
+    staffTo: booking.staffTo || null,
+    nightCutoff: booking.nightCutoff || null,
     horizonDays: booking.horizonDays,
     minLeadMinutes: booking.minLeadMinutes,
     pricePerHour: 0, // подставляется из getConfig ниже
@@ -595,6 +601,8 @@ async function loadAll() {
     waiting: b.waiting || null,
     // Неоплаченные сыгранные брони — та же вкладка «Заявки».
     unpaid: b.unpaid || null,
+    // Кто играет ночью без администратора — тоже «Заявки».
+    night: (b.night && b.night.night) || null,
     series: day.series || [],
     seriesColors: day.seriesColors || [],
     exceptions: day.exceptions || [],
@@ -1345,6 +1353,17 @@ function gapExceptionLine(b) {
     + escapeHtml((x.gaps || []).map(g => courtName(g.courtId) + ' ' + fmtRange(g.start, g.end)).join(', '))
     + ' · ' + escapeHtml((x.byName || 'администратор') + ', ' + shortDateTime(x.at)) + '</div>';
 }
+// Ночь после срока записи: итог ночи уже разослан, и эту бронь
+// администратор записал, сам предупредив сторожа. Отметка — чтобы было
+// видно, кто и когда: сторож о ней знает только с его слов.
+const NIGHT_MARK = '🌙';
+function nightExceptionOf(b) { return (b.booking || b).nightException || null; }
+function nightExceptionLine(b) {
+  const x = nightExceptionOf(b);
+  if (!x) return '';
+  return '<div class="t2">' + NIGHT_MARK + ' Записано после срока записи на ночь, сторож предупреждён · '
+    + escapeHtml((x.byName || 'администратор') + ', ' + shortDateTime(x.at)) + '</div>';
+}
 function courtLocked(b) {
   const bk = b.booking || b;
   return !!(bk.courtLocked || (b.series && b.series.courtLocked));
@@ -1384,6 +1403,10 @@ async function moveAndWarn(payload, okText) {
         () => moveAndWarn(Object.assign({}, payload, { gapException: true }), okText));
       return;
     }
+    if (e.code === 'night-closed' && !payload.nightException) {
+      confirmNightException(() => moveAndWarn(Object.assign({}, payload, { nightException: true }), okText));
+      return;
+    }
     if (e.code === 'unauthorized' || e.code === 'token-revoked') { logout(); return; }
     toast(errorText(e.code), 4000);
     return;
@@ -1392,10 +1415,12 @@ async function moveAndWarn(payload, okText) {
   const gaps = res.gaps || [];
   // Оплаченная бронь подорожала или подешевела — сказать сразу, пока
   // клиент у стойки: доплату берут сейчас, а не ищут потом в списке.
-  const money2 = res.due > 0 ? '. Бронь уже оплачена — доплатить ' + money(res.due)
-    : res.due < 0 ? '. Бронь уже оплачена — переплата ' + money(-res.due) : '';
-  if (!gaps.length) { toast(okText + money2, money2 ? 6000 : undefined); return; }
-  toast(okText + money2 + '. ' + GAP_MARK + ' Осталось пустым: '
+  // Ночная бронь после срока — сторож ждёт её по итогу ночи.
+  const tail = (res.due > 0 ? '. Бронь уже оплачена — доплатить ' + money(res.due)
+    : res.due < 0 ? '. Бронь уже оплачена — переплата ' + money(-res.due) : '')
+    + (res.nightNotice ? '. ' + NIGHT_MARK + ' Итог ночи уже разослан — предупредите сторожа' : '');
+  if (!gaps.length) { toast(okText + tail, tail ? 6000 : undefined); return; }
+  toast(okText + tail + '. ' + GAP_MARK + ' Осталось пустым: '
     + gaps.map(g => courtName(g.courtId) + ' ' + fmtRange(g.start, g.end)).join(', ')
     + ' — это время никто не сможет забронировать.', 7000);
 }
@@ -1410,6 +1435,21 @@ function confirmGapException(gaps, go) {
     + GAP_MARK + ' с вашим именем и временем.'));
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Перенести как исключение', 'btn danger', () => { closeModal(); go(); }));
+  acts.appendChild(btn('Не переносить', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// Перенос на ночное время после срока записи: итог ночи уже разослан, и
+// сторож об этой брони не знает. Переносить — только предупредив его.
+function confirmNightException(go) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + NIGHT_MARK + ' Запись на эту ночь уже закрыта</h3>';
+  body.appendChild(txt('div', 'empty', 'Итог ночи разослан, и сторож ждёт только тех, кто в нём. Клиентам сайт '
+    + 'это время уже не даёт. Переносите, только предупредив сторожа, — в брони останется отметка '
+    + NIGHT_MARK + ' с вашим именем и временем.'));
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Сторож предупреждён — перенести', 'btn danger', () => { closeModal(); go(); }));
   acts.appendChild(btn('Не переносить', 'btn sec', closeModal));
   body.appendChild(acts);
   showModal(body);
@@ -1763,11 +1803,12 @@ function buildWeekGrid(dates) {
       // целиком, а имя дописывается только у окон от полутора часов.
       div.innerHTML = '<div class="b-t">' + escapeHtml(fmtRange(b.start, b.end))
         + (unpaidDebt(b, date) ? ' <b>₽</b>' : '') + (courtLocked(b) ? ' ' + LOCK_MARK : '')
-        + (gapExceptionOf(b) ? ' ' + GAP_MARK : '') + '</div>'
+        + (gapExceptionOf(b) ? ' ' + GAP_MARK : '') + (nightExceptionOf(b) ? ' ' + NIGHT_MARK : '') + '</div>'
         + ((to - from) >= 3 ? '<div class="b-n">' + escapeHtml(b.clientName) + '</div>' : '');
       div.title = fmtRange(b.start, b.end) + ' · ' + b.clientName
         + (courtLocked(b) ? ' · корт выбран клиентом' : '')
-        + (gapExceptionOf(b) ? ' · исключение: рядом пустые полчаса' : '');
+        + (gapExceptionOf(b) ? ' · исключение: рядом пустые полчаса' : '')
+        + (nightExceptionOf(b) ? ' · записано после срока записи на ночь' : '');
       div.addEventListener('click', () => openBlock(b));
       makeDraggable(div, b, { grid, dates });
       grid.appendChild(div);
@@ -1842,6 +1883,7 @@ function buildDayGrid(date, blocks) {
       + '<div class="b-n">' + label + escapeHtml(b.clientName) + (b.groupId ? ' ⇄' : '')
       + (courtLocked(b) ? ' ' + LOCK_MARK : '')
       + (gapExceptionOf(b) ? ' ' + GAP_MARK : '')
+      + (nightExceptionOf(b) ? ' ' + NIGHT_MARK : '')
       + (b.kind === 'openplay' && b.openPlay
         ? ' · ' + seatsTakenRaw(b.openPlay) + '/' + b.openPlay.seats
           // Второй состав — со своим названием и своим счётом. Раньше в
@@ -1858,6 +1900,7 @@ function buildDayGrid(date, blocks) {
     div.title = [
       courtLocked(b) ? 'Корт выбран клиентом — на соседний без его согласия не переносить' : '',
       gapExceptionOf(b) ? 'Записано исключением: рядом остались пустые полчаса' : '',
+      nightExceptionOf(b) ? 'Записано после срока записи на ночь, сторож предупреждён' : '',
     ].filter(Boolean).join('. ');
     div.addEventListener('click', () => openBlock(b));
     makeDraggable(div, b, { grid, dates: [date] });
@@ -1922,8 +1965,10 @@ function openBooking(b) {
     + (b.groupId ? ' <span class="pill grey">с переходом</span>' : '')
     + (b.courtLocked ? ' <span class="pill wait">' + LOCK_MARK + ' корт выбран клиентом</span>' : '')
     + (b.prepayRequired ? ' <span class="pill bad">предоплата</span>' : '')
-    + (b.gapException ? ' <span class="pill wait">' + GAP_MARK + ' исключение</span>' : '') + '</div>'
+    + (b.gapException ? ' <span class="pill wait">' + GAP_MARK + ' исключение</span>' : '')
+    + (b.nightException ? ' <span class="pill wait">' + NIGHT_MARK + ' после срока</span>' : '') + '</div>'
     + gapExceptionLine(b)
+    + nightExceptionLine(b)
     + (extras.length ? '<div class="t2">🎾 ' + escapeHtml(extras.map(x => x.name + ' ×' + x.qty).join(', '))
       + ' · ' + money(b.extrasTotal) + '</div>' : '')
     + (b.comment ? '<div class="t2">💬 ' + escapeHtml(b.comment) + '</div>' : '');
@@ -2100,7 +2145,13 @@ function openBooking(b) {
     acts.appendChild(btn('Изменить', 'btn sec', () => openMove(b)));
     acts.appendChild(btn('Отменить бронь', 'btn danger', () => {
       closeModal();
-      act(() => api('adminCancelBooking', { date: b.date, bookingId: b.id, reason: ta.value }), 'Бронь отменена');
+      // Ночная бронь после срока: сторож ждёт её по итогу ночи, и сказать
+      // ему об отмене может только тот, кто её снял.
+      act(() => api('adminCancelBooking', { date: b.date, bookingId: b.id, reason: ta.value })).then(res => {
+        if (!res) return;
+        if (res.nightNotice) toast('Бронь отменена. ' + NIGHT_MARK + ' Итог ночи уже разослан — предупредите сторожа', 6000);
+        else toast('Бронь отменена');
+      });
     }));
   }
 
@@ -2334,6 +2385,7 @@ function openNewBooking(date, courtId, start) {
   body.appendChild(planBox);
   const repackPick = { option: null, on: false };
   const gapPick = { needed: false, on: false };
+  const nightPick = { needed: false, on: false };
   let planFits = true;
   let planSeq = 0;
 
@@ -2343,6 +2395,7 @@ function openNewBooking(date, courtId, start) {
     planBox.innerHTML = '';
     repackPick.option = null; repackPick.on = false;
     gapPick.needed = false; gapPick.on = false;
+    nightPick.needed = false; nightPick.on = false;
     planFits = true;
     if (timeToMinutes(start) + dur > timeToMinutes(db.config.closeTime)) return;
     planBox.appendChild(txt('div', 'empty', 'Проверяю корты…'));
@@ -2398,6 +2451,19 @@ function openNewBooking(date, courtId, start) {
         }
       }
 
+      // Ночь после срока: итог уже у смены и владельца, и сторож ждёт
+      // только тех, кто в нём. Записать можно — но сначала позвонить ему.
+      if (res.nightClosed) {
+        nightPick.needed = true;
+        const warn = el('div', 'item');
+        warn.innerHTML = '<div class="t1">' + NIGHT_MARK + ' Запись на эту ночь уже закрыта</div>'
+          + '<div class="t2">' + escapeHtml('Итог ночи разослан, и сторож ждёт только тех, кто в нём. Клиентам сайт '
+            + 'это время уже не даёт. Записываете — предупредите сторожа сами.') + '</div>';
+        planBox.appendChild(warn);
+        planBox.appendChild(check('Сторож предупреждён', false, v => { nightPick.on = v; },
+          'В брони останется отметка ' + NIGHT_MARK + ' с вашим именем и временем.'));
+      }
+
       const rp = res.repack;
       if (!rp) return;
       repackPick.option = rp;
@@ -2435,6 +2501,10 @@ function openNewBooking(date, courtId, start) {
       return toast('Система не даёт это время — останутся пустые полчаса. Предложите соседнее '
         + 'или отметьте «Исключение», если иначе нельзя.', 5000);
     }
+    if (nightPick.needed && !nightPick.on) {
+      return toast(NIGHT_MARK + ' Запись на ночь закрыта: сначала предупредите сторожа и отметьте '
+        + '«Сторож предупреждён».', 5000);
+    }
 
     // Занятость корта проверяет сервер ещё раз, уже на свежих данных:
     // между открытием окна и нажатием кнопки время могли занять.
@@ -2446,6 +2516,7 @@ function openNewBooking(date, courtId, start) {
       date, start, durationMinutes: dur, courtId, exactCourt: exact.on,
       repack: useRepack ? { courtId: useRepack.courtId, move: useRepack.move } : undefined,
       gapException: gapPick.on || undefined,
+      nightException: nightPick.on || undefined,
       coaching: selCoach.value || undefined,
       extras: extrasPicked().map(x => ({ id: x.item.id, qty: x.qty })),
       comment: inpComment.value.trim() || undefined,
@@ -2682,6 +2753,9 @@ function renderRequests(view) {
   });
   view.appendChild(c1);
 
+  const nightCard = renderNight();
+  if (nightCard) view.appendChild(nightCard);
+
   view.appendChild(renderUnpaid());
 
   const repackCard = renderRepacks();
@@ -2755,6 +2829,43 @@ function renderRequests(view) {
     c3.appendChild(it);
   });
   view.appendChild(c3);
+}
+
+// Ночь без администратора — кто играет после конца смены и до её начала
+// утром. В срок записи тот же список уходит администраторам и владельцу в
+// Telegram (backend/night.js), а здесь он виден и раньше срока — кто уже
+// записан, — и тогда, когда Telegram молчит. Сторож в программу не
+// смотрит: предупреждает его смена.
+function renderNight() {
+  const n = db.night;
+  if (!n) return null;
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>' + NIGHT_MARK + ' Ночь <span class="sub">' + escapeHtml(longDate(n.night))
+    + ' · без администратора ' + escapeHtml(fmtRange(n.staffTo, n.staffFrom)) + '</span></h2>';
+  card.appendChild(txt('div', 'empty', n.closed
+    ? 'Запись на ночь закрыта' + (n.sentAt ? ', итог разослан в Telegram ' + shortDateTime(n.sentAt) : '')
+      + '. Сторожа предупреждает смена.'
+    : 'Запись на ночь с сайта открыта до ' + fmtTime(n.nightCutoff || db.config.nightCutoff)
+      + '. Тогда же итог уйдёт администраторам и владельцу в Telegram.'));
+
+  const part = (title, rows) => {
+    card.appendChild(txt('div', 't1', title));
+    if (!rows.length) { card.appendChild(txt('div', 'empty', 'Никого.')); return; }
+    rows.forEach(e => {
+      const it = el('div', 'item');
+      it.innerHTML = '<div class="t1">' + escapeHtml(fmtRange(e.start, e.end)) + ' · '
+        + escapeHtml(e.courts.map(courtName).join(e.together ? ', ' : ' → ')) + '</div>'
+        + '<div class="t2">' + (e.series ? '↻ ' : '') + escapeHtml(e.who)
+        + (e.phone ? ' · ' + escapeHtml(fmtPhone(e.phone)) : '')
+        + (e.pending ? ' · <span class="pill wait">ждёт подтверждения</span>' : '')
+        + (e.night ? ' · ' + NIGHT_MARK + ' записано после срока' : '')
+        + (e.before ? ' · началась до ' + escapeHtml(fmtTime(n.staffTo)) : '') + '</div>';
+      card.appendChild(it);
+    });
+  };
+  if (n.parts.evening) part('Вечер, после ' + fmtTime(n.staffTo), n.evening);
+  if (n.parts.morning) part('Утро, до ' + fmtTime(n.staffFrom) + ' · ' + longDate(addDays(n.night, 1)), n.morning);
+  return card;
 }
 
 // Неоплаченные брони — рабочая очередь смены.
@@ -8213,7 +8324,11 @@ function renderSettings(view) {
       ['Время с пустыми полчаса', !cfg.avoidGaps ? 'бронируется как обычно'
         : (cfg.gapOpenHours ? 'открывается за ' + cfg.gapOpenHours + ' ч до игры, раньше — только исключением'
           : 'только исключением')],
-    ].forEach(([label, value]) => {
+    ].concat(cfg.staffFrom ? [
+      ['Администратор в центре', fmtRange(cfg.staffFrom, cfg.staffTo) + ' — остальное время ночь, встречает сторож'],
+      ['Запись на ночь с сайта', 'до ' + fmtTime(cfg.nightCutoff) + ' того же вечера (раннее утро — накануне); '
+        + 'позже — только администратором, отметкой «Сторож предупреждён»'],
+    ] : []).forEach(([label, value]) => {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(label) + '</div>'
         + '<div class="t2">' + escapeHtml(value) + '</div>';
@@ -8354,6 +8469,17 @@ function renderSettingsForm(card, cfg) {
   const gapOpen = numField(card, '…такое время открывается для всех за, ч до игры (0 — никогда)',
     cfg.gapOpenHours == null ? 12 : cfg.gapOpenHours);
 
+  // Ночь без администратора. Часы сезонные, как и часы работы, поэтому
+  // здесь, а не в коде: летом смена может сидеть до закрытия.
+  const staffFrom = timeSelect(card, 'Администратор в центре с', cfg.staffFrom || '08:00', 0, 14 * 60);
+  const staffTo = timeSelect(card, '…и до', cfg.staffTo || '21:00', 12 * 60, 30 * 60);
+  const nightCut = timeSelect(card, 'Запись на ночь с сайта закрывается в', cfg.nightCutoff || '21:00', 12 * 60, 30 * 60);
+  card.appendChild(txt('div', 'empty',
+    'Вне смены гостей встречает сторож, в программу он не смотрит. Поэтому время без администратора с сайта '
+    + 'бронируется только до этого часа того же вечера, а раннее утро — накануне. В этот час администраторам и '
+    + 'владельцу приходит в Telegram итог ночи — кого предупредить. Позже записать может только администратор, '
+    + 'отметкой «Сторож предупреждён». Срок — не позже конца смены. Смена на все часы работы выключает правило.'));
+
   const acts = el('div', 'acts');
   acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
     patch: {
@@ -8375,6 +8501,9 @@ function renderSettingsForm(card, cfg) {
         packCourts: draft.packCourts,
         avoidGaps: draft.avoidGaps,
         gapOpenHours: Number(gapOpen.value),
+        staffFrom: staffFrom.value,
+        staffTo: staffTo.value,
+        nightCutoff: nightCut.value,
       },
       pricing: {
         pricePerHour: Number(price.value),

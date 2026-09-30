@@ -81,6 +81,40 @@ function slotTimestamp(dateIso, timeStr) {
   return new Date(dateIso + 'T' + timeStr + ':00' + tz).getTime();
 }
 
+// ---------- Ночь без администратора ----------
+//
+// Зеркало backend/slots.js. Вне смены (staffFrom–staffTo) гостей встречает
+// сторож, и ночь с сайта бронируется только до nightCutoff вечера, с
+// которого она начинается: поздний вечер и следующее утро — одна ночь.
+// Ночная ли бронь, решает только её начало. Решает всё равно сервер, а
+// здесь — чтобы сказать человеку до нажатия.
+//
+// Старый сервер часов смены не присылает — тогда ночи нет вовсе.
+function nightOf(dateIso, slot) {
+  const cfg = state.config && state.config.booking;
+  if (!cfg || !cfg.staffFrom || !cfg.staffTo || !cfg.nightCutoff) return null;
+  const m = timeToMinutes(slot);
+  if (m >= timeToMinutes(cfg.staffTo)) return dateIso;
+  if (m < timeToMinutes(cfg.staffFrom)) return addDays(dateIso, -1);
+  return null;
+}
+function nightCutoffAt(eveningIso) {
+  return slotTimestamp(eveningIso, state.config.booking.nightCutoff);
+}
+function nightClosed(dateIso, slot) {
+  const night = nightOf(dateIso, slot);
+  return !!night && Date.now() >= nightCutoffAt(night);
+}
+// «с 21:00 до 08:00» — ночь словами, для подсказок и отказа.
+function nightSpan() {
+  const cfg = state.config.booking;
+  return 'с ' + fmtTime(cfg.staffTo) + ' до ' + fmtTime(cfg.staffFrom);
+}
+function nightClosedText() {
+  return 'Запись на ночь уже закрыта: ' + nightSpan() + ' в центре нет администратора, гостей встречает '
+    + 'сторож, и список на эту ночь ему уже передан. Позвоните в центр — записать сейчас может только администратор.';
+}
+
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
@@ -226,7 +260,11 @@ const ERRORS = {
   'series-not-found': 'Постоянная бронь не найдена — обновите страницу.',
   'not-an-occurrence': 'Это занятие уже снято или расписание изменилось. Обновите страницу.',
 };
-function errorText(code) { return ERRORS[code] || 'Не получилось. Попробуйте ещё раз.'; }
+function errorText(code) {
+  // Часы ночи — из настроек клуба, поэтому текст собирается на месте.
+  if (code === 'night-closed') return nightClosedText();
+  return ERRORS[code] || 'Не получилось. Попробуйте ещё раз.';
+}
 
 // Единственный канал уведомлений — Telegram. Пока привязки нет, честнее
 // говорить об этом прямо, а не обещать «сообщим» в пустоту.
@@ -1361,8 +1399,12 @@ function cellState(dateIso, courtId, slot) {
     if (myBookingAt(dateIso, courtId, slot)) return 'mine';
     if (b.kind === 'openplay') return 'openplay';
     if (b.kind === 'tournament') return 'tournament';
-    return b.kind === 'closed' ? 'closed' : (b.kind === 'regular' ? 'regular' : 'busy');
   }
+  // Ночь после срока записи: свободное с сайта уже не взять, а очередь на
+  // чужую бронь бессмысленна — позвать из неё будет некуда. Своя бронь,
+  // тренировка и турнир остаются собой: на них человек придёт.
+  if (nightClosed(dateIso, slot)) return 'nightoff';
+  if (b) return b.kind === 'closed' ? 'closed' : (b.kind === 'regular' ? 'regular' : 'busy');
   return 'free';
 }
 
@@ -1624,11 +1666,12 @@ function buildCell(date, court, slot, idx) {
   const startsHere = st === 'openplay'
     ? !sameSessionAsPrev(date, court.id, slots, idx)
     : cellState(date, court.id, slots[idx - 1] || '') !== st;
-  if ((st === 'regular' || st === 'closed' || st === 'mine' || st === 'openplay' || st === 'tournament')
-      && startsHere) {
+  if ((st === 'regular' || st === 'closed' || st === 'mine' || st === 'openplay' || st === 'tournament'
+      || st === 'nightoff') && startsHere) {
     const tag = el('span', 'tag');
     tag.textContent = st === 'openplay' ? openPlayTag(date, court.id, slot)
       : st === 'tournament' ? tournamentTag(date, court.id, slot)
+      : st === 'nightoff' ? '🌙 ночь'
       : (st === 'regular' ? 'постоянная' : (st === 'closed' ? 'закрыт' : 'вы'));
     cell.appendChild(tag);
   }
@@ -1647,8 +1690,19 @@ function buildCell(date, court, slot, idx) {
       + hoursText(state.config.booking.minLeadMinutes) + ' до начала. Позвоните в центр.';
   }
 
-  if (st === 'free') cell.addEventListener('click', () => onCellClick(court.id, idx));
-  else if (st === 'openplay') {
+  if (st === 'free') {
+    // Ночное время до срока записи: пока свободно, но сказать заранее,
+    // что встретит не администратор и когда запись закроется.
+    const night = nightOf(date, slot);
+    if (night) {
+      cell.title = 'Ночь: ' + nightSpan() + ' гостей встречает сторож. Запись на это время — до '
+        + fmtTime(state.config.booking.nightCutoff) + ', ' + dayLabelLong(night, state.data.today);
+    }
+    cell.addEventListener('click', () => onCellClick(court.id, idx));
+  } else if (st === 'nightoff') {
+    cell.title = 'Запись на ночь закрыта — нажмите, чтобы узнать почему';
+    cell.addEventListener('click', () => openNightClosed());
+  } else if (st === 'openplay') {
     // Тренировка — единственное «занято», куда можно попасть:
     // не очередь на чужую бронь, а запись в состав.
     cell.title = 'Открытая тренировка — нажмите, чтобы посмотреть состав';
@@ -1841,9 +1895,14 @@ function renderBar() {
   // Предупреждаем заранее, ещё до кнопки: человек может продлить выбор, и
   // окно исчезнет само — 20:30–22:30 рядом с бронью с 22:30 уже без окна.
   const gap = gapVerdict(state.date, buildFreeGrid(state.date), state.plan);
-  document.getElementById('selGap').textContent = gap.ok ? ''
-    : '⚠ Сейчас не записать: ' + gapHead(gap.gaps).toLowerCase() + ' ' + gapsText(gap.gaps)
-      + (gap.opensAt ? '. Время ' + opensText(gap.opensAt) : '');
+  // Ночное начало — сказать до кнопки, что встретит сторож и что запись
+  // на эту ночь закроется в срок. Пустые полчаса важнее: их текст первым.
+  const night = nightOf(state.date, info.start);
+  document.getElementById('selGap').textContent = !gap.ok
+    ? '⚠ Сейчас не записать: ' + gapHead(gap.gaps).toLowerCase() + ' ' + gapsText(gap.gaps)
+      + (gap.opensAt ? '. Время ' + opensText(gap.opensAt) : '')
+    : (night ? '🌙 Ночь: ' + nightSpan() + ' гостей встречает сторож. Запись на это время открыта до '
+      + fmtTime(state.config.booking.nightCutoff) + ', ' + dayLabelLong(night, state.data.today) : '');
 
   bar.classList.add('show');
 }
@@ -2564,6 +2623,20 @@ function openGapBlocked(info, gaps, opensAt) {
   acts.appendChild(btn('Назад', 'btn sec', closeModal));
   body.appendChild(acts);
 
+  showModal(body);
+}
+
+// Нажали на закрытую ночь. Не молчим серым: корт пуст, и человеку надо
+// понять, почему его не взять, и куда звонить, если очень нужно.
+function openNightClosed() {
+  const body = el('div');
+  body.innerHTML = '<h3>🌙 Запись на ночь закрыта</h3>';
+  body.appendChild(txt('div', 'empty', nightClosedText()));
+  const phone = state.config.club && state.config.club.phone;
+  const acts = el('div', 'm-acts');
+  if (phone) acts.appendChild(link('Позвонить', 'tel:' + phone.replace(/[^\d+]/g, '')));
+  acts.appendChild(btn('Понятно', 'btn sec', closeModal));
+  body.appendChild(acts);
   showModal(body);
 }
 
@@ -3546,6 +3619,13 @@ function openMoveBooking(g) {
       const mine = myBookingAt(g.date, c.id, slot);
       return !!(mine && (mine.group.key === g.key || mine.group.id === g.id));
     }).map(c => c.id));
+  // Для подбора — ещё и пустая ночь после срока: ночная бронь при прежнем
+  // начале продлевается в неё, как на сервере. Пустые полчаса при этом
+  // считаются по grid, где этой ночи нет, — как и на сервере.
+  const planGrid = state.data.slots.map((slot, i) => grid[i].concat(state.config.courts
+    .filter(c => grid[i].indexOf(c.id) === -1 && cellState(g.date, c.id, slot) === 'nightoff'
+      && !busyAt(g.date, c.id, slot))
+    .map(c => c.id)));
 
   // Корт подбирается как на сервере: выбранный фильтром остаётся, иначе
   // исходный — пожелание, и ради пустых полчаса бронь может встать на
@@ -3597,12 +3677,18 @@ function openMoveBooking(g) {
     const need = duration / cfg.slotStep;
     const options = [];
     let hiddenForGaps = 0;
+    let hiddenForNight = 0;
     state.data.slots.forEach((slot, idx) => {
       if (idx + need - 1 >= state.data.slots.length) return;
       if (slotTimestamp(g.date, slot) < Date.now() + leadMs) return;
       // То же начало — вариант, только если меняется длительность.
       if (slot === g.start && duration === current) return;
-      const plan = planBooking(g.date, grid, idx, idx + need - 1, planOpts);
+      // Ночь после срока: новое ночное начало не выбрать, прежнее — можно.
+      if (slot !== g.start && nightClosed(g.date, slot)) {
+        if (planBooking(g.date, planGrid, idx, idx + need - 1, planOpts)) hiddenForNight++;
+        return;
+      }
+      const plan = planBooking(g.date, planGrid, idx, idx + need - 1, planOpts);
       if (!plan) return;
       // Перенос в время с пустыми полчаса — по тому же правилу, что и
       // запись. Такое время не предлагаем, но и не молчим о нём — ниже
@@ -3645,6 +3731,10 @@ function openMoveBooking(g) {
       optsBox.appendChild(txt('div', 'empty', 'Часть свободного времени не показана: система не позволяет '
         + 'перенести туда бронь сейчас — на корте остались бы пустые полчаса, которые никто не займёт.'
         + (openH ? ' Такое время открывается за ' + hoursText(openH * 60) + ' до игры.' : '')));
+    }
+    if (hiddenForNight) {
+      optsBox.appendChild(txt('div', 'empty', '🌙 Ночное время не показано: запись на эту ночь уже закрыта — '
+        + nightSpan() + ' гостей встречает сторож, и список ему передан.'));
     }
   }
 

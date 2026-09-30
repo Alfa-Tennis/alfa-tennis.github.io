@@ -241,6 +241,11 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
    принимал закрытый хвост дня за свободный. Ощутимо темнее занятого
    (#C9D1D4) быть не должно: это не «занято», а «уже не бывает». */
 .cell.past { background: #DFE4E7; cursor: default; border-bottom-color: #D2D9DC; border-right-color: #D2D9DC; }
+/* Ночь после срока записи: корт пуст, но с сайта его уже не взять —
+   администратора нет, и список ночи сторожу передан. Не «прошло» и не
+   «занято»: оттенок того же серого с косой штриховкой, и клетка
+   нажимается — объясняет, почему и куда звонить. */
+.cell.nightoff { background: repeating-linear-gradient(135deg, #DFE4E7 0 6px, #D2D9E4 6px 12px); cursor: pointer; border-bottom-color: #D2D9DC; border-right-color: #D2D9DC; }
 .cell.mine { background: var(--grass); }
 .cell.sel { background: var(--court); }
 .cell.sel:hover { background: var(--court-dk); }
@@ -267,6 +272,7 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .sw.tournament { background: var(--court-tint); box-shadow: inset 3px 0 0 var(--court); }
 .sw.mine { background: var(--grass); }
 .sw.past { background: #DFE4E7; }
+.sw.nightoff { background: repeating-linear-gradient(135deg, #DFE4E7 0 4px, #D2D9E4 4px 8px); }
 
 /* ---------- Нижняя панель ---------- */
 .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 24px rgba(34,39,44,.09); transform: translateY(110%); transition: transform .18s ease-out; }
