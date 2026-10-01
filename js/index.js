@@ -450,7 +450,17 @@ async function load() {
   // сюда с номером турнира: человек шёл записываться, и искать турнир на
   // главной ему незачем — открываем сразу его окно.
   const askedTournament = asked.get('tournament');
-  if (askedTournament && /^t_[a-f0-9]{10}$/.test(askedTournament)) openTournamentCard(askedTournament);
+  const openAsked = () => {
+    if (askedTournament && /^t_[a-f0-9]{10}$/.test(askedTournament)) openTournamentCard(askedTournament);
+  };
+
+  // Сессия по временному паролю переживает перезагрузку страницы — и
+  // окно смены вместе с ней: иначе обновить вкладку значило бы обойти его.
+  if (state.auth && state.auth.client && state.auth.client.mustChangePassword) {
+    requirePasswordChange(openAsked);
+  } else {
+    openAsked();
+  }
 }
 
 async function refreshAvailability() {
@@ -2149,12 +2159,17 @@ function openAuth(mode) {
       closeModal();
       renderHero(); renderNav();
       await refreshMine();
-      toast('С возвращением, ' + r.client.name.split(' ')[0] + '!');
 
-      if (state.pendingAfterLogin) {
-        state.pendingAfterLogin = false;
-        setTimeout(startBooking, 300);
-      }
+      const resume = () => {
+        if (state.pendingAfterLogin) {
+          state.pendingAfterLogin = false;
+          setTimeout(startBooking, 300);
+        }
+      };
+      if (r.client.mustChangePassword) { requirePasswordChange(resume); return; }
+
+      toast('С возвращением, ' + r.client.name.split(' ')[0] + '!');
+      resume();
       return;
     }
 
@@ -2244,15 +2259,20 @@ function openAuth(mode) {
         renderHero(); renderNav();
         await refreshMine();
 
-        if (tab === 'register') toast('Заявка отправлена администратору', 3600);
-        else toast('С возвращением, ' + res.client.name.split(' ')[0] + '!');
-
         // Человек нажал «Забронировать» и попал на вход — возвращаем
         // его ровно туда, откуда увели, а не на главную.
-        if (state.pendingAfterLogin) {
-          state.pendingAfterLogin = false;
-          setTimeout(startBooking, 300);
-        }
+        const resume = () => {
+          if (state.pendingAfterLogin) {
+            state.pendingAfterLogin = false;
+            setTimeout(startBooking, 300);
+          }
+        };
+
+        if (res.client.mustChangePassword) { requirePasswordChange(resume); return; }
+
+        if (tab === 'register') toast('Заявка отправлена администратору', 3600);
+        else toast('С возвращением, ' + res.client.name.split(' ')[0] + '!');
+        resume();
       } catch (e) {
         toast(errorText(e.code), 3600);
       }
@@ -2373,7 +2393,53 @@ function forgotPassword() {
   return box;
 }
 
+// Вход по временному паролю от администратора. Сервер ставит отметку при
+// сбросе, и пока она стоит, дальше окна смены человек не проходит: иначе
+// временный пароль молча становится постоянным, а через сутки перестаёт
+// пускать — и человек снова идёт к администратору. Текущий пароль здесь
+// не спрашиваем: сервер при отметке его не требует.
+function requirePasswordChange(then) {
+  const body = el('div');
+  body.innerHTML = '<h3>Придумайте свой пароль</h3>'
+    + '<div class="m-sub">Вы вошли по временному паролю от администратора. '
+    + 'Он действует сутки — задайте свой, чтобы входить дальше.</div>';
+
+  const f = el('label', 'field');
+  f.innerHTML = '<span>Новый пароль</span>';
+  const inp = document.createElement('input');
+  inp.type = 'password'; inp.placeholder = 'не короче 6 символов';
+  inp.autocomplete = 'new-password';
+  f.appendChild(withPasswordToggle(inp));
+  body.appendChild(f);
+
+  const save = async () => {
+    try {
+      const res = await api('updateProfile', { password: inp.value });
+      state.auth = { token: res.token, client: res.client };
+      store.set(TOKEN_KEY, res.token);
+      state.modalLocked = false;
+      closeModal();
+      toast('Пароль сохранён');
+      if (state.view === 'profile') renderProfile();
+      if (then) then();
+    } catch (e) { toast(errorText(e.code), 3600); }
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Выйти', 'btn sec', () => logout(false)));
+  acts.appendChild(btn('Сохранить пароль', 'btn', save));
+  body.appendChild(acts);
+
+  state.modalLocked = true;
+  showModal(body);
+  setTimeout(() => inp.focus(), 50);
+}
+
 function logout(silent) {
+  // Окно смены пароля без сессии теряет смысл — и при выходе по кнопке,
+  // и когда токен отозвали, пока оно было открыто.
+  if (state.modalLocked) { state.modalLocked = false; closeModal(); }
   state.auth = null;
   state.mine = null;
   store.del(TOKEN_KEY);
@@ -3988,7 +4054,7 @@ function renderProfile() {
   // Сервер проверяет то же самое: страница лишь не показывает лишнее
   // поле.
   let inpCur = null;
-  if (client.hasPassword) {
+  if (client.hasPassword && !client.mustChangePassword) {
     const fCur = el('label', 'field');
     fCur.innerHTML = '<span>Текущий пароль</span>';
     inpCur = document.createElement('input');
@@ -4075,8 +4141,9 @@ function showModal(node) {
   document.getElementById('backdrop').classList.add('show');
 }
 function closeModal() { document.getElementById('backdrop').classList.remove('show'); }
-document.getElementById('backdrop').addEventListener('click', e => { if (e.target.id === 'backdrop') closeModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+// Запертое окно (смена временного пароля) мимо кнопок не закрывается.
+document.getElementById('backdrop').addEventListener('click', e => { if (e.target.id === 'backdrop' && !state.modalLocked) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !state.modalLocked) closeModal(); });
 
 let toastTimer = null;
 function toast(text, ms) {

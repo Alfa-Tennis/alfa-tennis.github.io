@@ -478,6 +478,8 @@ table.cross .no {
    перебивал атрибут. */
 #loginPhone { width: 100%; margin-bottom: 8px; }
 #loginPass, #loginBtn { width: 100%; }
+#newPass, #newPassBtn, #newPassOut { width: 100%; }
+#newPassOut { margin-top: 8px; }
 .item.temp-pass { text-align: center; font-size: 22px; letter-spacing: 1px; }
 .goods-text .t2.news-when { display: inline; }
 .goods-text .t2.news-text { white-space: pre-line; }

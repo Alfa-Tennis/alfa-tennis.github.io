@@ -25,13 +25,29 @@
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/svg+xml" href="img/favicon.svg?v=cb42754a48">
 <meta name="theme-color" content="#3F6CA3">
-<link rel="stylesheet" href="css/admin.css?v=e2ca8dcb80">
+<link rel="stylesheet" href="css/admin.css?v=545e3ac83a">
 </head>
 <body>
 
 <!-- ---------- Вход ---------- -->
 <div class="login" id="login">
-  <div class="login-card">
+  <div class="login-card" id="newPassCard" hidden>
+    <img class="login-logo" src="img/logo.svg?v=ae8bf22e85" alt="Логотип теннисного центра «Альфа»">
+    <h1>Придумайте свой пароль</h1>
+    <p class="who" id="newPassWho"></p>
+    <div class="login-note">
+      Вы вошли по временному паролю. Он действует сутки — задайте свой,
+      чтобы входить дальше.
+    </div>
+    <div class="pass-wrap">
+      <input class="inp" id="newPass" type="password" autocomplete="new-password"
+             placeholder="Новый пароль, не короче 6 символов">
+      <button type="button" class="pass-eye" id="newPassEye"></button>
+    </div>
+    <button class="btn" id="newPassBtn">Сохранить пароль</button>
+    <button class="btn sec" id="newPassOut">Выйти</button>
+  </div>
+  <div class="login-card" id="loginCard">
     <img class="login-logo" src="img/logo.svg?v=ae8bf22e85" alt="Логотип теннисного центра «Альфа»">
     <h1>Панель администратора</h1>
     <p class="who">Теннисный центр «Альфа»</p>
@@ -74,6 +90,6 @@
      единственное, что остаётся от страницы. -->
 <div id="printArea"></div>
 
-<script src="js/admin.js?v=3f624cf9ec"></script>
+<script src="js/admin.js?v=94ae42b6d4"></script>
 </body>
 </html>

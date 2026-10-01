@@ -112,6 +112,11 @@ const ERRORS = {
   'token-revoked': 'Нужно войти заново.',
   'bad-credentials': 'Неверный телефон или пароль.',
   'too-many-attempts': 'Слишком много попыток. Попробуйте через 15 минут.',
+  'temp-password-expired': 'Временный пароль просрочен — попросите владельца сбросить его ещё раз.',
+  'password-too-short': 'Пароль должен быть не короче 6 символов.',
+  'password-too-long': 'Слишком длинный пароль.',
+  'password-too-simple': 'Такой пароль подбирается сразу. Не подряд идущие символы и не одна буква.',
+  'password-is-phone': 'Пароль не может быть номером телефона.',
   'slot-taken': 'Это время уже занято.',
   'leaves-gap': 'Останутся пустые полчаса — такое время записывается только отметкой «Исключение».',
   'night-closed': 'Запись на ночь уже закрыта, итог разослан — записать можно только отметкой «Сторож предупреждён».',
@@ -679,6 +684,8 @@ window.addEventListener('focus', refreshIfStale);
 function showLogin(message) {
   document.getElementById('app').hidden = true;
   document.getElementById('login').hidden = false;
+  document.getElementById('newPassCard').hidden = true;
+  document.getElementById('loginCard').hidden = false;
   if (message) {
     const note = document.getElementById('loginNote');
     note.textContent = message;
@@ -699,6 +706,18 @@ async function enter(client) {
   if (client.role !== 'admin' && client.role !== 'owner') {
     setToken(null);
     showLogin('Эта учётная запись не имеет доступа к панели.');
+    return;
+  }
+  // Пароль выдан при сбросе — в панель только после своего. Иначе
+  // временный молча становится постоянным, а через сутки перестаёт
+  // пускать, и сотрудник снова идёт к владельцу.
+  if (client.mustChangePassword) {
+    document.getElementById('app').hidden = true;
+    document.getElementById('login').hidden = false;
+    document.getElementById('loginCard').hidden = true;
+    document.getElementById('newPassCard').hidden = false;
+    document.getElementById('newPassWho').textContent = client.name;
+    document.getElementById('newPass').focus();
     return;
   }
   me = client;
@@ -726,6 +745,26 @@ async function doLogin() {
     await enter(res.client);
   } catch (e) {
     showLogin(errorText(e.code));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// Текущий пароль не передаём: при отметке о временном сервер его не
+// спрашивает, а набирать временный второй раз подряд незачем.
+async function saveNewPassword() {
+  const input = document.getElementById('newPass');
+  const button = document.getElementById('newPassBtn');
+  button.disabled = true;
+  try {
+    const res = await api('updateProfile', { password: input.value });
+    setToken(res.token);
+    input.value = '';
+    if (input.type === 'text') document.getElementById('newPassEye').click();
+    toast('Пароль сохранён');
+    await enter(res.client);
+  } catch (e) {
+    toast(errorText(e.code), 3600);
   } finally {
     button.disabled = false;
   }
@@ -9282,14 +9321,19 @@ document.getElementById('loginPass').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') doLogin();
 });
 attachPhoneMask(document.getElementById('loginPhone'));
+document.getElementById('newPassBtn').addEventListener('click', saveNewPassword);
+document.getElementById('newPass').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveNewPassword();
+});
+document.getElementById('newPassOut').addEventListener('click', logout);
 
 // Глазок в поле пароля: вход в панель тоже бывает с телефона, а
 // опечатку в пароле без показа не увидеть. Открывается только по кнопке.
-(function () {
+[['loginPass', 'loginPassEye'], ['newPass', 'newPassEye']].forEach(([inputId, eyeId]) => {
   const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
   const EYE_SHUT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.7 17.7 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.9 9.9 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
-  const input = document.getElementById('loginPass');
-  const eye = document.getElementById('loginPassEye');
+  const input = document.getElementById(inputId);
+  const eye = document.getElementById(eyeId);
   const sync = () => {
     const shown = input.type === 'text';
     eye.innerHTML = shown ? EYE_SHUT : EYE_OPEN;
@@ -9303,7 +9347,7 @@ attachPhoneMask(document.getElementById('loginPhone'));
     sync();
   });
   sync();
-})();
+});
 
 document.getElementById('reloadBtn').addEventListener('click', () => {
   reload().then(() => toast('Обновлено')).catch(() => toast('Не удалось обновить'));
