@@ -207,6 +207,10 @@ const ERRORS = {
   'invalid-photo': 'Это не похоже на фотографию.',
   'unsupported-photo-type': 'Подойдёт JPEG, PNG или WebP.',
   'photo-too-large': 'Фотография слишком большая даже после сжатия.',
+  'news-too-long': 'Слишком длинно — в новости до 1500 знаков.',
+  'news-empty': 'Нужен текст или фотография.',
+  'news-not-editable': 'Новость из группы правится в самом Telegram.',
+  'reprice-stale': 'Пока список был открыт, цены поменялись. Нажмите «Пересчитать» заново — список обновится.',
   'already-drawn': 'Жеребьёвка уже проведена. Чтобы разложить заново, сначала сбросьте её.',
   'too-few': 'Для жеребьёвки нужно хотя бы четверо участников.',
   'no-groups': 'У этого турнира нет групп — раскладывать вручную некуда.',
@@ -5454,9 +5458,13 @@ function renderEvents(view) {
 // Новости из группы клуба. Модерация здесь доступна любому
 // администратору, в отличие от афиши: текст пишет сам клуб в своей
 // группе, а здесь решается не «что написать», а «показывать ли».
+//
+// Владелец может написать новость и сам — если хештег в группе забыли
+// или новость нужна сайту, а не чату. Такая сразу на главной и правится
+// здесь же; новость из группы правится в Telegram.
 function renderNews(view) {
   const card = el('div', 'card');
-  card.innerHTML = '<h2>Новости из группы <span class="sub">попадают сюда черновиком</span></h2>';
+  card.innerHTML = '<h2>Новости <span class="sub">из группы — черновиком, написанные здесь — сразу на сайт</span></h2>';
   view.appendChild(card);
 
   if (!db.news) {
@@ -5464,15 +5472,16 @@ function renderNews(view) {
     return;
   }
 
+  const canWrite = !!db.news.canWrite;
+
   if (!db.news.enabled) {
-    card.appendChild(txt('div', 'empty', 'Сбор новостей выключен в настройках центра.'));
+    card.appendChild(txt('div', 'empty', 'Сбор новостей из группы выключен в настройках центра.'));
   }
 
   if (!db.news.news.length) {
     card.appendChild(txt('div', 'empty',
-      'Постов ещё не было. Бот забирает из группы только те, где есть один из хештегов: '
+      'Новостей ещё не было. Бот забирает из группы только посты, где есть один из хештегов: '
       + db.news.hashtags.join(', ') + '. Всё остальное в чате он пропускает мимо.'));
-    return;
   }
 
   db.news.news.forEach(n => {
@@ -5492,12 +5501,16 @@ function renderNews(view) {
     text.innerHTML = '<div class="t1">'
       + (n.status === 'draft' ? '<span class="pill wait">черновик</span>'
         : '<span class="pill ok">на сайте</span>')
+      + (n.source === 'panel' ? ' <span class="pill grey">написана здесь</span>' : '')
       + ' <span class="t2 news-when">' + escapeHtml(shortDateTime(n.postedAt)) + '</span></div>'
       + '<div class="t2 news-text">' + escapeHtml(n.text || '(только фотография)') + '</div>';
     row.appendChild(text);
     it.appendChild(row);
 
     const acts = el('div', 'acts');
+    if (canWrite && n.source === 'panel') {
+      acts.appendChild(btn('Изменить', 'btn sm sec', () => openNewsForm(n)));
+    }
     if (n.status === 'draft') {
       acts.appendChild(btn('Опубликовать', 'btn sm', () =>
         act(() => api('setNewsStatus', { id: n.id, status: 'published' }), 'Новость на сайте')));
@@ -5513,6 +5526,109 @@ function renderNews(view) {
 
     card.appendChild(it);
   });
+
+  if (canWrite) {
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Добавить новость', 'btn sm', () => openNewsForm(null)));
+    card.appendChild(acts);
+  }
+}
+
+// Одна форма и на создание, и на правку. Фотография едет тем же
+// запросом, что и текст: у новости, в отличие от позиции каталога, нет
+// второго шага, и два запроса подряд были бы лишним холодным стартом.
+function openNewsForm(existing) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + (existing ? 'Правка новости' : 'Написать новость') + '</h3>'
+    + '<div class="m-sub">' + (existing
+      ? 'Дата новости не изменится — она останется на своём месте в ленте.'
+      : 'Появится на главной сразу, в группу Telegram не уходит.') + '</div>';
+
+  const text = document.createElement('textarea');
+  text.rows = 6;
+  text.maxLength = 1500;
+  text.value = existing ? existing.text : '';
+  text.placeholder = 'Например: с 5 октября меняются цены на аренду кортов…';
+  wrapField(body, 'Текст', text);
+  const count = txt('div', 'empty', '');
+  const syncCount = () => { count.textContent = text.value.length + ' из 1500 знаков'; };
+  text.addEventListener('input', syncCount);
+  syncCount();
+  body.appendChild(count);
+
+  let photoData = null;
+  let dropPhoto = false;
+  const photoWrap = el('div', 'field');
+  photoWrap.innerHTML = '<span>Фотография — необязательно</span>';
+  const preview = el('div', 'thumb big');
+  const showPreview = (src) => {
+    preview.innerHTML = '';
+    preview.classList.toggle('empty-thumb', !src);
+    if (!src) return;
+    const img = document.createElement('img');
+    img.src = src; img.alt = '';
+    preview.appendChild(img);
+  };
+  showPreview(existing && existing.photoUrl);
+  photoWrap.appendChild(preview);
+
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/jpeg,image/png,image/webp';
+  file.addEventListener('change', async () => {
+    const chosen = file.files && file.files[0];
+    if (!chosen) return;
+    try {
+      photoData = await shrinkImage(chosen, 1200, db.news.photoMaxBytes);
+      dropPhoto = false;
+      showPreview(photoData);
+    } catch (e) {
+      photoData = null;
+      toast('Не удалось прочитать файл — нужна фотография', 3600);
+    }
+  });
+  photoWrap.appendChild(file);
+  body.appendChild(photoWrap);
+
+  if (existing && existing.photoUrl) {
+    body.appendChild(btn('Убрать фотографию', 'btn sm sec', () => {
+      photoData = null;
+      dropPhoto = true;
+      file.value = '';
+      showPreview(null);
+    }));
+  }
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  const save = btn(existing ? 'Сохранить' : 'Опубликовать', 'btn', async () => {
+    const hasPhoto = !!photoData || (existing && existing.photoUrl && !dropPhoto);
+    if (!text.value.trim() && !hasPhoto) { toast('Нужен текст или фотография'); return; }
+    save.disabled = true;
+
+    const payload = { text: text.value };
+    if (existing) payload.id = existing.id;
+    if (photoData) payload.photo = photoData;
+    if (dropPhoto) payload.removePhoto = true;
+
+    // Окно закрываем только после ответа: при отказе или обрыве связи
+    // набранный абзац иначе пропал бы вместе с ним.
+    try {
+      await api('saveNews', payload);
+    } catch (e) {
+      save.disabled = false;
+      if (e.code === 'unauthorized' || e.code === 'token-revoked') { closeModal(); logout(); return; }
+      toast(errorText(e.code), 4000);
+      return;
+    }
+    closeModal();
+    await act(() => null, existing ? 'Новость изменена' : 'Новость на сайте');
+  });
+  acts.appendChild(save);
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => text.focus(), 50);
 }
 
 // Удаление руками не отменяется, а кнопка стоит рядом с «Изменить» —
@@ -8378,6 +8494,7 @@ function renderSettings(view) {
 
   if (owner) renderClubInfo(view);
   renderPriceRules(view, cfg, owner);
+  if (owner) renderReprice(view);
   if (owner) renderCourts(view);
   if (owner) renderReminders(view);
   if (owner) renderTournamentSignups(view);
@@ -8556,6 +8673,91 @@ function renderSettingsForm(card, cfg) {
   card.appendChild(txt('div', 'empty',
     'Новые настройки расходятся по серверу в течение минуты — столько живёт кэш. '
     + 'Сокращать часы работы поверх уже заведённых броней система не даст: сначала покажет, какие мешают.'));
+}
+
+// Пересчёт предстоящих броней по сохранённым ценам. Цена в брони —
+// снимок на момент записи, и после повышения цен уже записанные на
+// будущие дни остаются по старой. Владелец меняет цены в день повышения
+// и жмёт кнопку: сначала список «было → станет», запись — вторым
+// нажатием. Оплаченные, начавшиеся, постоянные и открытые тренировки
+// не трогаются (backend/reprice.js).
+function renderReprice(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Пересчёт предстоящих броней <span class="sub">после смены цен</span></h2>';
+  card.appendChild(txt('div', 'empty',
+    'Цена в брони запоминается в момент записи. Подняли цены — брони, уже записанные на будущие дни, '
+    + 'остаются по старой. Сначала сохраните новые цены выше, потом нажмите кнопку: система покажет, '
+    + 'что изменится, и пересчитает только после подтверждения. Оплаченные брони, начавшиеся игры, '
+    + 'постоянные брони и открытые тренировки не меняются. Клиентам бот ничего не пишет.'));
+  const acts = el('div', 'acts');
+  const go = btn('Пересчитать предстоящие брони', 'btn sm', async () => {
+    go.disabled = true;
+    try {
+      openRepriceDialog(await api('adminRepricePreview', {}));
+    } catch (e) {
+      toast(errorText(e.code), 4000);
+    } finally {
+      go.disabled = false;
+    }
+  });
+  acts.appendChild(go);
+  card.appendChild(acts);
+  view.appendChild(card);
+}
+
+function openRepriceDialog(res) {
+  const body = el('div');
+  const p = res.pricing;
+  body.innerHTML = '<h3>Пересчёт по текущим ценам</h3>'
+    + '<div class="m-sub">Корт ' + escapeHtml(money(p.pricePerHour)) + ' за час'
+    + (p.rules.length ? ' (и скидочные окна)' : '')
+    + ' · индивидуальная ' + escapeHtml(money(p.coachIndividualPerHour))
+    + ' · сплит ' + escapeHtml(money(p.coachSplitPerHour)) + '</div>';
+
+  const row = (r, tail) => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(longDate(r.date)) + ', ' + escapeHtml(fmtRange(r.start, r.end))
+      + ' · ' + escapeHtml(r.clientName || 'без имени') + '</div>'
+      + '<div class="t2">' + (r.coaching ? escapeHtml(r.coaching) + ' · ' : '') + tail + '</div>';
+    return it;
+  };
+
+  if (!res.count) {
+    body.appendChild(txt('div', 'empty', 'Менять нечего: все предстоящие брони уже по этим ценам.'));
+  } else {
+    const total = el('div', 'item hl');
+    total.innerHTML = '<div class="t1">Изменится броней: ' + res.count + '</div>'
+      + '<div class="t2">было ' + escapeHtml(money(res.before)) + ' → станет <b>'
+      + escapeHtml(money(res.after)) + '</b></div>';
+    body.appendChild(total);
+    res.changes.forEach(r => body.appendChild(row(r,
+      escapeHtml(money(r.was)) + ' → <b>' + escapeHtml(money(r.will)) + '</b>')));
+  }
+
+  if (res.paid.length) {
+    body.appendChild(txt('div', 'field-label', 'Уже оплачены — не пересчитываются'));
+    res.paid.forEach(r => body.appendChild(row(r, escapeHtml(money(r.was)) + ', оплачено')));
+  }
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn(res.count ? 'Отмена' : 'Закрыть', 'btn sec', closeModal));
+  if (res.count) {
+    const apply = btn('Пересчитать ' + res.count, 'btn', async () => {
+      apply.disabled = true;
+      try {
+        const done = await api('adminReprice', { stamp: res.stamp });
+        closeModal();
+        toast('Пересчитано броней: ' + done.count, 4000);
+        reload().catch(() => {});
+      } catch (e) {
+        apply.disabled = false;
+        toast(errorText(e.code), 5000);
+      }
+    });
+    acts.appendChild(apply);
+  }
+  body.appendChild(acts);
+  showModal(body);
 }
 
 // Список получасовых меток. Заполночные подписаны словами: «01:00 ночи»
