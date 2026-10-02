@@ -8494,7 +8494,6 @@ function renderSettings(view) {
 
   if (owner) renderClubInfo(view);
   renderPriceRules(view, cfg, owner);
-  if (owner) renderReprice(view);
   if (owner) renderCourts(view);
   if (owner) renderReminders(view);
   if (owner) renderTournamentSignups(view);
@@ -8575,6 +8574,40 @@ function renderSettingsForm(card, cfg) {
   const coachOne = numField(card, 'Индивидуальная тренировка, ₽ за час (с кортом)',
     cfg.coachIndividualPerHour);
   const coachSplit = numField(card, 'Сплит-тренировка, ₽ за час (с кортом)', cfg.coachSplitPerHour);
+
+  // Пересчёт стоит под самими ценами: после их смены это следующий шаг.
+  // Пересчитывает сервер по сохранённым ценам, а «Сохранить» — в самом
+  // низу длинной формы; поэтому изменённые цены кнопка сохраняет сама,
+  // иначе владелец получил бы «менять нечего» по старым.
+  const repriceActs = el('div', 'acts');
+  const repriceBtn = btn('Пересчитать предстоящие брони', 'btn sm sec', async () => {
+    const next = {
+      pricePerHour: Number(price.value),
+      coachIndividualPerHour: Number(coachOne.value),
+      coachSplitPerHour: Number(coachSplit.value),
+    };
+    repriceBtn.disabled = true;
+    try {
+      if (next.pricePerHour !== cfg.pricePerHour || next.coachIndividualPerHour !== cfg.coachIndividualPerHour
+        || next.coachSplitPerHour !== cfg.coachSplitPerHour) {
+        await api('adminUpdateConfig', { patch: { pricing: next } });
+        Object.assign(cfg, next);
+        toast('Цены сохранены');
+      }
+      openRepriceDialog(await api('adminRepricePreview', {}));
+    } catch (e) {
+      if (e.code === 'unauthorized' || e.code === 'token-revoked') { logout(); return; }
+      toast(errorText(e.code), 4000);
+    } finally {
+      repriceBtn.disabled = false;
+    }
+  });
+  repriceActs.appendChild(repriceBtn);
+  card.appendChild(repriceActs);
+  card.appendChild(txt('div', 'empty',
+    'После смены цен: брони, уже записанные на будущие дни, остаются по старой цене, пока их не пересчитать. '
+    + 'Кнопка сохранит новые цены и покажет, что изменится; пересчёт — только после подтверждения. '
+    + 'Оплаченные брони, начавшиеся игры, постоянные и открытые тренировки не меняются. Клиентам бот не пишет.'));
 
   // Часы — выбором из сетки, а не строкой: «до часу ночи» внутри живёт
   // как 25:00, и вводить это руками владелец не должен.
@@ -8675,36 +8708,10 @@ function renderSettingsForm(card, cfg) {
     + 'Сокращать часы работы поверх уже заведённых броней система не даст: сначала покажет, какие мешают.'));
 }
 
-// Пересчёт предстоящих броней по сохранённым ценам. Цена в брони —
-// снимок на момент записи, и после повышения цен уже записанные на
-// будущие дни остаются по старой. Владелец меняет цены в день повышения
-// и жмёт кнопку: сначала список «было → станет», запись — вторым
-// нажатием. Оплаченные, начавшиеся, постоянные и открытые тренировки
-// не трогаются (backend/reprice.js).
-function renderReprice(view) {
-  const card = el('div', 'card');
-  card.innerHTML = '<h2>Пересчёт предстоящих броней <span class="sub">после смены цен</span></h2>';
-  card.appendChild(txt('div', 'empty',
-    'Цена в брони запоминается в момент записи. Подняли цены — брони, уже записанные на будущие дни, '
-    + 'остаются по старой. Сначала сохраните новые цены выше, потом нажмите кнопку: система покажет, '
-    + 'что изменится, и пересчитает только после подтверждения. Оплаченные брони, начавшиеся игры, '
-    + 'постоянные брони и открытые тренировки не меняются. Клиентам бот ничего не пишет.'));
-  const acts = el('div', 'acts');
-  const go = btn('Пересчитать предстоящие брони', 'btn sm', async () => {
-    go.disabled = true;
-    try {
-      openRepriceDialog(await api('adminRepricePreview', {}));
-    } catch (e) {
-      toast(errorText(e.code), 4000);
-    } finally {
-      go.disabled = false;
-    }
-  });
-  acts.appendChild(go);
-  card.appendChild(acts);
-  view.appendChild(card);
-}
-
+// Пересчёт предстоящих броней по сохранённым ценам (backend/reprice.js).
+// Цена в брони — снимок на момент записи, и после повышения цен уже
+// записанные на будущие дни остаются по старой. Сначала список «было →
+// станет», запись — вторым нажатием. Кнопка — под ценами в настройках.
 function openRepriceDialog(res) {
   const body = el('div');
   const p = res.pricing;
