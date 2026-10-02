@@ -130,6 +130,9 @@ const ERRORS = {
   'already-cancelled': 'Бронь уже отменена.',
   'paid-by-pass': 'Эта бронь закрыта абонементом — часы за неё уже списаны.',
   'already-paid': 'Бронь уже оплачена полностью — доплачивать нечего.',
+  'split-over': 'Частей больше, чем осталось оплатить — возможно, часть уже отметили с другого устройства. Откройте заново.',
+  'split-short': 'Частей меньше, чем осталось оплатить — допишите или нажмите «Записать частично».',
+  'invalid-parts': 'Суммы — целыми рублями, без минусов.',
   'already-started': 'Игра уже началась — у неё можно поменять только окончание.',
   'resize-started-group': 'У начавшейся брони с переходом окончание двигается только внутри последнего отрезка.',
   'openplay-duration': 'У открытой тренировки длительность здесь не меняется.',
@@ -140,6 +143,9 @@ const ERRORS = {
   'client-not-found': 'Клиент не найден.',
   'outside-hours': 'Время выходит за часы работы центра.',
   'invalid-name': 'Укажите имя и фамилию.',
+  'invalid-first-name': 'Проверьте имя: буквами, от двух, без цифр и значков.',
+  'invalid-last-name': 'Проверьте фамилию: буквами, от двух, без цифр и значков — или оставьте пустой.',
+  'staff-protected': 'Карточку сотрудника может менять только владелец.',
   'invalid-phone': 'Проверьте номер телефона.',
   'no-seats': 'Мест нет — сначала освободите место или добавьте его в «Изменить состав».',
   'not-single': 'Свести можно только двух одиночек — у кого-то из них уже есть пара.',
@@ -453,6 +459,8 @@ function mapClient(c) {
   return {
     id: c.id,
     name: c.name,
+    firstName: c.firstName || '',
+    lastName: c.lastName || '',
     phone: c.phone,
     tg: !!c.hasTelegram,
     awaitingGroup: !!c.awaitingGroup,
@@ -2070,6 +2078,19 @@ function openBooking(b) {
     const payLine = el('div', 'empty');
     if (b.passSpentAt) {
       payLine.textContent = 'Оплачено абонементом — часы списаны ' + shortDateTime(b.passSpentAt) + '.';
+    } else if (b.paidAt && b.paidSplit) {
+      // Раздельная: за бронь платили несколько человек, каждый своим
+      // способом и в своё время. Части — списком, у каждой кто отметил.
+      const due = bookingDue(b);
+      const parts = [{ via: b.paidVia, sum: b.paidSum, at: b.paidAt, by: b.paidBy }]
+        .concat(Array.isArray(b.paidExtra) ? b.paidExtra : []);
+      payLine.textContent = 'Оплачено частями: ' + parts.map(p => {
+        const by = clientById(p.by);
+        return payViaLabel(p.via) + ' ' + money(p.sum) + ' · ' + shortDateTime(p.at)
+          + (by ? ' · отметил ' + by.name : '');
+      }).join('; ')
+        + (due > 0 ? '. Осталось ' + money(due) + ' — бронь висит в «Не оплачено».'
+          : due < 0 ? '. Бронь подешевела после оплаты — переплата ' + money(-due) + ': верните или зачтите.' : '.');
     } else if (b.paidAt) {
       const who = clientById(b.paidBy);
       const due = bookingDue(b);
@@ -2097,12 +2118,15 @@ function openBooking(b) {
 
     const pay = el('div', 'acts');
     if (!b.passSpentAt && !b.paidAt) {
-      const payButtons = (into) => PAY_VIA.forEach(([via, label]) => {
-        into.appendChild(btn('Оплатил ' + label, 'btn sm', () => {
-          closeModal();
-          act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via }), 'Отмечено: ' + label);
-        }));
-      });
+      const payButtons = (into) => {
+        PAY_VIA.forEach(([via, label]) => {
+          into.appendChild(btn('Оплатил ' + label, 'btn sm', () => {
+            closeModal();
+            act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, via }), 'Отмечено: ' + label);
+          }));
+        });
+        into.appendChild(btn('Разделить оплату', 'btn sm sec', () => openSplitPay(b, bookingDue(b), () => openBooking(b))));
+      };
       if (b.byPass) {
         // Человек может сберечь часы и заплатить деньгами. Тогда отметка
         // оплаты, и ночное задание эту игру не тронет. Кнопки спрятаны за
@@ -2139,6 +2163,8 @@ function openBooking(b) {
               'Доплата ' + money(due) + ' отмечена: ' + label);
           }));
         });
+        // Остаток тоже бывает на двоих: «я наличными, он переводом».
+        pay.appendChild(btn('Разделить остаток', 'btn sm sec', () => openSplitPay(b, due, () => openBooking(b))));
       }
       // Снимает отметку любой администратор, а не только владелец: на
       // стойке легко промахнуться, а звонок владельцу из-за каждого
@@ -2336,24 +2362,26 @@ function openNewBooking(date, courtId, start) {
     // приходилось набирать второй раз. Чужой ввод не затираем.
     onEmpty: (query) => {
       const letters = /[a-zа-яё]/i.test(query);
-      const target = letters ? inpName : inpPhone;
-      if (target.value.trim() && target.value !== autoFilled[letters ? 'name' : 'phone']) return '';
-      target.value = letters ? query : formatPhoneInput(query);
-      autoFilled[letters ? 'name' : 'phone'] = target.value;
-      return letters ? 'Никого не нашлось — имя перенесено ниже, добавьте телефон'
-        : 'Никого не нашлось — номер перенесён ниже, впишите имя';
+      if (letters) {
+        if (names.typed() && names.typed() !== autoFilled.name) return '';
+        names.fill(query);
+        autoFilled.name = names.typed();
+        return 'Никого не нашлось — имя перенесено ниже, добавьте телефон';
+      }
+      if (inpPhone.value.trim() && inpPhone.value !== autoFilled.phone) return '';
+      inpPhone.value = formatPhoneInput(query);
+      autoFilled.phone = inpPhone.value;
+      return 'Никого не нашлось — номер перенесён ниже, впишите имя';
     },
   });
   const autoFilled = { name: '', phone: '' };
 
-  const fName = el('label', 'field'); fName.innerHTML = '<span>Имя</span>';
-  const inpName = document.createElement('input'); inpName.placeholder = 'Имя человека — не заметки';
-  fName.appendChild(inpName);
+  const names = nameFieldsInto(guest, '', '');
   const fPhone = el('label', 'field'); fPhone.innerHTML = '<span>Телефон</span>';
   const inpPhone = document.createElement('input');
   attachPhoneMask(inpPhone);
   fPhone.appendChild(inpPhone);
-  guest.appendChild(fName); guest.appendChild(fPhone);
+  guest.appendChild(fPhone);
   body.appendChild(guest);
 
   // Тренировка со штатным тренером. Цена у неё за час и уже вместе с
@@ -2532,7 +2560,7 @@ function openNewBooking(date, courtId, start) {
     const dur = Number(selDur.value);
     const end = minutesToTime(timeToMinutes(start) + dur);
     if (timeToMinutes(end) > timeToMinutes(db.config.closeTime)) return toast('Не помещается до закрытия');
-    if (!who.id && !inpName.value.trim()) return toast('Найдите клиента или впишите имя');
+    if (!who.id && !names.first.value.trim()) return toast('Найдите клиента или впишите имя');
     const useRepack = repackPick.on && repackPick.option;
     if (!planFits && !useRepack) {
       return toast(repackPick.option ? 'Без перекладки не помещается — отметьте её или выберите другое время'
@@ -2564,7 +2592,8 @@ function openNewBooking(date, courtId, start) {
       extras: extrasPicked().map(x => ({ id: x.item.id, qty: x.qty })),
       comment: inpComment.value.trim() || undefined,
       clientId: who.id || undefined,
-      clientName: who.id ? undefined : inpName.value.trim(),
+      clientFirstName: who.id ? undefined : names.first.value.trim(),
+      clientLastName: who.id ? undefined : names.last.value.trim(),
       clientPhone: who.id ? undefined : inpPhone.value.trim(),
     })).then(res => {
       if (!res) return;
@@ -2911,6 +2940,83 @@ function renderNight() {
   return card;
 }
 
+// Раздельная оплата: бронь одна, а платят за неё несколько человек —
+// кто наличными, кто переводом, кто терминалом. Суммы по способам — в
+// три поля, внизу живой счёт «внесено из». «Подтвердить» — только когда
+// сошлось с остатком. Меньше — отдельной кнопкой «Записать частично»:
+// один заплатил до игры, второй после, третий переведёт вечером, и
+// остаток висит в «Не оплачено», пока его не добьют. Больше — никогда:
+// перебор у стойки возвращают сразу, а не записывают.
+//
+// back — куда вернуться по «Назад» (карточка брони); null — просто закрыть.
+function openSplitPay(b, due, back) {
+  const body = el('div');
+  body.innerHTML = '<h3>Раздельная оплата</h3>'
+    + '<div class="m-sub">' + escapeHtml((b.clientName || '') + ' · ' + longDate(b.date) + ' · '
+      + fmtRange(b.start, b.end) + ' · осталось оплатить ' + money(due)) + '</div>'
+    + '<div class="empty">Впишите, сколько принято каждым способом. Двое платят наличными — '
+    + 'сложите в одно поле. Не все заплатили сейчас — «Записать частично», остаток '
+    + 'добьёте позже.</div>';
+
+  const inputs = {};
+  const read = () => PAY_VIA.map(([via]) => ({ via, sum: Math.round(Number(inputs[via].value) || 0) }));
+  const got = () => read().reduce((s, p) => s + Math.max(0, p.sum), 0);
+
+  PAY_VIA.forEach(([via, label]) => {
+    const row = el('div', 'split-row');
+    row.appendChild(txt('span', '', label.charAt(0).toUpperCase() + label.slice(1)));
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.inputMode = 'numeric'; inp.min = '0'; inp.step = '50'; inp.placeholder = '0';
+    inp.addEventListener('input', update);
+    inputs[via] = inp;
+    row.appendChild(inp);
+    // «Остаток сюда»: трое заплатили наличными, последний — переводом.
+    // Считать в уме у стойки — первый источник ошибки в кассе.
+    row.appendChild(btn('остаток', 'btn sm sec', () => {
+      const others = got() - Math.max(0, Number(inp.value) || 0);
+      inp.value = String(Math.max(0, due - others));
+      update();
+    }));
+    body.appendChild(row);
+  });
+
+  const counter = el('div', 'split-sum');
+  body.appendChild(counter);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn(back ? 'Назад' : 'Отмена', 'btn sec', () => (back ? back() : closeModal())));
+  const partialBtn = btn('Записать частично', 'btn sec', () => send(true));
+  const confirmBtn = btn('Подтвердить', 'btn', () => send(false));
+  acts.appendChild(partialBtn);
+  acts.appendChild(confirmBtn);
+  body.appendChild(acts);
+
+  function update() {
+    const sum = got();
+    const left = due - sum;
+    const bad = left < 0 || read().some(p => p.sum < 0);
+    counter.className = 'split-sum' + (bad ? ' bad' : left === 0 ? ' ok' : '');
+    counter.textContent = 'Внесено ' + money(sum) + ' из ' + money(due)
+      + (bad ? (left < 0 ? ' · лишние ' + money(-left) + ' — проверьте суммы' : ' · сумма с минусом')
+        : left === 0 ? ' · сошлось ✓' : ' · осталось ' + money(left));
+    confirmBtn.disabled = bad || left !== 0;
+    partialBtn.disabled = bad || sum <= 0 || left <= 0;
+  }
+  update();
+
+  function send(partial) {
+    const parts = read().filter(p => p.sum > 0);
+    const sum = got();
+    closeModal();
+    act(() => api('adminSetPaid', { date: b.date, bookingId: b.id, parts, partial: partial || undefined }),
+      partial ? 'Записано ' + money(sum) + ', осталось ' + money(due - sum)
+        : 'Оплата отмечена частями: ' + parts.map(p => payViaLabel(p.via) + ' ' + money(p.sum)).join(', '));
+  }
+
+  showModal(body);
+  setTimeout(() => inputs[PAY_VIA[0][0]].focus(), 50);
+}
+
 // Неоплаченные брони — рабочая очередь смены.
 //
 // Онлайн-кассы у центра нет: платят на месте, наличными или переводом,
@@ -2954,14 +3060,15 @@ function renderUnpaid() {
     const topUp = b.paidBefore != null;
     const it = el('div', 'item' + (stale ? ' hl' : ''));
     it.innerHTML = '<div class="t1">' + escapeHtml(b.clientName) + ' · <b>' + money(b.sum) + '</b>'
-      + (topUp ? ' <span class="pill wait">доплата</span>' : '')
+      + (topUp ? ' <span class="pill wait">' + (b.partial ? 'остаток' : 'доплата') + '</span>' : '')
       + (b.coaching ? ' <span class="pill ok">' + escapeHtml(b.coaching.name) + '</span>' : '')
       + '</div>'
       + '<div class="t2">' + escapeHtml(longDate(b.date) + ' · ' + fmtRange(b.start, b.end)
         + ' · ' + courtName(b.courtId))
       + (b.clientPhone ? ' · ' + escapeHtml(fmtPhone(b.clientPhone)) : '') + '</div>'
       + (topUp ? '<div class="t2">Уже оплачено ' + escapeHtml(money(b.paidBefore))
-        + ' — бронь продлили после отметки, осталось взять разницу.</div>' : '');
+        + (b.partial ? ' частями — осталось взять с тех, кто ещё не заплатил.</div>'
+          : ' — бронь продлили после отметки, осталось взять разницу.</div>') : '');
 
     const acts = el('div', 'acts');
     PAY_VIA.forEach(([via, label]) => {
@@ -2969,6 +3076,7 @@ function renderUnpaid() {
         () => api('adminSetPaid', { date: b.date, bookingId: b.id, via }),
         (topUp ? 'Доплата отмечена: ' : 'Отмечено: ') + label)));
     });
+    acts.appendChild(btn('Разделить', 'btn sm sec', () => openSplitPay(b, b.sum, null)));
     // Не пришёл — тоже закрытие долга, только другое: денег нет и
     // не будет, а рейтинг за это снимается. У доплаты человек заведомо
     // был — он уже платил.
@@ -3143,7 +3251,7 @@ function shortDateTime(iso) {
 // его при каждом заходе не стоит.
 const CLIENT_SORTS = [
   { id: 'default', label: 'сначала ждущие проверки' },
-  { id: 'name', label: 'по имени, А→Я' },
+  { id: 'name', label: 'по фамилии, А→Я' },
   { id: 'rating-asc', label: 'рейтинг: сначала низкий' },
   { id: 'rating-desc', label: 'рейтинг: сначала высокий' },
   { id: 'ntrp-desc', label: 'игровой уровень: сначала сильные' },
@@ -3155,11 +3263,17 @@ const CLIENT_SORTS = [
   // Не порядок, а отбор: уровень проставляют по списку, и тем, у кого он
   // уже есть, в этом списке делать нечего.
   { id: 'no-ntrp', label: 'только без игрового уровня' },
+  // Тоже отбор: имя с фамилией разделили, когда клиентов было уже много,
+  // и у старых карточек фамилии отдельно нет. Кого администратор знает —
+  // поправит по этому списку, остальных спросят при входе.
+  { id: 'no-last', label: 'только без фамилии' },
 ];
 
 function sortedClients() {
   const list = db.clients.slice();
-  const byName = (a, b) => a.name.localeCompare(b.name, 'ru');
+  // По фамилии, а где её нет отдельно — по тому, что записано.
+  const sortKey = c => (c.lastName ? c.lastName + ' ' + c.firstName : c.name);
+  const byName = (a, b) => sortKey(a).localeCompare(sortKey(b), 'ru');
   // Уровень известен не у всех, и «не знаем» — это не ноль: такие
   // карточки уезжают в конец при любой сортировке по NTRP, иначе они
   // притворяются самыми слабыми игроками клуба.
@@ -3181,6 +3295,7 @@ function sortedClients() {
     case 'no-tg': return list.sort((a, b) => (a.tg === b.tg) ? byName(a, b) : (a.tg ? 1 : -1));
     case 'games': return list.sort((a, b) => b.completedCount - a.completedCount || byName(a, b));
     case 'no-ntrp': return list.filter(c => c.ntrp == null).sort(byName);
+    case 'no-last': return list.filter(c => !c.lastName).sort(byName);
     // Порядок сервера: ждущие проверки сверху, дальше по имени.
     default: return list;
   }
@@ -3213,6 +3328,10 @@ function renderClients(view) {
     }); }, 350);
   });
   card.appendChild(search);
+
+  const addRow = el('div', 'acts');
+  addRow.appendChild(btn('+ Новый клиент', 'btn sm', openNewClient));
+  card.appendChild(addRow);
 
   // Порядок списка. Сортируем уже полученный список, а не переспрашиваем
   // сервер: список за один запрос и так в руках, а лишний вызов у нас
@@ -3273,6 +3392,9 @@ function renderClients(view) {
     // важно: у зарегистрировавшегося без Telegram напоминания не дошли,
     // а этот их и не ждал — и войти в свою учётку пока не может.
     if (c.createdByAdmin) flags.push('<span class="pill grey">с улицы</span>');
+    // Фамилии отдельно нет — человека спросят при входе, а знаете его
+    // сейчас — поправьте сами кнопкой «Поправить имя».
+    if (!c.lastName) flags.push('<span class="pill grey">без фамилии</span>');
     // Метка есть — рядом сразу видно, до какого рейтинга человеку
     // подниматься. Иначе у стойки не ответить на «а когда снимется».
     if (c.needsPrepay) {
@@ -3305,13 +3427,16 @@ function renderClients(view) {
         + (lastEdit.reason ? ' · ' + lastEdit.reason : '')));
     }
 
-    // Имя правил владелец — под каким человек записан в прошлых
-    // турнирных таблицах, из этой строки и видно.
+    // Имя правили — под каким человек записан в прошлых турнирных
+    // таблицах, из этой строки и видно. Правят и сам человек, и смена,
+    // поэтому называем, кто именно.
     const nameEdits = c.nameEdits || [];
-    const lastName = nameEdits[nameEdits.length - 1];
-    if (lastName) {
-      it.appendChild(txt('div', 't3', 'Имя правил владелец ' + shortDateTime(lastName.at)
-        + ': ' + lastName.from + ' → ' + lastName.to));
+    const lastRename = nameEdits[nameEdits.length - 1];
+    if (lastRename) {
+      const by = lastRename.by === c.id ? null : clientById(lastRename.by);
+      it.appendChild(txt('div', 't3', 'Имя правил'
+        + (lastRename.by === c.id ? ' сам клиент' : by ? ' ' + by.name : '') + ' ' + shortDateTime(lastRename.at)
+        + ': ' + lastRename.from + ' → ' + lastRename.to));
     }
 
     if (owner) it.appendChild(ntrpField(c));
@@ -3355,6 +3480,10 @@ function renderClients(view) {
     // него быть не должно вовсе.
     if (me && me.role === 'owner') {
       acts.appendChild(btn('Поправить рейтинг', 'btn sm sec', () => openRatingForm(c)));
+    }
+    // Имя и фамилию узнаёт у стойки смена — правит любой администратор.
+    // Карточки сотрудников — только владелец, как и их пароли.
+    if (c.role === 'client' || (me && (me.role === 'owner' || me.id === c.id))) {
       acts.appendChild(btn('Поправить имя', 'btn sm sec', () => openNameForm(c)));
     }
     it.appendChild(acts);
@@ -3473,7 +3602,8 @@ function openClientVisits(c, month) {
           // ним платят помесячно, а не за игру.
           + (v.kind === 'series' ? ''
             : (v.passSpentAt ? ' <span class="pill ok">абонемент</span>'
-              : (v.paidAt && v.due > 0 ? ' <span class="pill bad">доплата ' + escapeHtml(money(v.due)) + '</span>'
+              : (v.paidAt && v.due > 0 ? ' <span class="pill bad">' + (v.paidSplit ? 'остаток ' : 'доплата ')
+                + escapeHtml(money(v.due)) + '</span>'
               : v.paidAt ? ' <span class="pill ok">оплачено</span>'
                 : (isPast(v.date, v.end) && v.status === 'confirmed'
                   ? ' <span class="pill bad">не оплачено</span>' : ''))))
@@ -3681,26 +3811,114 @@ function openRatingForm(c) {
   setTimeout(() => reason.focus(), 50);
 }
 
+// Имя и фамилия нового человека в формах панели. Фамилия необязательна:
+// у стойки её часто не знают — тогда её спросят у самого человека, когда
+// он войдёт на сайт.
+function nameFieldsInto(into, first, last) {
+  const make = (label, value, placeholder) => {
+    const inp = document.createElement('input');
+    inp.value = value || '';
+    inp.placeholder = placeholder;
+    inp.maxLength = 30;
+    wrapField(into, label, inp);
+    return inp;
+  };
+  const f = make('Имя', first, 'Имя человека — не заметки');
+  const l = make('Фамилия — если знаете', last, 'не знаете — спросим при входе');
+  return {
+    first: f,
+    last: l,
+    typed: () => (f.value.trim() + ' ' + l.value.trim()).trim(),
+    // «Иван Петров» из строки поиска — сразу по двум полям.
+    fill(text) {
+      const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+      f.value = words[0] || '';
+      l.value = words.slice(1).join(' ');
+    },
+  };
+}
+
+// Карточка без записи на время: человек позвонил узнать, купил
+// абонемент, его переносят из бумажного журнала. Раньше завести такого
+// можно было только бронью или записью на турнир.
+//
+// После сохранения список сужается до его номера — и новая карточка, и
+// уже существующая (сервер двойника не заводит) сразу перед глазами.
+function openNewClient() {
+  const body = el('div');
+  body.innerHTML = '<h3>Новый клиент</h3>'
+    + '<div class="m-sub">Карточка без записи на время. Номер уже есть в базе — '
+    + 'второй карточки не будет, покажем существующую.</div>';
+
+  const names = nameFieldsInto(body, '', '');
+  const phone = document.createElement('input');
+  attachPhoneMask(phone);
+  wrapField(body, 'Телефон', phone);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Завести', 'btn', () => {
+    if (names.first.value.trim().length < 2) { toast('Укажите имя'); return; }
+    if (phone.value.replace(/\D/g, '').length < 10) { toast('Проверьте номер телефона'); return; }
+    closeModal();
+    act(async () => {
+      const res = await api('adminCreateClient', {
+        firstName: names.first.value.trim(), lastName: names.last.value.trim(), phone: phone.value.trim(),
+      });
+      state.clientQuery = res.client.phone.replace(/\D/g, '').slice(-10);
+      return res;
+    }).then(res => {
+      if (!res) return;
+      toast(res.created ? 'Карточка заведена: ' + res.client.name
+        : 'Этот номер уже есть: ' + res.client.name + ' — показываю его карточку', 4500);
+    });
+  }));
+  body.appendChild(acts);
+
+  showModal(body);
+  setTimeout(() => names.first.focus(), 50);
+}
+
+// Заготовка формы правки: разложенное — как есть, иначе первое слово в
+// имя, остальное в фамилию. «Клиент» и «Гость» — заглушки, которые
+// ставили, не спросив человека: их предлагать нечего.
+function nameGuess(c) {
+  if (c.firstName) return { first: c.firstName, last: c.lastName || '' };
+  const name = String(c.name || '').trim();
+  if (!name || /^(клиент|гость|client|guest)\b/i.test(name)) return { first: '', last: '' };
+  const words = name.split(/\s+/);
+  return { first: words[0], last: words.slice(1).join(' ') };
+}
+
 // Правка имени. Нужна не «на всякий случай»: имя стоит подписью в
 // турнирных таблицах и в зачёте очков, а заводят карточки по-разному —
 // «Иванов Д.», «Дмитрий Иванов», «иванов дмитрий». В зачёте это три
 // разных человека, и свести их можно только приведя карточки к одному
-// виду. Поэтому правит только владелец и след остаётся.
+// виду. След правки остаётся: кто, когда, из чего.
 function openNameForm(c) {
   const body = el('div');
   body.innerHTML = '<h3>Поправить имя</h3>'
     + '<div class="m-sub">' + escapeHtml(c.name + ' · ' + fmtPhone(c.phone)) + '</div>'
-    + '<div class="empty">Держим один вид записи: «Имя Фамилия». По имени человек ищется '
+    + '<div class="empty">Записывается как «Имя Фамилия». По имени человек ищется '
     + 'в списке, оно же стоит в турнирных таблицах и в зачёте очков — разнобой там '
-    + 'превращает одного игрока в трёх.</div>';
+    + 'превращает одного игрока в трёх. Фамилию не знаете — оставьте пустой, '
+    + 'человека спросят при входе.</div>';
 
-  const name = document.createElement('input');
-  name.value = c.name;
-  name.maxLength = 60;
-  wrapField(body, 'Имя и фамилия', name);
+  const guess = nameGuess(c);
+  const names = nameFieldsInto(body, guess.first, guess.last);
 
-  // Прежние варианты — чтобы владелец видел, что имя уже правили, и не
-  // ходил по кругу.
+  // Старые карточки записаны как попало, и «Иванов Дмитрий» разложится
+  // наоборот. Поменять местами — одно нажатие, а не перепечатывать оба.
+  const swap = el('div', 'acts');
+  swap.appendChild(btn('⇄ Поменять местами', 'btn sm sec', () => {
+    const f = names.first.value;
+    names.first.value = names.last.value;
+    names.last.value = f;
+  }));
+  body.appendChild(swap);
+
+  // Прежние варианты — чтобы было видно, что имя уже правили, и не
+  // ходить по кругу.
   (c.nameEdits || []).slice(-3).reverse().forEach(e => {
     body.appendChild(txt('div', 't3', shortDateTime(e.at) + ': ' + e.from + ' → ' + e.to));
   });
@@ -3708,14 +3926,20 @@ function openNameForm(c) {
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   acts.appendChild(btn('Сохранить', 'btn', () => {
-    if (name.value.trim().length < 2) { toast('Укажите имя'); return; }
+    if (names.first.value.trim().length < 2) { toast('Укажите имя'); return; }
     closeModal();
-    act(() => api('adminRenameClient', { clientId: c.id, name: name.value }), 'Имя изменено');
+    act(() => api('adminRenameClient', {
+      clientId: c.id, firstName: names.first.value, lastName: names.last.value,
+    }), 'Имя изменено');
   }));
   body.appendChild(acts);
 
   showModal(body);
-  setTimeout(() => { name.focus(); name.setSelectionRange(name.value.length, name.value.length); }, 50);
+  setTimeout(() => {
+    const target = guess.first && !guess.last ? names.last : names.first;
+    target.focus();
+    target.setSelectionRange(target.value.length, target.value.length);
+  }, 50);
 }
 
 // Временный пароль показываем один раз и крупно: админ диктует его или
@@ -7190,8 +7414,8 @@ function openWithdrawForm(t, p) {
 // которого в базе нет, заводим здесь же, именем и телефоном: гонять
 // администратора ради одной карточки на другую вкладку — лишний круг.
 //
-// onPick получает { clientId } или { newClient: { name, phone } } — ровно
-// те поля, что уходят на сервер.
+// onPick получает { clientId } или { newClient: { firstName, lastName,
+// phone } } — ровно те поля, что уходят на сервер.
 function openPickClient(t, title, onPick) {
   const body = el('div');
   body.innerHTML = '<h3>' + escapeHtml(title) + '</h3>'
@@ -7209,19 +7433,19 @@ function openPickClient(t, title, onPick) {
   // того человека, а не заведёт двойника.
   const fresh = el('div', 'item');
   fresh.appendChild(txt('div', 't1', 'Нет в базе — завести карточку и записать'));
-  const name = document.createElement('input');
-  name.placeholder = 'Например: Андрей Секачев';
-  wrapField(fresh, 'Имя и фамилия', name);
+  const names = nameFieldsInto(fresh, '', '');
   const phone = document.createElement('input');
   phone.type = 'tel';
   phone.placeholder = '+7 918 000-00-00';
   wrapField(fresh, 'Телефон', phone);
   const freshActs = el('div', 'acts');
   freshActs.appendChild(btn('Завести и записать', 'btn sm', () => {
-    if (name.value.trim().length < 2) { toast('Укажите имя и фамилию'); return; }
+    if (names.first.value.trim().length < 2) { toast('Укажите имя'); return; }
     if (phone.value.replace(/\D/g, '').length < 10) { toast('Проверьте номер телефона'); return; }
     closeModal();
-    onPick({ newClient: { name: name.value.trim(), phone: phone.value.trim() } });
+    onPick({ newClient: {
+      firstName: names.first.value.trim(), lastName: names.last.value.trim(), phone: phone.value.trim(),
+    } });
   }));
   fresh.appendChild(freshActs);
   body.appendChild(fresh);
@@ -7234,7 +7458,7 @@ function openPickClient(t, title, onPick) {
   // Вписанное руками в форму не трогаем: поиск дальше может сузиться,
   // а набранное имя пропадать не должно.
   let touched = false;
-  [name, phone].forEach(x => x.addEventListener('input', () => { touched = true; }));
+  [names.first, names.last, phone].forEach(x => x.addEventListener('input', () => { touched = true; }));
   function showFresh(on) {
     fresh.style.display = on ? '' : 'none';
     openRow.style.display = on ? 'none' : '';
@@ -7262,7 +7486,7 @@ function openPickClient(t, title, onPick) {
       // Набранное в поиске — это и есть данные нового человека: номер
       // или имя, смотря что вводили.
       if (!touched) {
-        if (digits.length >= 5) { phone.value = raw; name.value = ''; } else { name.value = raw; phone.value = ''; }
+        if (digits.length >= 5) { phone.value = raw; names.fill(''); } else { names.fill(raw); phone.value = ''; }
       }
       showFresh(true);
       return;

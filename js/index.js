@@ -214,6 +214,8 @@ const ERRORS = {
   'password-is-phone': 'Пароль не может быть вашим номером телефона.',
   'wrong-current-password': 'Текущий пароль неверный.',
   'invalid-name': 'Укажите имя и фамилию.',
+  'invalid-first-name': 'Проверьте имя: буквами, от двух, без цифр и значков.',
+  'invalid-last-name': 'Проверьте фамилию: буквами, от двух, без цифр и значков.',
   'invalid-phone': 'Проверьте номер телефона.',
   'item-not-found': 'Этой позиции больше нет — обновите страницу.',
   'option-required': 'Выберите тариф — без него администратор не поймёт, о чём заявка.',
@@ -456,8 +458,10 @@ async function load() {
 
   // Сессия по временному паролю переживает перезагрузку страницы — и
   // окно смены вместе с ней: иначе обновить вкладку значило бы обойти его.
-  if (state.auth && state.auth.client && state.auth.client.mustChangePassword) {
-    requirePasswordChange(openAsked);
+  // То же с окном имени: вход через Mini App попадает сюда же.
+  const who = state.auth && state.auth.client;
+  if (who && (who.mustChangePassword || who.needsName)) {
+    requireProfileSteps(openAsked);
   } else {
     openAsked();
   }
@@ -2166,7 +2170,7 @@ function openAuth(mode) {
           setTimeout(startBooking, 300);
         }
       };
-      if (r.client.mustChangePassword) { requirePasswordChange(resume); return; }
+      if (r.client.mustChangePassword || r.client.needsName) { requireProfileSteps(resume); return; }
 
       toast('С возвращением, ' + r.client.name.split(' ')[0] + '!');
       resume();
@@ -2189,14 +2193,9 @@ function openAuth(mode) {
     tabs.appendChild(tLogin); tabs.appendChild(tReg);
     body.appendChild(tabs);
 
-    let inpName = null;
+    let nameFields = null;
     if (tab === 'register') {
-      const f = el('label', 'field');
-      f.innerHTML = '<span>Имя и фамилия</span>';
-      inpName = document.createElement('input');
-      inpName.placeholder = 'Иван Петров';
-      inpName.autocomplete = 'name';
-      f.appendChild(inpName); body.appendChild(f);
+      nameFields = nameInputs(body, '', '');
     }
 
     const fPhone = el('label', 'field');
@@ -2236,8 +2235,8 @@ function openAuth(mode) {
         const res = tab === 'login'
           ? await api('login', { phone: inpPhone.value, password: inpPass.value })
           : await api('register', {
-            name: inpName ? inpName.value : '', phone: inpPhone.value,
-            password: inpPass.value, consent: true,
+            firstName: nameFields.first.value, lastName: nameFields.last.value,
+            phone: inpPhone.value, password: inpPass.value, consent: true,
           });
 
         if (tab === 'register' && res.existing) {
@@ -2268,7 +2267,7 @@ function openAuth(mode) {
           }
         };
 
-        if (res.client.mustChangePassword) { requirePasswordChange(resume); return; }
+        if (res.client.mustChangePassword || res.client.needsName) { requireProfileSteps(resume); return; }
 
         if (tab === 'register') toast('Заявка отправлена администратору', 3600);
         else toast('С возвращением, ' + res.client.name.split(' ')[0] + '!');
@@ -2298,7 +2297,7 @@ function openAuth(mode) {
     }
 
     showModal(body);
-    setTimeout(() => (inpName || inpPhone).focus(), 50);
+    setTimeout(() => (nameFields ? nameFields.first : inpPhone).focus(), 50);
   }
 
   draw();
@@ -2434,6 +2433,89 @@ function requirePasswordChange(then) {
   state.modalLocked = true;
   showModal(body);
   setTimeout(() => inp.focus(), 50);
+}
+
+// Что сделать до того, как пустить дальше: сменить временный пароль,
+// потом назвать себя. По очереди — двух окон разом не покажешь.
+function requireProfileSteps(then) {
+  const c = state.auth && state.auth.client;
+  if (c && c.mustChangePassword) { requirePasswordChange(() => requireProfileSteps(then)); return; }
+  if (c && c.needsName) { requireName(() => requireProfileSteps(then)); return; }
+  if (then) then();
+}
+
+// Два поля — имя и фамилия. Общие для регистрации, кабинета и окна
+// «Как вас зовут?», чтобы правила и подсказки не разошлись.
+function nameInputs(into, first, last) {
+  const make = (label, value, placeholder, autocomplete) => {
+    const f = el('label', 'field');
+    f.innerHTML = '<span>' + label + '</span>';
+    const inp = document.createElement('input');
+    inp.value = value || '';
+    inp.placeholder = placeholder;
+    inp.autocomplete = autocomplete;
+    inp.maxLength = 30;
+    f.appendChild(inp);
+    into.appendChild(f);
+    return inp;
+  };
+  return {
+    first: make('Имя', first, 'Иван', 'given-name'),
+    last: make('Фамилия', last, 'Петров', 'family-name'),
+  };
+}
+
+// Заготовка для окна: разложенное — как есть, иначе первое слово в имя,
+// остальное в фамилию. «Клиент» и «Гость» — не имя, а заглушка, которую
+// ставили, не спросив человека: такое предлагать нечего.
+function nameGuess(c) {
+  if (c.firstName) return { first: c.firstName, last: c.lastName || '' };
+  const name = String(c.name || '').trim();
+  if (!name || /^(клиент|гость|client|guest)\b/i.test(name)) return { first: '', last: '' };
+  const words = name.split(/\s+/);
+  return { first: words[0], last: words.slice(1).join(' ') };
+}
+
+// Имени с фамилией в карточке нет: она заведена до разделения полей,
+// администратором «с улицы», где фамилию часто не спрашивают, или из
+// Telegram, где вместо имени бывает никнейм. Дальше не пускаем, как с
+// временным паролем: в турнирной таблице и в зачёте очков нужна именно
+// фамилия, а спросить потом будет не у кого.
+function requireName(then) {
+  const c = state.auth.client;
+  const guess = nameGuess(c);
+  const body = el('div');
+  body.innerHTML = '<h3>Как вас зовут?</h3>'
+    + '<div class="m-sub">' + (guess.first && guess.last
+      ? 'Проверьте имя и фамилию — так вас увидят администратор и турнирные таблицы. '
+        + 'Если всё верно, просто сохраните.'
+      : 'Укажите настоящие имя и фамилию — так вас увидят администратор и турнирные таблицы.')
+    + '</div>';
+
+  const fields = nameInputs(body, guess.first, guess.last);
+
+  const save = async () => {
+    try {
+      const res = await api('updateProfile', { firstName: fields.first.value, lastName: fields.last.value });
+      state.auth.client = res.client;
+      state.modalLocked = false;
+      closeModal();
+      toast('Спасибо, ' + res.client.firstName + '!');
+      renderHero(); renderNav();
+      if (state.view === 'profile') renderProfile();
+      if (then) then();
+    } catch (e) { toast(errorText(e.code), 3600); }
+  };
+  [fields.first, fields.last].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') save(); }));
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Выйти', 'btn sec', () => logout(false)));
+  acts.appendChild(btn('Сохранить', 'btn', save));
+  body.appendChild(acts);
+
+  state.modalLocked = true;
+  showModal(body);
+  setTimeout(() => (guess.first ? fields.last : fields.first).focus(), 50);
 }
 
 function logout(silent) {
@@ -4028,16 +4110,12 @@ function renderProfile() {
         : '')));
   }
 
-  const fName = el('label', 'field');
-  fName.innerHTML = '<span>Имя и фамилия</span>';
-  const inpName = document.createElement('input');
-  inpName.value = client.name;
-  fName.appendChild(inpName);
-  c1.appendChild(fName);
+  const guess = nameGuess(client);
+  const nameFields = nameInputs(c1, guess.first, guess.last);
 
   const saveName = btn('Сохранить имя', 'btn sm', async () => {
     try {
-      const res = await api('updateProfile', { name: inpName.value });
+      const res = await api('updateProfile', { firstName: nameFields.first.value, lastName: nameFields.last.value });
       state.auth.client = res.client;
       renderHero(); renderProfile();
       toast('Имя сохранено');
