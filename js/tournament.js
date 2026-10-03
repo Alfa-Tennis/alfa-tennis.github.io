@@ -9,7 +9,8 @@ const store = {
   set(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* переживём */ } },
 };
 
-const state = { id: null, t: null };
+// blank — лист для ручки: те же группы, но без счёта, очков и мест.
+const state = { id: null, t: null, blank: false };
 
 function el(tag, cls) { const d = document.createElement(tag); if (cls) d.className = cls; return d; }
 function txt(tag, cls, text) { const d = el(tag, cls); d.textContent = text; return d; }
@@ -75,6 +76,7 @@ function render() {
   // Пока плей-офф нет, на листе одни группы — книжным листом и крупно,
   // по группе в ряд. С сетками плей-офф лист альбомный, по две в ряд.
   document.body.classList.toggle('tall', !t.main && !t.consolation);
+  document.body.classList.toggle('blank', state.blank);
 
   const head = el('div', 'card');
   const st = STATUS[t.status] || ['grey', t.status];
@@ -104,6 +106,12 @@ function render() {
     acts.appendChild(button('Показать жеребьёвку', 'btn sec', () => playCeremony(false)));
   }
   acts.appendChild(button('На печать', 'btn sec', () => window.print()));
+  // Пустой лист нужен в начале: его вешают на стенд и вписывают счёт
+  // ручкой. Когда пошёл плей-офф, группы уже сыграны — пустой лист
+  // только врал бы.
+  if (t.drawnAt && (t.groups || []).length && !t.main && !t.consolation) {
+    acts.appendChild(button('Пустой лист на печать', 'btn sec', printBlank));
+  }
   head.appendChild(acts);
   if (t.drawnAt && t.drawManual) {
     head.appendChild(txt('div', 'meta', 'Группы составлены жеребьёвкой в клубе.'));
@@ -166,6 +174,19 @@ function render() {
   view.appendChild(playoff);
 }
 
+// Пустой лист рисуется заново и только на время печати: после диалога
+// страница возвращается к счёту. Ctrl+P без кнопки печатает заполненный.
+function printBlank() {
+  state.blank = true;
+  render();
+  window.print();
+}
+window.addEventListener('afterprint', () => {
+  if (!state.blank) return;
+  state.blank = false;
+  render();
+});
+
 function button(label, cls, onClick) {
   const b = document.createElement('button');
   b.type = 'button'; b.className = cls; b.textContent = label;
@@ -210,14 +231,18 @@ function renderFirstMatches(view, t) {
 function renderGroup(view, t, g) {
   const card = el('div', 'card');
   const left = g.matches.filter(m => !m.winner).length;
+  // Пустой лист: имена и номера те же, а счёт, очки и места — пустые
+  // клетки под ручку. Столбец «Место» на нём есть всегда: его тоже
+  // вписывают руками.
+  const blank = state.blank;
   card.innerHTML = '<h2>Группа ' + escapeHtml(g.key)
-    + ' <span class="tag">' + (left ? 'не сыграно ' + left + ' из ' + g.matches.length
-      : 'все матчи сыграны') + '</span></h2>';
+    + (blank ? '' : ' <span class="tag">' + (left ? 'не сыграно ' + left + ' из ' + g.matches.length
+      : 'все матчи сыграны') + '</span>') + '</h2>';
 
   const advance = t.format.groupCount > 0 ? t.format.advance : 0;
   // Места — только когда группа доиграна: до того «место» по двум
   // сыгранным матчам из шести читалось как итог.
-  const done = !left;
+  const done = !left && !blank;
   // Строки стоят по месту в группе после жеребьёвки, а не по таблице:
   // номер строки и есть номер столбца, 1–4 по обеим осям, и он не
   // прыгает от матча к матчу. Номера записи (те, что на мячах) тут
@@ -233,7 +258,7 @@ function renderGroup(view, t, g) {
   let head = '<thead><tr><th class="n"></th><th class="who">Игрок</th>';
   members.forEach((p, i) => { head += '<th class="sc">' + (i + 1) + '</th>'; });
   head += '<th class="agg">Очки</th><th class="agg">Сеты</th><th class="agg">Геймы</th>'
-    + (done ? '<th class="pl">Место</th>' : '') + '</tr></thead>';
+    + (done || blank ? '<th class="pl">Место</th>' : '') + '</tr></thead>';
   table.innerHTML = head;
 
   const tbody = document.createElement('tbody');
@@ -257,12 +282,15 @@ function renderGroup(view, t, g) {
       // Матчи аннулированного в таблицу не идут — и в клетке их нет: рядом
       // с теми, что считаются, счёт читался бы как ещё один результат.
       const off = annulled.has(p.id) || annulled.has(op.id);
+      if (blank) { html += '<td class="sc"></td>'; return; }
       html += '<td class="sc">' + (off ? '<span class="pend">—</span>' : crossCell(t, g, p.id, op.id)) + '</td>';
     });
-    html += '<td class="pts"><b>' + row.points + '</b></td>'
-      + '<td class="agg">' + row.setsWon + ':' + row.setsLost + ' ' + diffTag(row.setDiff) + '</td>'
-      + '<td class="agg">' + row.gamesWon + ':' + row.gamesLost + ' ' + diffTag(row.gameDiff) + '</td>'
-      + (done ? '<td class="pl">' + (row.place || '—') + '</td>' : '');
+    html += blank
+      ? '<td class="pts"></td><td class="agg"></td><td class="agg"></td><td class="pl"></td>'
+      : '<td class="pts"><b>' + row.points + '</b></td>'
+        + '<td class="agg">' + row.setsWon + ':' + row.setsLost + ' ' + diffTag(row.setDiff) + '</td>'
+        + '<td class="agg">' + row.gamesWon + ':' + row.gamesLost + ' ' + diffTag(row.gameDiff) + '</td>'
+        + (done ? '<td class="pl">' + (row.place || '—') + '</td>' : '');
     tr.innerHTML = html;
     tbody.appendChild(tr);
   });

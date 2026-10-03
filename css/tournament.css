@@ -288,4 +288,12 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
   body.tall table.cross th, body.tall table.cross td { padding: 6px; }
   body.tall table.cross th.sc, body.tall table.cross td.sc { min-width: 70px; }
   body.tall table.cross .seedpts, body.tall table.cross th.agg, body.tall table.cross td.agg { font-size: 14px; }
+
+  /* Штриховка «сам с собой» — фоном, а фон браузер по умолчанию не
+     печатает: на пустом листе такая клетка выглядела бы как ещё одна
+     клетка для счёта. */
+  table.cross td.sc.self { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Пустой лист под ручку: видимая сетка клеток и место под цифры. */
+  body.blank table.cross th, body.blank table.cross td { border: 1px solid #888; }
+  body.blank table.cross td.pts, body.blank table.cross td.agg, body.blank table.cross td.pl { min-width: 64px; }
 }
