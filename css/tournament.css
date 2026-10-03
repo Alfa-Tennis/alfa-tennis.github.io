@@ -246,8 +246,14 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
    и всё, кроме названия и самих сеток, с него убирается; группы и сетки
    плей-офф встают по две в ряд. Альбомный лист — потому что сетка
    плей-офф растёт вширь, а группы по две в ряд на книжном не влезают
-   по ширине. */
+   по ширине.
+   Пока плей-офф нет (класс tall у body), на листе одни группы: тогда
+   книжный лист, по группе в ряд и всё крупнее — так их читают у стенда
+   издалека. Ориентация переключается именованной страницей: @page
+   внутри класса не бывает. */
+.print-head { display: none; font-size: 13px; color: var(--ink-soft); }
 @page { size: A4 landscape; margin: 8mm; }
+@page tall { size: A4 portrait; margin: 10mm; }
 @media print {
   body { background: #fff; font-size: 11px; }
   .hero, .acts, .stage, .noprint { display: none !important; }
@@ -270,5 +276,16 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
   .slot { border-radius: 4px; }
   .slot .side { padding: 1px 4px; font-size: 9px; }
   .print-head { display: block !important; }
+
+  body.tall { page: tall; font-size: 14px; }
+  body.tall .sheet-groups { display: block; }
+  body.tall .card { padding: 6px 0 8px; }
+  body.tall .card h2 { font-size: 19px; margin: 0 0 4px; }
+  body.tall .card h2 .tag, body.tall .meta, body.tall .print-head { font-size: 13px; }
+  body.tall .pill { font-size: 12px; padding: 1px 8px; }
+  body.tall table { font-size: 16px; }
+  body.tall th { font-size: 13px; padding: 4px 6px; }
+  body.tall table.cross th, body.tall table.cross td { padding: 6px; }
+  body.tall table.cross th.sc, body.tall table.cross td.sc { min-width: 70px; }
+  body.tall table.cross .seedpts, body.tall table.cross th.agg, body.tall table.cross td.agg { font-size: 14px; }
 }
-.print-head { display: none; font-size: 13px; color: var(--ink-soft); }

@@ -72,6 +72,9 @@ function render() {
 
   document.getElementById('heroTitle').textContent = t.title;
   document.title = t.title + ' — теннисный центр «Альфа»';
+  // Пока плей-офф нет, на листе одни группы — книжным листом и крупно,
+  // по группе в ряд. С сетками плей-офф лист альбомный, по две в ряд.
+  document.body.classList.toggle('tall', !t.main && !t.consolation);
 
   const head = el('div', 'card');
   const st = STATUS[t.status] || ['grey', t.status];
