@@ -144,13 +144,23 @@ function render() {
   }
 
   renderFirstMatches(view, t);
-  (t.groups || []).forEach(g => renderGroup(view, t, g));
+  // Обёртки ради печати: на листе группы и сетки встают по две в ряд,
+  // иначе всё вместе на один лист не ложится. На экране они ничего не
+  // меняют.
+  const groups = el('div', 'sheet-groups');
+  (t.groups || []).forEach(g => renderGroup(groups, t, g));
+  view.appendChild(groups);
   // «АЛЬФА» и «БЕТА» — те же названия, что в объявлениях турнира: люди
   // ищут на странице именно их, а не «плей-офф с утешительной».
-  renderBracket(view, t, t.main, 'АЛЬФА');
-  renderThird(view, t, t.third, 'Матч за третье место АЛЬФА');
-  renderBracket(view, t, t.consolation, 'БЕТА');
-  renderThird(view, t, t.consThird, 'Матч за третье место БЕТА');
+  const playoff = el('div', 'sheet-playoff');
+  [[t.main, 'АЛЬФА', t.third], [t.consolation, 'БЕТА', t.consThird]].forEach(([b, title, third]) => {
+    if (!b && !third) return;
+    const pair = el('div', 'sheet-pair');
+    renderBracket(pair, t, b, title);
+    renderThird(pair, t, third, 'Матч за третье место ' + title);
+    playoff.appendChild(pair);
+  });
+  view.appendChild(playoff);
 }
 
 function button(label, cls, onClick) {
@@ -165,17 +175,16 @@ function button(label, cls, onClick) {
 // привыкли, и она заметно компактнее списка пар: у кругового на
 // шестнадцать человек список — это сто двадцать строк, а крестовина
 // помещается на один экран.
-//
-// Столбцы подписаны номерами участников — теми же, что были на мячах.
+
 // Первые матчи со временем — то, к чему люди и приезжают. Время есть
 // только у них: дальше играют те, кто на месте и готов. Приходит сюда
-// после рассылки владельца, до неё список пуст. Карточка идёт и на
-// печатный лист — его вешают на стойку в день турнира.
+// после рассылки владельца, до неё список пуст. На печатный лист не
+// идёт: на стенде нужны сами сетки, и всё должно уместиться на один лист.
 function renderFirstMatches(view, t) {
   const list = t.firstMatches || [];
   if (!list.some(m => m.time) || t.status === 'finished') return;
   const me = (t.participants || []).find(p => p.mine);
-  const card = el('div', 'card');
+  const card = el('div', 'card noprint');
   card.innerHTML = '<h2>Первые матчи</h2>';
   const keys = [];
   list.forEach(m => { const k = m.group || ''; if (keys.indexOf(k) === -1) keys.push(k); });
@@ -203,32 +212,42 @@ function renderGroup(view, t, g) {
       : 'все матчи сыграны') + '</span></h2>';
 
   const advance = t.format.groupCount > 0 ? t.format.advance : 0;
-  const members = g.table.map(row => participant(t, row.participantId)).filter(Boolean);
+  // Места — только когда группа доиграна: до того «место» по двум
+  // сыгранным матчам из шести читалось как итог.
+  const done = !left;
+  // Строки стоят по месту в группе после жеребьёвки, а не по таблице:
+  // номер строки и есть номер столбца, 1–4 по обеим осям, и он не
+  // прыгает от матча к матчу. Номера записи (те, что на мячах) тут
+  // путали — 3, 12, 15, 8 поперёк таблицы ничего не говорят.
+  const rows = g.table.slice().sort((x, y) => slotOf(t, x) - slotOf(t, y));
+  const members = rows.map(row => participant(t, row.participantId)).filter(Boolean);
   const annulled = new Set(g.table.filter(r => r.annulled).map(r => r.participantId));
 
   const scroll = el('div', 'scroll');
   const table = document.createElement('table');
   table.className = 'cross';
 
-  let head = '<thead><tr><th class="pl">#</th><th class="who">Игрок</th>';
-  members.forEach(p => { head += '<th class="sc">' + p.number + '</th>'; });
+  let head = '<thead><tr><th class="n"></th><th class="who">Игрок</th>';
+  members.forEach((p, i) => { head += '<th class="sc">' + (i + 1) + '</th>'; });
   head += '<th class="agg">Очки</th><th class="agg">Сеты</th><th class="agg">Геймы</th>'
-    + '<th class="pl">Место</th></tr></thead>';
+    + (done ? '<th class="pl">Место</th>' : '') + '</tr></thead>';
   table.innerHTML = head;
 
   const tbody = document.createElement('tbody');
-  g.table.forEach(row => {
+  rows.forEach((row, i) => {
     const p = participant(t, row.participantId);
     const tr = document.createElement('tr');
     const cls = [];
     if (row.status === 'withdrawn') cls.push('off');
-    else if (advance && row.place <= advance) cls.push('up');
+    else if (done && advance && row.place <= advance) cls.push('up');
     if (p && p.mine) cls.push('mine');
     tr.className = cls.join(' ');
 
-    let html = '<td class="pl">' + (row.place || '—') + '</td>'
-      + '<td class="who"><span class="no">' + (p ? p.number : '') + '</span> '
-      + escapeHtml(row.name)
+    let html = '<td class="n">' + (i + 1) + '</td>'
+      + '<td class="who">' + escapeHtml(row.name)
+      // Очки сезона сеяного — в скобках, как пишут в сетках: видно, за
+      // что он сеяный.
+      + (p && p.seedPoints ? ' <span class="seedpts">(' + p.seedPoints + ')</span>' : '')
       + (row.annulled ? ' <span class="sub">результаты аннулированы</span>' : '') + '</td>';
     members.forEach(op => {
       if (!p || op.id === p.id) { html += '<td class="sc self"></td>'; return; }
@@ -240,7 +259,7 @@ function renderGroup(view, t, g) {
     html += '<td class="pts"><b>' + row.points + '</b></td>'
       + '<td class="agg">' + row.setsWon + ':' + row.setsLost + ' ' + diffTag(row.setDiff) + '</td>'
       + '<td class="agg">' + row.gamesWon + ':' + row.gamesLost + ' ' + diffTag(row.gameDiff) + '</td>'
-      + '<td class="pl">' + (row.place || '—') + '</td>';
+      + (done ? '<td class="pl">' + (row.place || '—') + '</td>' : '');
     tr.innerHTML = html;
     tbody.appendChild(tr);
   });
@@ -259,9 +278,17 @@ function renderGroup(view, t, g) {
     notes.push('Снявшийся не доиграл группу, и его матчи в таблицу не идут — '
       + 'иначе результат от него достался бы только части соперников.');
   }
-  card.appendChild(txt('div', 'empty', notes.join(' ')));
+  // Пояснения на стенде не нужны: лист должен уместить все сетки.
+  card.appendChild(txt('div', 'empty noprint', notes.join(' ')));
 
   view.appendChild(card);
+}
+
+// Место в группе по жеребьёвке. Без него (не должно случаться) — в
+// конец, в порядке таблицы: сортировка устойчивая.
+function slotOf(t, row) {
+  const p = participant(t, row.participantId);
+  return p && Number.isInteger(p.slot) ? p.slot : 99;
 }
 
 // Разница со знаком: именно по ней решается место при равных очках,

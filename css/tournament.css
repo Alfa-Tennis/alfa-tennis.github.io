@@ -89,7 +89,7 @@ td { padding: 8px; border-bottom: 1px solid #EEF1F2; }
 /* Выходящие в плей-офф. Бледной заливки было мало — её попросту не
    замечали, поэтому к фону добавлена полоса слева. */
 tr.up td { background: var(--pass-tint); }
-tr.up td.pl:first-child { box-shadow: inset 3px 0 0 var(--pass); }
+tr.up td:first-child { box-shadow: inset 3px 0 0 var(--pass); }
 tr.off td { color: var(--ink-soft); text-decoration: line-through; }
 tr.mine td b { color: var(--court-dk); }
 
@@ -98,6 +98,8 @@ table.cross { min-width: 0; }
 table.cross th, table.cross td { text-align: center; padding: 6px 4px; }
 table.cross th.who, table.cross td.who { text-align: left; white-space: nowrap; padding-left: 8px; }
 table.cross th.pl, table.cross td.pl { width: 30px; color: var(--ink-soft); }
+/* Номер строки — он же подпись столбца: 1–4 по обеим осям. */
+table.cross th.n, table.cross td.n { width: 26px; color: var(--ink-soft); font-weight: 600; }
 table.cross th.sc, table.cross td.sc { min-width: 54px; font-variant-numeric: tabular-nums; }
 /* Клетка «сам с собой» — заштрихована, как в бумажных протоколах. */
 table.cross td.sc.self {
@@ -113,12 +115,8 @@ table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-s
 .diff.plus { color: var(--win); }
 .diff.minus { color: var(--lose); }
 .diff.zero { color: var(--ink-soft); }
-/* Номер участника рядом с именем — тот же, что был на мяче. */
-table.cross .no {
-  display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px;
-  border-radius: 999px; background: var(--court-tint); color: var(--court-dk);
-  font-size: 12px; font-weight: 600; text-align: center;
-}
+/* Очки сезона у сеяного — в скобках после имени. */
+table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 /* ---------- Матчи ---------- */
 .match {
@@ -244,17 +242,33 @@ table.cross .no {
 }
 
 /* ---------- Печать ---------- */
-/* Сетку вешают на стенд. Всё, что нельзя нажать на бумаге, с неё
-   убирается, а карточки разворачиваются в плоские таблицы. */
+/* Сетку вешают на стенд — один лист. Всё, что нельзя нажать на бумаге,
+   и всё, кроме названия и самих сеток, с него убирается; группы и сетки
+   плей-офф встают по две в ряд. Альбомный лист — потому что сетка
+   плей-офф растёт вширь, а группы по две в ряд на книжном не влезают
+   по ширине. */
+@page { size: A4 landscape; margin: 8mm; }
 @media print {
-  body { background: #fff; }
+  body { background: #fff; font-size: 11px; }
   .hero, .acts, .stage, .noprint { display: none !important; }
   .wrap { max-width: none; padding: 0; }
   .card { box-shadow: none; border: 0; border-top: 1px solid #999; border-radius: 0;
-    margin: 0; padding: 8px 0; break-inside: avoid; }
-  .bracket { overflow: visible; }
-  .bracket .col { min-width: 0; flex: 1; }
-  table { min-width: 0; font-size: 12px; }
+    margin: 0; padding: 4px 0 6px; break-inside: avoid; }
+  .card h2 { font-size: 13px; margin: 0 0 4px; }
+  .card h2 .tag, .meta, .print-head { font-size: 10px; }
+  .pill { font-size: 10px; padding: 0 6px; }
+  .sheet-groups, .sheet-playoff { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8mm; }
+  .scroll { overflow: visible; }
+  table { min-width: 0; font-size: 10px; }
+  th { font-size: 9px; padding: 2px 3px; }
+  table.cross th, table.cross td { padding: 2px 3px; }
+  table.cross th.sc, table.cross td.sc { min-width: 34px; }
+  table.cross .seedpts, table.cross th.agg, table.cross td.agg { font-size: 9px; }
+  .bracket { overflow: visible; gap: 6px; }
+  .bracket .col { min-width: 0; flex: 1 1 0; gap: 4px; }
+  .bracket .col h3 { font-size: 9px; }
+  .slot { border-radius: 4px; }
+  .slot .side { padding: 1px 4px; font-size: 9px; }
   .print-head { display: block !important; }
 }
 .print-head { display: none; font-size: 13px; color: var(--ink-soft); }
