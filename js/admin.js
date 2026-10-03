@@ -7160,31 +7160,43 @@ function renderTournamentGroup(view, t, g) {
       : 'все матчи сыграны') + '</span></h2>';
   view.appendChild(card);
 
-  const members = g.table.map(row => (t.participants || []).find(p => p.id === row.participantId))
-    .filter(Boolean);
+  // Так же, как на странице сетки: строки по месту в группе после
+  // жеребьёвки, номер строки он же номер столбца (1–4 по обеим осям), а
+  // место и подсветка выходящих — только у доигранной группы. Номера
+  // записи поперёк таблицы (3, 12, 15, 8) путали.
+  const done = !left;
+  const byId = new Map((t.participants || []).map(p => [p.id, p]));
+  const slotOf = row => {
+    const p = byId.get(row.participantId);
+    return p && Number.isInteger(p.slot) ? p.slot : 99;
+  };
+  const rows = g.table.slice().sort((x, y) => slotOf(x) - slotOf(y));
+  const members = rows.map(row => byId.get(row.participantId)).filter(Boolean);
   const annulled = new Set(g.table.filter(r => r.annulled).map(r => r.participantId));
 
   const scroll = el('div', 'cross-wrap');
   const table = el('table', 'tbl cross');
-  let head = '<thead><tr><th class="pl">#</th><th class="who">Игрок</th>';
-  members.forEach(p => { head += '<th class="sc">' + p.number + '</th>'; });
+  let head = '<thead><tr><th class="pl"></th><th class="who">Игрок</th>';
+  members.forEach((p, i) => { head += '<th class="sc">' + (i + 1) + '</th>'; });
   head += '<th class="agg">Очки</th><th class="agg">Сеты</th><th class="agg">Геймы</th>'
-    + '<th class="pl">Место</th></tr></thead>';
+    + (done ? '<th class="pl">Место</th>' : '') + '</tr></thead>';
   table.innerHTML = head;
 
   const body = document.createElement('tbody');
-  g.table.forEach(row => {
+  rows.forEach((row, i) => {
     const me = members.find(p => p.id === row.participantId);
     const tr = document.createElement('tr');
     const advance = t.format.groupCount > 0 ? t.format.advance : 0;
     if (row.status === 'withdrawn') tr.className = 'off';
-    else if (advance && row.place <= advance) tr.className = 'up';
+    else if (done && advance && row.place <= advance) tr.className = 'up';
 
-    const pl = el('td', 'pl'); pl.textContent = row.place || '—';
+    const pl = el('td', 'pl'); pl.textContent = String(i + 1);
     tr.appendChild(pl);
 
     const who = el('td', 'who');
-    who.innerHTML = '<span class="no">' + (me ? me.number : '') + '</span> ' + escapeHtml(row.name)
+    who.innerHTML = escapeHtml(row.name)
+      // Очки сезона сеяного на момент жеребьёвки — в скобках.
+      + (me && me.seedPoints ? ' <span class="sub">(' + me.seedPoints + ')</span>' : '')
       + (row.annulled ? ' <span class="sub">результаты аннулированы</span>' : '');
     tr.appendChild(who);
 
@@ -7218,8 +7230,10 @@ function renderTournamentGroup(view, t, g) {
     const games = el('td', 'agg');
     games.innerHTML = row.gamesWon + ':' + row.gamesLost + ' ' + diffTag(row.gameDiff);
     tr.appendChild(games);
-    const place = el('td', 'pl'); place.textContent = row.place || '—';
-    tr.appendChild(place);
+    if (done) {
+      const place = el('td', 'pl'); place.textContent = row.place || '—';
+      tr.appendChild(place);
+    }
 
     body.appendChild(tr);
   });

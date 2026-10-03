@@ -380,11 +380,6 @@ table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-s
 table.cross .pend { color: var(--line); }
 table.cross .who .sub { font-weight: 400; font-size: 12px; color: var(--ink-soft); }
 table.cross td.pts { background: #F7F9F8; }
-table.cross .no {
-  display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px;
-  border-radius: 999px; background: var(--accent-tint); color: var(--accent-dark);
-  font-size: 12px; font-weight: 600; text-align: center;
-}
 .score-row { display: flex; align-items: center; gap: 8px; }
 .score-row input { width: 72px; text-align: center; }
 .score-sep { color: var(--ink-soft); }
