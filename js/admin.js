@@ -7194,7 +7194,7 @@ function renderTournamentGroup(view, t, g) {
     tr.appendChild(pl);
 
     const who = el('td', 'who');
-    who.innerHTML = escapeHtml(row.name)
+    who.innerHTML = escapeHtml(surnameFirst(row.name))
       // Очки сезона сеяного на момент жеребьёвки — в скобках.
       + (me && me.seedPoints ? ' <span class="sub">(' + me.seedPoints + ')</span>' : '')
       + (row.annulled ? ' <span class="sub">результаты аннулированы</span>' : '');
@@ -7240,6 +7240,14 @@ function renderTournamentGroup(view, t, g) {
   table.appendChild(body);
   scroll.appendChild(table);
   card.appendChild(scroll);
+}
+
+// «Фамилия И.» — как на странице сетки и на листе для стенда: таблицу
+// группы в панели сверяют с бумажной. Имя в данных — «Имя Фамилия».
+function surnameFirst(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return parts.join(' ');
+  return parts.slice(1).join(' ') + ' ' + parts[0].charAt(0).toUpperCase() + '.';
 }
 
 // Разница со знаком: ею и решается место при равных очках, поэтому она

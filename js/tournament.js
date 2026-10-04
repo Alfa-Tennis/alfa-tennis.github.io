@@ -58,6 +58,26 @@ async function api(action, payload) {
 
 // ---------- Отрисовка ----------
 
+// В сетке и на листе — «Фамилия И.»: так пишут турнирные протоколы, и
+// по фамилии человека ищут в таблице. Имя в данных — «Имя Фамилия».
+// Прохожему сервер отдаёт уже сокращённое «Андрей Л.» — фамилию ему не
+// показываем намеренно, такое имя не переворачиваем.
+function surnameFirst(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2 || /^[^.]\.$/.test(parts[parts.length - 1])) return parts.join(' ');
+  return parts.slice(1).join(' ') + ' ' + parts[0].charAt(0).toUpperCase() + '.';
+}
+
+// Один раз после загрузки: все места, где страница берёт имя, читают
+// его из этих полей.
+function shortenNames(t) {
+  (t.participants || []).concat(t.waitlist || []).forEach(p => { p.name = surnameFirst(p.name); });
+  (t.groups || []).forEach(g => g.table.forEach(row => { row.name = surnameFirst(row.name); }));
+  (t.firstMatches || []).forEach(m => { m.aName = surnameFirst(m.aName); m.bName = surnameFirst(m.bName); });
+  (t.podium || []).forEach(row => { row.name = surnameFirst(row.name); });
+  return t;
+}
+
 function participant(t, id) {
   return (t.participants || []).find(p => p.id === id) || null;
 }
@@ -676,7 +696,7 @@ async function load() {
     // Токен необязателен: без него сетка видна всем, просто имена
     // сокращены до фамилии одной буквой, а свои строки не помечаются.
     const res = await api('tournamentCard', { id: state.id, token: store.get(TOKEN_KEY) || undefined });
-    state.t = res.tournament;
+    state.t = shortenNames(res.tournament);
   } catch (e) {
     view.innerHTML = '<div class="card"><h2>'
       + (e.code === 'tournament-not-found' ? 'Такого турнира нет' : 'Не удалось загрузить')
