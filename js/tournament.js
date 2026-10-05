@@ -63,6 +63,8 @@ async function api(action, payload) {
 // Прохожему сервер отдаёт уже сокращённое «Андрей Л.» — фамилию ему не
 // показываем намеренно, такое имя не переворачиваем.
 function surnameFirst(name) {
+  // Пара — «Имя Фамилия / Имя Фамилия»: каждого по отдельности.
+  if (String(name || '').indexOf(' / ') >= 0) return String(name).split(' / ').map(surnameFirst).join(' / ');
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2 || /^[^.]\.$/.test(parts[parts.length - 1])) return parts.join(' ');
   return parts.slice(1).join(' ') + ' ' + parts[0].charAt(0).toUpperCase() + '.';
@@ -106,7 +108,7 @@ function render() {
     + ' · ' + escapeHtml(t.level)
     + ' · матч: ' + escapeHtml(SCORING[t.scoring.mode] || '')
     + (t.fee ? ' · взнос ' + t.fee + ' ₽' : '')
-    + ' · участников: ' + t.taken + '</div>'
+    + (t.kind === 'doubles' ? ' · пар: ' : ' · участников: ') + t.taken + '</div>'
     // Подробности — объявление целиком, до трёх тысяч знаков. Над сеткой
     // оно заслоняло бы саму сетку, а на печатный лист не нужно вовсе:
     // свёрнуто и в печать не идёт.
@@ -156,7 +158,7 @@ function render() {
 
   if (!t.drawnAt) {
     const wait = el('div', 'card');
-    wait.innerHTML = '<h2>Состав <span class="tag">' + t.taken + ' из ' + t.maxParticipants + '</span></h2>';
+    wait.innerHTML = '<h2>Состав <span class="tag">' + (t.kind === 'doubles' ? 'пар ' : '') + t.taken + ' из ' + t.maxParticipants + '</span></h2>';
     if (!t.participants.length) {
       wait.appendChild(txt('div', 'empty', 'Пока никто не записан.'));
     }
@@ -273,7 +275,7 @@ function renderGroup(view, t, g) {
 
   const scroll = el('div', 'scroll');
   const table = document.createElement('table');
-  table.className = 'cross';
+  table.className = 'cross' + (t.kind === 'doubles' ? ' pairs' : '');
 
   let head = '<thead><tr><th class="n"></th><th class="who">Игрок</th>';
   members.forEach((p, i) => { head += '<th class="sc">' + (i + 1) + '</th>'; });

@@ -115,6 +115,8 @@ table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-s
 .diff.plus { color: var(--win); }
 .diff.minus { color: var(--lose); }
 .diff.zero { color: var(--ink-soft); }
+/* Пара в одну строку не помещается — имена переносятся по косой черте. */
+table.cross.pairs th.who, table.cross.pairs td.who { white-space: normal; min-width: 150px; }
 /* Очки сезона у сеяного — в скобках после имени. */
 table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-numeric: tabular-nums; }
 

@@ -153,6 +153,17 @@ const ERRORS = {
   'not-pair': 'Это не пара.',
   'same-signup': 'Выберите двух разных людей.',
   'not-signed': 'Этого человека в составе уже нет — обновите страницу.',
+  'invalid-size': 'Размер состава вне пределов: от 4 до 24 участников (у пар — от 8 до 48 человек).',
+  'too-many-groups': 'Групп больше, чем людей на них хватит, — уменьшите число групп.',
+  'group-too-big': 'Группа выходит больше 16 — добавьте групп.',
+  'advance-too-big': 'Из группы выходит столько же, сколько в ней играет, — уменьшите число групп или выходящих.',
+  'kind-locked':'Записавшиеся уже есть — одиночный турнир парным не сделать (и наоборот). Заведите новый.',
+  'needs-partner': 'Он ищет пару — в состав встаёт только пара. Сведите его с кем-то кнопкой «Свести в пару».',
+  'not-seeking': 'Сводить можно только двоих из «ищут пару».',
+  'mixed-same-gender': 'В миксте пара — мужчина и женщина.',
+  'invalid-gender': 'В миксте отметьте пол игрока.',
+  'invalid-pair': 'В пару входят двое.',
+  'same-player': 'Один и тот же человек дважды — выберите партнёра.',
   'client-blocked':'Клиент заблокирован — запись не прошла. Если его простили, сначала разблокируйте во вкладке «Клиенты».',
   'invalid-chat': 'Бот не состоит в этой группе — выберите чат из списка заново.',
   'no-telegram-target': 'Турнир не публикуется в Telegram — выберите группу в «Изменить».',
@@ -6248,6 +6259,22 @@ const T_STATUS = {
   finished: '<span class="pill grey">завершён</span>',
 };
 
+// Разряд турнира одним списком: внутри это разряд (`kind`) и пол
+// (`gender`). Ключ пар — с приставкой `d-`.
+const T_DIVISIONS = {
+  m: 'одиночный мужской',
+  w: 'одиночный женский',
+  'd-m': 'парный мужской',
+  'd-w': 'парный женский',
+  'd-mixed': 'микст',
+};
+const T_DIVISIONS_PAIRS = { 'd-m': true, 'd-w': true, 'd-mixed': true };
+
+function divisionOf(t) {
+  if (t.kind === 'doubles') return t.gender ? 'd-' + t.gender : '';
+  return t.gender && t.gender !== 'mixed' ? t.gender : '';
+}
+
 const T_SCORING = {
   set1: 'один сет',
   set2: 'два сета',
@@ -6296,7 +6323,7 @@ function renderTournaments(view) {
       + (T_STATUS[t.status] || '') + '</div>'
       + '<div class="t2">' + escapeHtml(tournamentDates(t))
       + ' · ' + escapeHtml(t.level)
-      + ' · ' + t.taken + ' из ' + t.maxParticipants
+      + ' · ' + (t.kind === 'doubles' ? 'пар ' : '') + t.taken + ' из ' + t.maxParticipants
       + (t.fee ? ' · взнос ' + t.fee + ' ₽' : ' · без взноса')
       + (t.signupsClosed ? ' · запись закрыта' : '') + '</div>';
 
@@ -6858,23 +6885,34 @@ function renderThirdPlace(view, t, match, title) {
 // наше дело показать, что человек в списке.
 function feeDebtors(t) {
   if (!t.fee) return [];
-  return (t.participants || []).filter(p => !p.paid && (p.status !== 'withdrawn' || p.played));
+  return (t.participants || []).filter(p => unpaidCount(p) > 0 && (p.status !== 'withdrawn' || p.played));
 }
 
-// Очки участника по зачёту этого турнира: сумма за сезон и отдельно
-// перенесённое рукой. Пара один человек — одна запись; у пары ключа
-// нет, и очки ей не показываем (парного зачёта пока нет вовсе).
-function pointsOfPlayer(p) {
+// Взнос с человека: у пары каждый платит сам. Сколько в записи ещё не
+// заплатили — по отметкам каждого.
+function unpaidCount(p) {
+  const marks = p.paidEach || [];
+  if (marks.length !== (p.players || []).length) return p.paid ? 0 : (p.players || []).length || 1;
+  return marks.filter(m => !m).length;
+}
+
+// Очки участника по зачёту этого турнира. У пары — сумма двоих: так
+// и сеет жеребьёвка.
+function pointsOfClient(id) {
   const box = db.tournamentPoints;
-  const id = (p.players || [])[0];
-  if (!box || !id || (p.players || []).length !== 1) return null;
+  if (!box || !id) return null;
   const value = box.total ? box.total[id] : null;
   return value == null ? 0 : value;
 }
 
-function carryOfPlayer(p) {
+function pointsOfPlayer(p) {
+  const ids = p.players || [];
+  if (!db.tournamentPoints || !ids.length) return null;
+  return ids.reduce((sum, id) => sum + (pointsOfClient(id) || 0), 0);
+}
+
+function carryOfClient(id) {
   const box = db.tournamentPoints;
-  const id = (p.players || [])[0];
   if (!box || !id || !box.carry) return 0;
   return box.carry[id] || 0;
 }
@@ -6885,11 +6923,11 @@ function carryOfPlayer(p) {
 // нельзя. Владелец переносит суммы руками — по одной на зачёт: у
 // челленджера и тура таблицы разные, даже если играют одни и те же
 // люди. С нового сезона переносить нечего.
-function openCarryForm(t, p) {
+function openCarryForm(t, clientId, name) {
   const box = db.tournamentPoints || {};
   const body = el('div');
   body.innerHTML = '<h3>Очки сезона</h3>'
-    + '<div class="m-sub">' + escapeHtml(p.name) + (box.label ? ' · ' + escapeHtml(box.label) : '') + '</div>'
+    + '<div class="m-sub">' + escapeHtml(name) + (box.label ? ' · ' + escapeHtml(box.label) : '') + '</div>'
     + '<div class="empty">Столько очков человек набрал <b>до сайта</b>, по вашей таблице этого '
     + 'зачёта. Заработанное на турнирах центра прибавляется к этому числу само. '
     + 'У челленджера и тура зачёты разные — число ставится в тот, к которому относится '
@@ -6899,10 +6937,10 @@ function openCarryForm(t, p) {
   value.type = 'number';
   value.min = '0';
   value.step = '1';
-  value.value = String(carryOfPlayer(p) || 0);
+  value.value = String(carryOfClient(clientId) || 0);
   wrapField(body, 'Перенести очков', value);
 
-  const earned = (pointsOfPlayer(p) || 0) - (carryOfPlayer(p) || 0);
+  const earned = (pointsOfClient(clientId) || 0) - (carryOfClient(clientId) || 0);
   if (earned > 0) {
     body.appendChild(txt('div', 'empty', 'На турнирах центра он уже набрал ' + earned
       + ' — это число правкой не меняется.'));
@@ -6915,7 +6953,7 @@ function openCarryForm(t, p) {
     if (!Number.isFinite(n) || n < 0) { toast('Очки — целое число от нуля'); return; }
     closeModal();
     act(() => api('adminSetCarryPoints', {
-      tournamentId: t.id, clientId: (p.players || [])[0], points: Math.round(n),
+      tournamentId: t.id, clientId, points: Math.round(n),
     }), 'Очки сезона сохранены');
   }));
   body.appendChild(acts);
@@ -6949,7 +6987,8 @@ function seedPreview(t) {
 
 function renderTournamentRoster(view, t, canEdit) {
   const card = el('div', 'card');
-  card.innerHTML = '<h2>Состав <span class="sub">' + t.taken + ' из ' + t.maxParticipants + '</span></h2>';
+  card.innerHTML = '<h2>Состав <span class="sub">' + (t.kind === 'doubles' ? 'пар ' : '')
+    + t.taken + ' из ' + t.maxParticipants + '</span></h2>';
   view.appendChild(card);
 
   // Взносы сдают весь день по мере прихода, поэтому в списке отмечены обе
@@ -7002,35 +7041,52 @@ function renderTournamentRoster(view, t, canEdit) {
   }
 
   if (t.fee && t.participants.length) {
-    const due = debtors.size * t.fee;
+    // Взнос с человека: у пары может не хватать одного.
+    const owing = feeDebtors(t).reduce((n, p) => n + unpaidCount(p), 0);
+    const due = owing * t.fee;
     card.appendChild(txt('div', 'empty', 'Взносы: собрано ' + t.feeTotal + ' из '
       + (t.feeTotal + due) + ' ₽'
-      + (debtors.size ? ' · не сдали ' + debtors.size + ', ещё ' + due + ' ₽' : ' · сдали все')));
+      + (owing ? ' · не сдали ' + owing + ', ещё ' + due + ' ₽' : ' · сдали все')));
   }
 
   t.participants.forEach(p => {
     const it = el('div', 'item' + (p.status === 'withdrawn' ? ' past' : ''));
+    const pair = (p.players || []).length > 1;
+    const owes = unpaidCount(p);
     it.innerHTML = '<div class="t1"><b>' + p.number + '.</b> ' + escapeHtml(p.name)
       + (p.seeded ? ' <span class="pill ok">сеяный</span>' : '')
       + (p.group ? ' <span class="pill grey">группа ' + escapeHtml(p.group) + '</span>' : '')
       + (p.status === 'withdrawn' ? ' <span class="pill bad">снялся</span>' : '')
-      + (p.paid ? ' <span class="pill ok">взнос внесён</span>'
-        : (debtors.has(p.id) ? ' <span class="pill bad">взнос не сдан</span>' : '')) + '</div>'
-      + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
-      + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
-      // Очки сезона — то, по чему пойдёт сеяние, если никого не отметили
-      // галочкой. Перенесённое рукой показываем отдельно: иначе не
-      // понять, что именно правишь, а что пришло с турниров.
-      + (pointsOfPlayer(p) != null
-        ? ' · очки сезона ' + pointsOfPlayer(p)
-          + (carryOfPlayer(p) ? ' (перенос ' + carryOfPlayer(p) + ')' : '')
-        : '')
-      + (p.replacedFrom ? ' · заменил: ' + escapeHtml(p.replacedFrom) : '')
-      // Кто и когда принял взнос — спор «я же платил» разбирают по этому.
-      + (p.paid && p.paidAt
-        ? ' · взнос принят ' + escapeHtml(shortDateTime(p.paidAt))
-          + (clientById(p.paidBy) ? ', ' + escapeHtml(clientById(p.paidBy).name) : '')
-        : '') + '</div>';
+      + (!t.fee ? '' : (p.paid ? ' <span class="pill ok">взнос внесён</span>'
+        : (debtors.has(p.id) ? ' <span class="pill bad">' + (pair && owes === 1
+          ? 'взнос: 1 из 2' : 'взнос не сдан') + '</span>' : ''))) + '</div>';
+    if (pair) {
+      // У пары — строка на каждого: свой телефон, уровень, очки и взнос.
+      p.players.forEach((id, i) => it.appendChild(pairPlayerLine(t, p, i, canEdit)));
+      if (p.ntrp != null) {
+        it.appendChild(txt('div', 't2', 'сумма уровней ' + String(p.ntrp).replace('.', ',')
+          + (pointsOfPlayer(p) ? ' · очки пары ' + pointsOfPlayer(p) : '')));
+      }
+      if (p.replacedFrom) it.appendChild(txt('div', 't2', 'заменил: ' + p.replacedFrom));
+    } else {
+      const t2 = el('div', 't2');
+      t2.innerHTML = (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
+        + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
+        // Очки сезона — то, по чему пойдёт сеяние, если никого не отметили
+        // галочкой. Перенесённое рукой показываем отдельно: иначе не
+        // понять, что именно правишь, а что пришло с турниров.
+        + (pointsOfPlayer(p) != null
+          ? ' · очки сезона ' + pointsOfPlayer(p)
+            + (carryOfClient(p.players[0]) ? ' (перенос ' + carryOfClient(p.players[0]) + ')' : '')
+          : '')
+        + (p.replacedFrom ? ' · заменил: ' + escapeHtml(p.replacedFrom) : '')
+        // Кто и когда принял взнос — спор «я же платил» разбирают по этому.
+        + (p.paid && p.paidAt
+          ? ' · взнос принят ' + escapeHtml(shortDateTime(p.paidAt))
+            + (clientById(p.paidBy) ? ', ' + escapeHtml(clientById(p.paidBy).name) : '')
+          : '');
+      it.appendChild(t2);
+    }
 
     const acts = el('div', 'acts');
     if (!t.drawnAt && p.status !== 'withdrawn') {
@@ -7041,24 +7097,31 @@ function renderTournamentRoster(view, t, canEdit) {
     }
     // Перенос очков из клубной таблицы: сезон начался без сайта, и у
     // людей уже есть набранное. Правит владелец и только до жеребьёвки —
-    // после неё сеяние уже сыграло.
-    if (canEdit && !t.drawnAt && p.status !== 'withdrawn' && (p.players || []).length === 1) {
-      acts.appendChild(btn('Очки сезона', 'btn sm sec', () => openCarryForm(t, p)));
+    // после неё сеяние уже сыграло. У пары — кнопкой в строке игрока.
+    if (!pair && canEdit && !t.drawnAt && p.status !== 'withdrawn') {
+      acts.appendChild(btn('Очки сезона', 'btn sm sec', () => openCarryForm(t, p.players[0], p.name)));
     }
-    if (t.fee) {
+    if (t.fee && !pair) {
       acts.appendChild(btn(p.paid ? 'Снять отметку взноса' : 'Взнос внесён', 'btn sm sec', () =>
         act(() => api('adminTournamentParticipant',
           { id: t.id, op: 'paid', participantId: p.id, paid: !p.paid }), 'Отметка изменена')));
     }
     if (p.status !== 'withdrawn') {
       if (!t.drawnAt) {
+        if (pair) {
+          acts.appendChild(btn('Разбить пару', 'btn sm sec', () =>
+            act(() => api('adminTournamentParticipant',
+              { id: t.id, op: 'split', participantId: p.id }), 'Пара разбита — оба ищут пару')));
+        }
         acts.appendChild(btn('Убрать', 'btn sm danger', () =>
           act(() => api('adminTournamentParticipant',
             { id: t.id, op: 'remove', participantId: p.id }), 'Убран из состава')));
       } else {
-        acts.appendChild(btn('Заменить', 'btn sm sec', () => openPickClient(t,
-          'Кем заменить: ' + p.name,
-          pickIntoTournament(t, 'replace', { participantId: p.id }, 'Участник заменён'))));
+        if (!pair) {
+          acts.appendChild(btn('Заменить', 'btn sm sec', () => openPickClient(t,
+            'Кем заменить: ' + p.name,
+            pickIntoTournament(t, 'replace', { participantId: p.id }, 'Участник заменён'))));
+        }
         acts.appendChild(btn('Снять с турнира', 'btn sm danger', () => openWithdrawForm(t, p)));
       }
     }
@@ -7068,14 +7131,55 @@ function renderTournamentRoster(view, t, canEdit) {
 
   if (!t.drawnAt) {
     const add = el('div', 'acts');
-    add.appendChild(btn('Добавить участника', 'btn sm', () => openPickClient(t, 'Кого записать',
-      pickIntoTournament(t, 'add', {}, 'Записан'))));
+    add.appendChild(btn(t.kind === 'doubles' ? 'Записать пару' : 'Добавить участника', 'btn sm', () =>
+      (t.kind === 'doubles' ? openAddPair(t)
+        : openPickClient(t, 'Кого записать', pickIntoTournament(t, 'add', {}, 'Записан')))));
     card.appendChild(add);
+  }
+
+  // Ищут пару — записались в парный турнир без партнёра. Места в составе
+  // не занимают; владелец сводит двоих кнопкой, как в тренировках «пары».
+  const seekers = t.waitlist.filter(p => p.waitReason === 'partner');
+  if (seekers.length) {
+    const box = el('div', 'card');
+    box.innerHTML = '<h2>Ищут пару <span class="sub">' + plural(seekers.length, 'человек', 'человека', 'человек')
+      + '</span></h2>';
+    view.appendChild(box);
+    box.appendChild(txt('div', 'empty', 'Записались без партнёра. «Свести в пару» — и пара встанет в состав '
+      + (t.payFirst && t.fee ? 'после взноса обоих.' : 'по обычным правилам.')));
+    seekers.forEach(p => {
+      const it = el('div', 'item');
+      const g = (p.genders || [])[0];
+      it.innerHTML = '<div class="t1">' + escapeHtml(p.name)
+        + (t.gender === 'mixed' && g ? ' <span class="pill grey">' + (g === 'm' ? 'мужчина' : 'женщина') + '</span>' : '')
+        + (t.fee && p.paid ? ' <span class="pill ok">взнос внесён</span>' : '') + '</div>'
+        + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
+        + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
+        + (pointsOfPlayer(p) ? ' · очки ' + pointsOfPlayer(p) : '')
+        + (p.at ? ' · заявка ' + escapeHtml(shortDateTime(p.at)) : '') + '</div>';
+      const acts = el('div', 'acts');
+      const others = seekers.filter(x => x.id !== p.id
+        && (t.gender !== 'mixed' || (x.genders || [])[0] !== g));
+      if (others.length) {
+        acts.appendChild(btn('Свести в пару', 'btn sm', () => openPairWith(t, p, others)));
+      }
+      if (t.fee) {
+        acts.appendChild(btn(p.paid ? 'Снять отметку взноса' : 'Взнос внесён', 'btn sm sec', () =>
+          act(() => api('adminTournamentParticipant',
+            { id: t.id, op: 'paid', participantId: p.id, paid: !p.paid }), 'Отметка изменена')));
+      }
+      acts.appendChild(btn('Убрать', 'btn sm danger', () =>
+        act(() => api('adminTournamentParticipant',
+          { id: t.id, op: 'remove', participantId: p.id }), 'Убран')));
+      it.appendChild(acts);
+      box.appendChild(it);
+    });
   }
 
   // Заявки, ждущие оплаты взноса. Место в составе они не занимают:
   // «зарегистрирован только после оплаты». Получили деньги — одна кнопка,
-  // и человек в составе с отметкой, кто принял.
+  // и человек в составе с отметкой, кто принял. У пары взнос с каждого:
+  // заплатил второй — пара встаёт в состав сама.
   const feeWait = t.waitlist.filter(p => p.waitReason === 'fee');
   if (feeWait.length) {
     const left = Math.max(0, t.maxParticipants - t.taken);
@@ -7084,18 +7188,25 @@ function renderTournamentRoster(view, t, canEdit) {
       + ' · ' + (left ? 'мест осталось ' + left : 'мест нет') + '</span></h2>';
     view.appendChild(box);
     box.appendChild(txt('div', 'empty',
-      'Место в составе — после оплаты взноса ' + t.fee + ' ₽. Прислали скриншот оплаты — нажмите '
-      + '«Взнос получен»: человек встанет в состав. '
+      'Место в составе — после оплаты взноса ' + t.fee + ' ₽'
+      + (t.kind === 'doubles' ? ' с каждого игрока' : '') + '. Прислали скриншот оплаты — нажмите '
+      + '«Взнос получен»: ' + (t.kind === 'doubles' ? 'пара встанет в состав, когда заплатят оба. '
+        : 'человек встанет в состав. ')
       + (left ? '' : 'Мест уже нет — взнос у этих людей брать не нужно.')));
     feeWait.forEach(p => {
       const it = el('div', 'item');
-      it.innerHTML = '<div class="t1">' + escapeHtml(p.name) + '</div>'
-        + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
-        + (p.phone ? ' · ' + escapeHtml(p.phone) : '')
-        + (p.at ? ' · заявка ' + escapeHtml(shortDateTime(p.at)) : '') + '</div>';
+      const pair = (p.players || []).length > 1;
+      it.appendChild(txt('div', 't1', p.name));
+      if (pair) {
+        p.players.forEach((id, i) => it.appendChild(pairPlayerLine(t, p, i, false)));
+      } else {
+        it.appendChild(txt('div', 't2', (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
+          + (p.phone ? ' · ' + p.phone : '')));
+      }
+      if (p.at) it.appendChild(txt('div', 't2', 'заявка ' + shortDateTime(p.at)));
       const acts = el('div', 'acts');
       if (!t.drawnAt && left) {
-        acts.appendChild(btn('Взнос получен — в состав', 'btn sm', () =>
+        acts.appendChild(btn(pair ? 'Взнос получен от обоих — в состав' : 'Взнос получен — в состав', 'btn sm', () =>
           act(() => api('adminTournamentParticipant',
             { id: t.id, op: 'promote', participantId: p.id, paid: true }), 'Взнос отмечен, в составе')));
       }
@@ -7107,7 +7218,7 @@ function renderTournamentRoster(view, t, canEdit) {
     });
   }
 
-  const otherWait = t.waitlist.filter(p => p.waitReason !== 'fee');
+  const otherWait = t.waitlist.filter(p => p.waitReason !== 'fee' && p.waitReason !== 'partner');
   if (otherWait.length) {
     const wait = el('div', 'card');
     wait.innerHTML = '<h2>Лист ожидания <span class="sub">уровень не подошёл или состав полон</span></h2>';
@@ -7115,7 +7226,8 @@ function renderTournamentRoster(view, t, canEdit) {
     otherWait.forEach(p => {
       const it = el('div', 'item');
       it.innerHTML = '<div class="t1">' + escapeHtml(p.name) + '</div>'
-        + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(p.ntrp).replace('.', ','))
+        + '<div class="t2">' + (p.ntrp == null ? 'уровень неизвестен'
+          : ((p.players || []).length > 1 ? 'сумма уровней ' : 'уровень ') + String(p.ntrp).replace('.', ','))
         + (p.waitReason === 'level' ? ' · не подходит по уровню' : ' · состав был полон')
         + (p.phone ? ' · ' + escapeHtml(p.phone) : '') + '</div>';
       const acts = el('div', 'acts');
@@ -7134,6 +7246,106 @@ function renderTournamentRoster(view, t, canEdit) {
       wait.appendChild(it);
     });
   }
+}
+
+// Строка игрока в паре: имя, пол (микст), уровень, телефон, очки и
+// взнос — у каждого свой. Кнопки по человеку: взнос, очки сезона и замена
+// (после жеребьёвки меняют одного — второй остаётся).
+function pairPlayerLine(t, p, i, withActs) {
+  const id = p.players[i];
+  const line = el('div', 'pair-line');
+  const g = (p.genders || [])[i];
+  const mark = (p.paidEach || [])[i];
+  const lvl = (p.levels || [])[i];
+  const phone = (p.phones || [])[i];
+  const pts = pointsOfClient(id);
+  line.innerHTML = '<div class="t2"><b>' + escapeHtml((p.names || [])[i] || '') + '</b>'
+    + (t.gender === 'mixed' && g ? ' · ' + (g === 'm' ? 'мужчина' : 'женщина') : '')
+    + ' · ' + (lvl == null ? 'уровень неизвестен' : 'уровень ' + String(lvl).replace('.', ','))
+    + (phone ? ' · ' + escapeHtml(phone) : '')
+    + (pts != null ? ' · очки ' + pts + (carryOfClient(id) ? ' (перенос ' + carryOfClient(id) + ')' : '') : '')
+    + (t.fee ? (mark ? ' · <span class="pill ok">взнос внесён</span>'
+      + (mark.at ? ' ' + escapeHtml(shortDateTime(mark.at)) : '')
+      + (clientById(mark.by) ? ', ' + escapeHtml(clientById(mark.by).name) : '')
+      : ' · <span class="pill bad">взнос не сдан</span>') : '')
+    + '</div>';
+  const acts = el('div', 'acts');
+  if (t.fee) {
+    acts.appendChild(btn(mark ? 'Снять взнос' : 'Взнос внесён', 'btn sm sec', () =>
+      act(() => api('adminTournamentParticipant',
+        { id: t.id, op: 'paid', participantId: p.id, playerId: id, paid: !mark }), 'Отметка изменена')));
+  }
+  if (withActs && db.tournamentPoints && !t.drawnAt && p.status !== 'withdrawn') {
+    acts.appendChild(btn('Очки сезона', 'btn sm sec', () => openCarryForm(t, id, (p.names || [])[i] || '')));
+  }
+  if (withActs && t.drawnAt && p.status !== 'withdrawn') {
+    acts.appendChild(btn('Заменить', 'btn sm sec', () => openPickClient(t,
+      'Кем заменить: ' + ((p.names || [])[i] || ''),
+      pickIntoTournament(t, 'replace', { participantId: p.id, playerId: id }, 'Игрок заменён'))));
+  }
+  if (acts.children.length) line.appendChild(acts);
+  return line;
+}
+
+// Свести в пару: второго выбирают из тех же «ищут пару» (в миксте —
+// другого пола).
+function openPairWith(t, p, others) {
+  const body = el('div');
+  body.innerHTML = '<h3>Свести в пару</h3><div class="m-sub">' + escapeHtml(p.name) + ' — с кем?</div>';
+  const list = el('div', 'picklist');
+  others.forEach(o => {
+    const it = el('div', 'item');
+    it.innerHTML = '<div class="t1">' + escapeHtml(o.name) + '</div>'
+      + '<div class="t2">' + (o.ntrp == null ? 'уровень неизвестен' : 'уровень ' + String(o.ntrp).replace('.', ','))
+      + (p.ntrp != null && o.ntrp != null ? ' · сумма пары ' + String(p.ntrp + o.ntrp).replace('.', ',') : '')
+      + '</div>';
+    it.addEventListener('click', () => {
+      closeModal();
+      act(() => api('adminTournamentParticipant',
+        { id: t.id, op: 'pair', participantId: p.id, withId: o.id }), 'Пара сведена');
+    });
+    list.appendChild(it);
+  });
+  body.appendChild(list);
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// Запись пары из панели: первый игрок, потом партнёр (или «ищет пару»),
+// в миксте — кто из них мужчина. Каждый — карточкой из списка или
+// приезжим по имени и телефону, как и одиночка.
+function openAddPair(t) {
+  openPickClient(t, 'Записать пару: первый игрок', (first) => {
+    const firstName = first.clientId ? (clientById(first.clientId) || {}).name
+      : (first.newClient.firstName + (first.newClient.lastName ? ' ' + first.newClient.lastName : ''));
+    const body = el('div');
+    body.innerHTML = '<h3>Партнёр</h3><div class="m-sub">' + escapeHtml(firstName || '') + ' — с кем играет?</div>';
+    let gender = null;
+    if (t.gender === 'mixed') {
+      gender = document.createElement('select');
+      gender.appendChild(opt('m', 'мужчина (партнёр — женщина)'));
+      gender.appendChild(opt('w', 'женщина (партнёр — мужчина)'));
+      wrapField(body, (firstName || 'Первый игрок') + ' в паре —', gender);
+    }
+    const acts = el('div', 'm-acts');
+    acts.appendChild(btn('Без партнёра — в «ищут пару»', 'btn sec', () => {
+      closeModal();
+      pickIntoTournament(t, 'add', { gender: gender ? gender.value : undefined }, 'Записан — ищет пару')(first);
+    }));
+    acts.appendChild(btn('Выбрать партнёра', 'btn', () => {
+      const g = gender ? gender.value : undefined;
+      closeModal();
+      openPickClient(t, 'Партнёр для ' + (firstName || 'первого игрока'), (second) => {
+        pickIntoTournament(t, 'add', {
+          gender: g, partnerClientId: second.clientId, partnerNewClient: second.newClient,
+        }, 'Пара записана')(first);
+      }, first.clientId);
+    }));
+    body.appendChild(acts);
+    showModal(body);
+  });
 }
 
 function participantName(t, id) {
@@ -7175,7 +7387,7 @@ function renderTournamentGroup(view, t, g) {
   const annulled = new Set(g.table.filter(r => r.annulled).map(r => r.participantId));
 
   const scroll = el('div', 'cross-wrap');
-  const table = el('table', 'tbl cross');
+  const table = el('table', 'tbl cross' + (t.kind === 'doubles' ? ' pairs' : ''));
   let head = '<thead><tr><th class="pl"></th><th class="who">Игрок</th>';
   members.forEach((p, i) => { head += '<th class="sc">' + (i + 1) + '</th>'; });
   head += '<th class="agg">Очки</th><th class="agg">Сеты</th><th class="agg">Геймы</th>'
@@ -7245,6 +7457,8 @@ function renderTournamentGroup(view, t, g) {
 // «Фамилия И.» — как на странице сетки и на листе для стенда: таблицу
 // группы в панели сверяют с бумажной. Имя в данных — «Имя Фамилия».
 function surnameFirst(name) {
+  // Пара — «Имя Фамилия / Имя Фамилия»: каждого по отдельности.
+  if (String(name || '').indexOf(' / ') >= 0) return String(name).split(' / ').map(surnameFirst).join(' / ');
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return parts.join(' ');
   return parts.slice(1).join(' ') + ' ' + parts[0].charAt(0).toUpperCase() + '.';
@@ -7438,7 +7652,7 @@ function openWithdrawForm(t, p) {
 //
 // onPick получает { clientId } или { newClient: { firstName, lastName,
 // phone } } — ровно те поля, что уходят на сервер.
-function openPickClient(t, title, onPick) {
+function openPickClient(t, title, onPick, exclude) {
   const body = el('div');
   body.innerHTML = '<h3>' + escapeHtml(title) + '</h3>'
     + '<div class="m-sub">В турнир записываются клиенты центра. Нет человека в списке — '
@@ -7488,6 +7702,7 @@ function openPickClient(t, title, onPick) {
 
   const taken = new Set();
   (t.participants || []).concat(t.waitlist || []).forEach(p => (p.players || []).forEach(id => taken.add(id)));
+  if (exclude) taken.add(exclude);
 
   function draw() {
     const raw = search.value.trim();
@@ -7559,7 +7774,7 @@ function confirmDraw(t) {
   const count = t.taken;
   const body = el('div');
   body.innerHTML = '<h3>Провести жеребьёвку?</h3>'
-    + '<div class="m-sub">' + escapeHtml(t.title) + ' · записалось ' + count
+    + '<div class="m-sub">' + escapeHtml(t.title) + ' · записалось ' + (t.kind === 'doubles' ? 'пар ' : '') + count
     + ' из ' + t.maxParticipants + '</div>';
 
   const withGroups = t.format.groupCount > 0;
@@ -7879,12 +8094,18 @@ function feeDebtNote(t) {
   const box = el('div', 'card');
   box.style.padding = '8px 10px';
   box.style.marginTop = '6px';
+  // Взнос с человека: у пары должником бывает один из двоих.
+  const people = [];
+  debt.forEach(p => (p.players || []).forEach((id, i) => {
+    if ((p.paidEach || [])[i] && (p.paidEach || []).length === p.players.length) return;
+    people.push({ name: (p.names || [])[i] || p.name, phone: (p.phones || [])[i] || (i ? '' : p.phone), p });
+  }));
   box.innerHTML = '<div class="t1"><span class="pill bad">взнос не сдан</span> '
-    + plural(debt.length, 'участник', 'участника', 'участников')
-    + ', ' + (debt.length * t.fee) + ' ₽</div>';
-  debt.forEach(p => {
-    box.appendChild(txt('div', 't2', p.name
-      + (p.phone ? ' · ' + p.phone : '')
+    + plural(people.length, 'участник', 'участника', 'участников')
+    + ', ' + (people.length * t.fee) + ' ₽</div>';
+  people.forEach(({ name, phone, p }) => {
+    box.appendChild(txt('div', 't2', name
+      + (phone ? ' · ' + phone : '')
       + (p.status === 'withdrawn' ? ' · снялся, но сыграл' : '')));
   });
   box.appendChild(txt('div', 't2', 'Отметить можно в составе — кнопкой «Взнос внесён».'));
@@ -8005,6 +8226,25 @@ function openTournamentForm(existing) {
   title.placeholder = 'Например: Турнир выходного дня';
   wrapField(body, 'Название', title);
 
+  // Разряд — сразу после названия: от него зависят размер состава
+  // (человек или пар), уровень (свой, сумма пары, в миксте ещё и у
+  // каждого пола) и зачёт, куда лягут очки. Внутри это прежние два поля,
+  // разряд и пол, — старые турниры читаются как есть.
+  const division = document.createElement('select');
+  division.appendChild(opt('', '— не выбран, очки не начисляются —'));
+  Object.keys(T_DIVISIONS).forEach(k => division.appendChild(opt(k, T_DIVISIONS[k])));
+  division.value = existing ? divisionOf(existing) : '';
+  // Пары и одиночки при записавшихся не меняются местами — сервер это
+  // не пропустит, и выбор не обещает того, чего не будет.
+  const locked = !!existing && ((existing.participants || []).length + (existing.waitlist || []).length) > 0;
+  if (locked) {
+    const pairsNow = existing.kind === 'doubles';
+    Array.from(division.options).forEach(o => { o.disabled = !!T_DIVISIONS_PAIRS[o.value] !== pairsNow; });
+  }
+  wrapField(body, 'Разряд', division);
+  const isPairs = () => !!T_DIVISIONS_PAIRS[division.value];
+  const genderOf = () => (division.value ? division.value.replace(/^d-/, '') : '');
+
   const from = document.createElement('input');
   from.type = 'date';
   from.value = existing ? existing.dateFrom : todayIso();
@@ -8083,22 +8323,28 @@ function openTournamentForm(existing) {
   fee.addEventListener('input', syncFee);
   syncFee();
 
+  // У пар размер — в людях: так его называют в клубе («до 32 человек,
+  // 16 пар»). Внутри хранится число пар, вдвое меньше. Потолок пар тот
+  // же, что у одиночек (24), — это 48 человек, с запасом на третий корт.
   const size = document.createElement('input');
-  size.type = 'number'; size.min = '4'; size.max = '24';
-  size.value = existing ? String(existing.maxParticipants) : '16';
-  wrapField(body, 'Сколько участников', size);
-
-  // Пол, разряд и категория решают, в какой зачёт лягут очки: у
-  // владельца это отдельные листы Excel, здесь — отдельные таблицы.
-  // Незаполненные поля не мешают провести турнир, но очки за него не
-  // начислятся, и панель скажет об этом словами.
-  const gender = document.createElement('select');
-  gender.appendChild(opt('', '— не выбран, очки не начисляются —'));
-  gender.appendChild(opt('m', 'мужской'));
-  gender.appendChild(opt('w', 'женский'));
-  gender.appendChild(opt('mixed', 'микст'));
-  gender.value = existing && existing.gender ? existing.gender : '';
-  wrapField(body, 'Кто играет', gender);
+  size.type = 'number'; size.min = '4';
+  const sizeField = wrapFieldNode(body, 'Сколько участников', size);
+  let sizePairs = existing ? existing.kind === 'doubles' : false;
+  size.value = existing ? String(existing.maxParticipants * (sizePairs ? 2 : 1)) : '16';
+  function syncSize() {
+    const pairs = isPairs();
+    // Переключили разряд — число в поле пересчитывается, а не читается
+    // заново в других единицах.
+    if (pairs !== sizePairs) {
+      const n = Number(size.value) || 0;
+      size.value = String(pairs ? n * 2 : Math.max(4, Math.round(n / 2)));
+      sizePairs = pairs;
+    }
+    size.max = pairs ? '48' : '24';
+    size.step = pairs ? '2' : '1';
+    sizeField.firstChild.textContent = pairs
+      ? 'Сколько человек — чётное, до 48 (пар вдвое меньше)' : 'Сколько участников';
+  }
 
   // Категория и тип турнира — одно и то же: первая это мастерс, вторая
   // тур, третья челленджер. Поэтому список один, и подписи к нему
@@ -8110,15 +8356,44 @@ function openTournamentForm(existing) {
   category.value = existing && existing.category != null ? String(existing.category) : '';
   wrapField(body, 'Категория турнира — от неё зависит начисление очков', category);
 
-  const ntrpMin = document.createElement('input');
-  ntrpMin.type = 'number'; ntrpMin.min = '1'; ntrpMin.max = '7'; ntrpMin.step = '0.5';
-  ntrpMin.value = existing && existing.ntrpMin != null ? String(existing.ntrpMin) : '';
-  wrapField(body, 'Игровой уровень от — пусто, если без ограничения', ntrpMin);
+  const levelInput = (value) => {
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = '1'; inp.max = '7'; inp.step = '0.5';
+    inp.value = value != null ? String(value) : '';
+    return inp;
+  };
+  // Уровень: у одиночек — свой, у пар — сумма двоих, а в миксте ещё и
+  // у каждого пола свой диапазон («мужчины до 4,0, женщины до 5,0, сумма
+  // не больше 9,0»).
+  const ntrpMin = levelInput(existing ? existing.ntrpMin : null);
+  const ntrpMinField = wrapFieldNode(body, '', ntrpMin);
+  const ntrpMax = levelInput(existing ? existing.ntrpMax : null);
+  const ntrpMaxField = wrapFieldNode(body, '', ntrpMax);
 
-  const ntrpMax = document.createElement('input');
-  ntrpMax.type = 'number'; ntrpMax.min = '1'; ntrpMax.max = '7'; ntrpMax.step = '0.5';
-  ntrpMax.value = existing && existing.ntrpMax != null ? String(existing.ntrpMax) : '';
-  wrapField(body, 'Игровой уровень до', ntrpMax);
+  const ml = (existing && existing.mixedLevels) || { m: {}, w: {} };
+  const mMin = levelInput(ml.m && ml.m.min);
+  const mMax = levelInput(ml.m && ml.m.max);
+  const wMin = levelInput(ml.w && ml.w.min);
+  const wMax = levelInput(ml.w && ml.w.max);
+  const mixedFields = [
+    wrapFieldNode(body, 'Мужчина: уровень от — пусто, если без ограничения', mMin),
+    wrapFieldNode(body, 'Мужчина: уровень до', mMax),
+    wrapFieldNode(body, 'Женщина: уровень от', wMin),
+    wrapFieldNode(body, 'Женщина: уровень до', wMax),
+  ];
+
+  function syncLevels() {
+    const pairs = isPairs();
+    [ntrpMin, ntrpMax].forEach(inp => { inp.max = pairs ? '14' : '7'; });
+    ntrpMinField.firstChild.textContent = pairs
+      ? 'Сумма уровней пары от — пусто, если без ограничения'
+      : 'Игровой уровень от — пусто, если без ограничения';
+    ntrpMaxField.firstChild.textContent = pairs ? 'Сумма уровней пары до' : 'Игровой уровень до';
+    mixedFields.forEach(f => { f.style.display = genderOf() === 'mixed' ? '' : 'none'; });
+  }
+  division.addEventListener('change', () => { syncSize(); syncLevels(); });
+  syncSize();
+  syncLevels();
 
   // Три пресета вместо голого числа групп: «одна группа» и «групп нет»
   // читаются людьми как разные турниры, хотя движок у них один.
@@ -8179,7 +8454,11 @@ function openTournamentForm(existing) {
     + 'что взять с собой. Абзацы сохранятся — и на сайте, и в посте в группе.';
   wrapField(body, 'Подробности — объявление для сайта и группы', note);
 
-  const tgPick = tournamentTelegramFields(body, existing, gender);
+  // Тема в группе запоминается по полу турнира — как и раньше.
+  const tgPick = tournamentTelegramFields(body, existing, {
+    get value() { return genderOf(); },
+    addEventListener: (type, fn) => division.addEventListener(type, fn),
+  });
 
   const closed = document.createElement('select');
   closed.appendChild(opt('open', 'Открыта'));
@@ -8218,6 +8497,10 @@ function openTournamentForm(existing) {
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   acts.appendChild(btn(existing ? 'Сохранить' : 'Создать', 'btn', () => {
     if (title.value.trim().length < 2 || !from.value) { toast('Заполните название и дату'); return; }
+    const people = Number(size.value);
+    if (isPairs() && (people % 2 || people < 8 || people > 48)) {
+      toast('У пар число человек — чётное, от 8 до 48'); return;
+    }
     const groupCount = shape.value === 'ko' ? 0 : (shape.value === 'rr' ? 1 : Number(groups.value));
     const payload = {
       title: title.value,
@@ -8227,11 +8510,17 @@ function openTournamentForm(existing) {
       timeTo: timeTo.value || null,
       blockCourts: block.value !== 'none',
       blockCourtId: block.value === 'all' || block.value === 'none' ? null : Number(block.value),
-      gender: gender.value || null,
+      gender: genderOf() || null,
+      kind: isPairs() ? 'doubles' : 'singles',
+      mixedLevels: genderOf() === 'mixed' ? {
+        m: { min: mMin.value === '' ? null : Number(mMin.value), max: mMax.value === '' ? null : Number(mMax.value) },
+        w: { min: wMin.value === '' ? null : Number(wMin.value), max: wMax.value === '' ? null : Number(wMax.value) },
+      } : null,
       category: category.value === '' ? null : Number(category.value),
       fee: Number(fee.value) || 0,
       payFirst: payFirstSel.value !== 'no',
-      maxParticipants: Number(size.value),
+      // У пар в поле люди, а хранятся пары.
+      maxParticipants: isPairs() ? Math.floor(Number(size.value) / 2) : Number(size.value),
       ntrpMin: ntrpMin.value === '' ? null : Number(ntrpMin.value),
       ntrpMax: ntrpMax.value === '' ? null : Number(ntrpMax.value),
       format: {

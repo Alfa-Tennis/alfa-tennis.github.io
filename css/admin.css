@@ -359,6 +359,7 @@ table.tbl tr.off td { color: var(--ink-soft); text-decoration: line-through; }
 .cross-wrap { overflow-x: auto; }
 table.cross th, table.cross td { text-align: center; padding: 6px 4px; }
 table.cross th.who, table.cross td.who { text-align: left; white-space: nowrap; }
+table.cross.pairs th.who, table.cross.pairs td.who { white-space: normal; min-width: 150px; }
 table.cross th.pl, table.cross td.pl { width: 30px; color: var(--ink-soft); }
 table.cross th.sc, table.cross td.sc { min-width: 56px; font-variant-numeric: tabular-nums; }
 table.cross td.sc.hit { cursor: pointer; }
@@ -385,6 +386,10 @@ table.cross td.pts { background: #F7F9F8; }
 .score-sep { color: var(--ink-soft); }
 .picklist { max-height: 300px; overflow: auto; margin: 8px 0; }
 .picklist .item { cursor: pointer; }
+/* Игрок пары — своей строкой под именем пары: у каждого свой телефон,
+   уровень и взнос. */
+.pair-line { margin: 4px 0 2px; padding-left: 10px; border-left: 2px solid var(--line); }
+.pair-line .acts { margin-top: 2px; }
 .picklist .item:hover { background: #f4f7f5; }
 
 /* ---------- Модальное окно ---------- */

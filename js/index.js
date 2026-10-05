@@ -230,6 +230,12 @@ const ERRORS = {
   'signups-closed': 'Запись на турнир закрыта.',
   'draw-done': 'Жеребьёвка уже прошла — состав закрыт. Позвоните в центр.',
   'not-registered': 'На турнир записываются только клиенты центра.',
+  'partner-not-found': 'Партнёра с таким телефоном нет среди клиентов центра. Пусть зарегистрируется — '
+    + 'или запишитесь без партнёра, в «ищут пару».',
+  'partner-is-me': 'Это ваш собственный номер — укажите телефон партнёра.',
+  'partner-already-in': 'Партнёр уже записан на этот турнир — с кем-то или в «ищут пару».',
+  'invalid-gender': 'Отметьте, кто вы в миксте — мужчина или женщина.',
+  'mixed-same-gender': 'В миксте пара — мужчина и женщина.',
   'not-linked': 'Telegram не привязан к учётке. Откройте бота центра и поделитесь номером.',
   'bad-init-data': 'Telegram не подтвердил вход. Откройте страницу заново.',
   'declined': 'Вход отклонён в Telegram.',
@@ -3168,7 +3174,7 @@ function homeTournaments() {
     it.innerHTML = '<div class="t1">' + escapeHtml(t.title)
       + ' <span class="pill ' + st[0] + '">' + escapeHtml(st[1]) + '</span></div>'
       + '<div class="t2">' + escapeHtml(tournamentDates(t) + ' · ' + t.level)
-      + ' · ' + t.taken + ' из ' + t.maxParticipants
+      + ' · ' + (t.kind === 'doubles' ? 'пар ' : '') + t.taken + ' из ' + t.maxParticipants
       + (t.fee ? ' · взнос ' + money(t.fee) : ' · без взноса') + '</div>';
     it.appendChild(btn('Подробнее', 'btn sm sec', () => openTournamentCard(t.id)));
     card.appendChild(it);
@@ -3194,10 +3200,11 @@ function showTournamentCard() {
   body.innerHTML = '<h3>' + escapeHtml(t.title)
     + ' <span class="pill ' + st[0] + '">' + escapeHtml(st[1]) + '</span></h3>'
     + '<div class="m-sub">' + escapeHtml(tournamentDates(t)) + ' · ' + escapeHtml(t.level)
+    + (T_DIVISION_LABEL[divisionKey(t)] ? '<br>Разряд: ' + escapeHtml(T_DIVISION_LABEL[divisionKey(t)]) : '')
     + '<br>Формат: ' + escapeHtml(tournamentFormat(t))
     + '<br>Матч играется до: ' + escapeHtml(T_SCORING_LABEL[t.scoring.mode] || '')
     + (t.fee
-      ? '<br>Взнос ' + escapeHtml(money(t.fee))
+      ? '<br>Взнос ' + escapeHtml(money(t.fee)) + (t.kind === 'doubles' ? ' с каждого игрока' : '')
         + (t.payFirst ? ' — место в составе после оплаты' : ', оплата на месте')
       : '<br>Без взноса')
     + '</div>'
@@ -3206,7 +3213,7 @@ function showTournamentCard() {
 
   const list = el('div');
   list.innerHTML = '<div class="t2">' + (t.payFirst ? 'В составе' : 'Записались')
-    + ' (' + t.taken + ' из ' + t.maxParticipants + '):</div>';
+    + ' (' + (t.kind === 'doubles' ? 'пар ' : '') + t.taken + ' из ' + t.maxParticipants + '):</div>';
   if (!t.participants.length) {
     list.appendChild(txt('div', 't2', t.payFirst ? 'Пока никого — места за теми, кто оплатил первым.'
       : 'Пока никого. Будете первым.'));
@@ -3232,9 +3239,14 @@ function showTournamentCard() {
   // Своя заявка в листе ожидания — объясняем по её причине: «ждёт
   // оплаты» и «не подошёл уровень» — разные истории для человека.
   const waiting = t.waitlist.some(p => p.mine);
-  if (waiting && t.myWaitReason === 'fee') {
+  if (waiting && t.myWaitReason === 'partner') {
+    body.appendChild(txt('div', 'notice',
+      'Вы в списке «ищут пару»: организатор может подобрать вам партнёра — бот напишет, с кем вы играете. '
+      + 'Договоритесь с кем-то сами — отмените заявку и запишитесь заново вместе.'));
+  } else if (waiting && t.myWaitReason === 'fee') {
     body.appendChild(txt('div', 'notice',
       'Заявка принята. Место в составе — после оплаты взноса ' + money(t.fee)
+      + (t.kind === 'doubles' ? ' с каждого из пары: в состав пара встаёт, когда заплатили оба' : '')
       + ': как оплатить — в описании выше. Получив оплату, организатор переведёт вас в состав.'));
   } else if (waiting) {
     body.appendChild(txt('div', 'notice',
@@ -3273,7 +3285,7 @@ function showTournamentCard() {
     // можно думать. Без него человек откладывает и не успевает.
     const when = clubMoment(t.signupCloseAt);
     if (when) body.appendChild(txt('div', 'empty', 'Записаться можно до ' + when + '.'));
-    acts.appendChild(btn('Записаться', 'btn', () => joinTournament(t)));
+    acts.appendChild(btn('Записаться', 'btn', () => (t.kind === 'doubles' ? openPairJoin(t) : joinTournament(t))));
   }
 
   acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
@@ -3292,10 +3304,68 @@ function tournamentFormat(t) {
     + (f.consolation ? '; для не вышедших — сетка БЕТА' : '');
 }
 
-async function joinTournament(t) {
+// Разряд турнира словами — как в карточке панели.
+const T_DIVISION_LABEL = {
+  m: 'одиночный мужской', w: 'одиночный женский',
+  'd-m': 'парный мужской', 'd-w': 'парный женский', 'd-mixed': 'микст',
+};
+function divisionKey(t) {
+  if (t.kind === 'doubles') return t.gender ? 'd-' + t.gender : '';
+  return t.gender || '';
+}
+
+// Запись на парный турнир: телефон партнёра — клиента центра, а в миксте
+// ещё и кто вы. Без партнёра — в «ищут пару»: организатор подберёт.
+function openPairJoin(t) {
+  if (!state.auth || !state.auth.client) { openAuth('login'); return; }
+  const body = el('div');
+  body.innerHTML = '<h3>Запись парой</h3><div class="m-sub">' + escapeHtml(t.title) + '</div>'
+    + '<div class="empty">Партнёр должен быть клиентом центра — укажите его телефон, бот сообщит ему о записи. '
+    + 'Пары нет — запишитесь без партнёра: организатор может подобрать вам пару.'
+    + (t.fee ? ' Взнос ' + escapeHtml(money(t.fee)) + ' — с каждого игрока.' : '') + '</div>';
+  let gender = null;
+  if (t.gender === 'mixed') {
+    gender = document.createElement('select');
+    [['', '— выберите —'], ['m', 'мужчина'], ['w', 'женщина']].forEach(([v, label]) => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = label;
+      gender.appendChild(o);
+    });
+    const f = el('label', 'field');
+    f.innerHTML = '<span>Вы в миксте</span>';
+    f.appendChild(gender);
+    body.appendChild(f);
+  }
+  const phone = document.createElement('input');
+  phone.type = 'tel';
+  phone.placeholder = '+7 918 000-00-00';
+  const pf = el('label', 'field');
+  pf.innerHTML = '<span>Телефон партнёра</span>';
+  pf.appendChild(phone);
+  body.appendChild(pf);
+
+  const go = (withPartner) => {
+    if (gender && !gender.value) { toast('Отметьте, кто вы в миксте — мужчина или женщина'); return; }
+    if (withPartner && phone.value.replace(/\D/g, '').length < 10) { toast('Проверьте телефон партнёра'); return; }
+    closeModal();
+    joinTournament(t, {
+      partnerPhone: withPartner ? phone.value.trim() : undefined,
+      gender: gender ? gender.value : undefined,
+    });
+  };
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Без партнёра — ищу пару', 'btn sec', () => go(false)));
+  acts.appendChild(btn('Записаться с партнёром', 'btn', () => go(true)));
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+  setTimeout(() => phone.focus(), 50);
+}
+
+async function joinTournament(t, extra) {
   if (!state.auth || !state.auth.client) { openAuth('login'); return; }
   try {
-    const res = await api('joinTournament', { id: t.id });
+    const res = await api('joinTournament', Object.assign({ id: t.id }, extra || {}));
     state.tournament = res.tournament;
     await refreshTournaments();
     showTournamentCard();
@@ -3305,6 +3375,7 @@ async function joinTournament(t) {
       fee: 'Заявка принята — место в составе после оплаты взноса',
       level: 'Ваш уровень вне диапазона турнира — заявка ушла на рассмотрение',
       full: 'Мест уже нет — вы в листе ожидания',
+      partner: 'Вы в списке «ищут пару» — организатор подберёт партнёра',
     };
     toast(res.placed === 'waitlist' ? (why[res.reason] || why.full) : 'Вы записаны на турнир', 4500);
   } catch (e) {
@@ -3318,7 +3389,8 @@ async function leaveTournament(t) {
     state.tournament = res.tournament;
     await refreshTournaments();
     showTournamentCard();
-    toast('Запись отменена');
+    toast(t.kind === 'doubles' ? 'Запись отменена. Партнёр, если был, остаётся в «ищут пару»' : 'Запись отменена',
+      t.kind === 'doubles' ? 4500 : undefined);
   } catch (e) {
     toast(errorText(e.code), 4000);
   }
