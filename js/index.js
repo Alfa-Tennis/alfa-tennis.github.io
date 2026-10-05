@@ -233,7 +233,7 @@ const ERRORS = {
   'partner-not-found': 'Партнёра с таким телефоном нет среди клиентов центра. Пусть зарегистрируется — '
     + 'или запишитесь без партнёра, в «ищут пару».',
   'partner-is-me': 'Это ваш собственный номер — укажите телефон партнёра.',
-  'partner-already-in': 'Партнёр уже записан на этот турнир — с кем-то или в «ищут пару».',
+  'partner-already-in': 'Партнёр уже записан на этот турнир в паре с другим игроком.',
   'invalid-gender': 'Отметьте, кто вы в миксте — мужчина или женщина.',
   'mixed-same-gender': 'В миксте пара — мужчина и женщина.',
   'not-linked': 'Telegram не привязан к учётке. Откройте бота центра и поделитесь номером.',
@@ -3175,6 +3175,7 @@ function homeTournaments() {
       + ' <span class="pill ' + st[0] + '">' + escapeHtml(st[1]) + '</span></div>'
       + '<div class="t2">' + escapeHtml(tournamentDates(t) + ' · ' + t.level)
       + ' · ' + (t.kind === 'doubles' ? 'пар ' : '') + t.taken + ' из ' + t.maxParticipants
+      + (t.seeking ? ' · ищут пару: ' + t.seeking : '')
       + (t.fee ? ' · взнос ' + money(t.fee) : ' · без взноса') + '</div>';
     it.appendChild(btn('Подробнее', 'btn sm sec', () => openTournamentCard(t.id)));
     card.appendChild(it);
@@ -3225,6 +3226,20 @@ function showTournamentCard() {
   if (t.feePending) {
     list.appendChild(txt('div', 't2', 'Подали заявку и ждут оплаты: ' + t.feePending + '.'));
   }
+  // «Ищут пару» — поимённо: увидеть человека и позвать его в пару,
+  // самому или через организатора. Уровень — чтобы прикинуть сумму пары.
+  const seekers = t.seekers || [];
+  if (seekers.length) {
+    list.appendChild(txt('div', 't2 t-seek-head', 'Ищут пару:'));
+    seekers.forEach((p, i) => {
+      list.appendChild(txt('div', 't1', (i + 1) + '. ' + p.name
+        + (p.ntrp == null ? '' : ' — уровень ' + String(p.ntrp).replace('.', ','))
+        + (p.mine ? ' — это вы' : '')));
+    });
+    list.appendChild(txt('div', 'empty',
+      'Хотите сыграть с кем-то из них — свяжитесь сами и запишитесь парой по его телефону: '
+      + 'из «ищут пару» он уйдёт сам. Или напишите организатору — он сведёт вас в пару.'));
+  }
   body.appendChild(list);
 
   // Свой первый матч — после рассылки владельца. Только первый: дальше
@@ -3242,7 +3257,8 @@ function showTournamentCard() {
   if (waiting && t.myWaitReason === 'partner') {
     body.appendChild(txt('div', 'notice',
       'Вы в списке «ищут пару»: организатор может подобрать вам партнёра — бот напишет, с кем вы играете. '
-      + 'Договоритесь с кем-то сами — отмените заявку и запишитесь заново вместе.'));
+      + 'Договорились с кем-то сами — запишитесь парой по его телефону (или он по вашему), '
+      + 'отменять эту заявку не нужно.'));
   } else if (waiting && t.myWaitReason === 'fee') {
     body.appendChild(txt('div', 'notice',
       'Заявка принята. Место в составе — после оплаты взноса ' + money(t.fee)
@@ -3266,6 +3282,11 @@ function showTournamentCard() {
   }
 
   if (t.mine && !t.drawnAt) {
+    // Ищущий пару может и сам записаться парой — его заявка «ищу пару»
+    // уйдёт сама. Пока запись открыта.
+    if (waiting && t.myWaitReason === 'partner' && !t.signupsClosed && !t.signupsClosedNow) {
+      acts.appendChild(btn('Записаться парой', 'btn', () => openPairJoin(t)));
+    }
     acts.appendChild(btn(waiting ? 'Отменить заявку' : 'Отменить запись', 'btn danger', () => leaveTournament(t)));
   } else if (t.mine) {
     body.appendChild(txt('div', 'notice',
@@ -3354,7 +3375,10 @@ function openPairJoin(t) {
     });
   };
   const acts = el('div', 'm-acts');
-  acts.appendChild(btn('Без партнёра — ищу пару', 'btn sec', () => go(false)));
+  // Уже в «ищут пару» — второй раз туда же незачем.
+  if (!(t.mine && t.myWaitReason === 'partner')) {
+    acts.appendChild(btn('Без партнёра — ищу пару', 'btn sec', () => go(false)));
+  }
   acts.appendChild(btn('Записаться с партнёром', 'btn', () => go(true)));
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   body.appendChild(acts);
