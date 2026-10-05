@@ -363,6 +363,9 @@ table.cross.pairs th.who, table.cross.pairs td.who { white-space: normal; min-wi
 table.cross th.pl, table.cross td.pl { width: 30px; color: var(--ink-soft); }
 table.cross th.sc, table.cross td.sc { min-width: 56px; font-variant-numeric: tabular-nums; }
 table.cross td.sc.hit { cursor: pointer; }
+/* Строка зачёта очков — нажатием правится перенос. */
+table.tbl tr.hit { cursor: pointer; }
+table.tbl tr.hit:hover td { background: var(--accent-tint); }
 table.cross td.sc.hit:hover { background: var(--accent-tint); }
 table.cross td.sc.self {
   background: repeating-linear-gradient(-45deg, #F3F5F4 0 5px, #E8ECEA 5px 10px);

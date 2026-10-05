@@ -983,6 +983,8 @@ const state = {
   tab: 'day', date: todayIso(), clientQuery: '', clientSort: 'default', loadedAt: 0, focusSession: null,
   // Какой турнир открыт на вкладке «Турниры». Пусто — показан перечень.
   tournamentId: null,
+  // Зачёт очков: по каждой таблице — раскрыта ли целиком и что в поиске.
+  pointsView: {},
   // День или неделя в сетке. Запоминаем: у стойки режим выбирают один
   // раз и работают в нём всю смену.
   span: savedSpan === 'week' ? 'week' : 'day',
@@ -6370,6 +6372,9 @@ async function editTournament(id) {
 // Зачёт очков — второй картой на той же вкладке. Устроен как таблицы
 // владельца в Excel: строка на человека, колонка на турнир, сумма
 // справа, места диапазонами при равенстве.
+// Сколько строк зачёта видно сразу — остальные кнопкой «Показать всех».
+const POINTS_TOP = 10;
+
 function renderTourPoints(view, canEdit) {
   const data = db.tourPoints;
   const card = el('div', 'card');
@@ -6402,39 +6407,70 @@ function renderTourPoints(view, canEdit) {
     const box = el('div', 'item');
     box.appendChild(txt('div', 't1', table.label));
 
+    // За сезон в таблице оказываются все, кто сыграл хоть один турнир, —
+    // десятки строк. Поэтому сначала первые десять и поиск по фамилии, а
+    // остальные — кнопкой. Раскрытие и поиск помнятся до перезагрузки:
+    // после правки переноса панель перерисовывается и не должна
+    // сворачивать таблицу обратно.
+    const key = data.season + ':' + table.key;
+    const look = state.pointsView[key] || (state.pointsView[key] = { all: false, q: '' });
+    const search = document.createElement('input');
+    search.placeholder = 'Поиск по фамилии или имени';
+    search.value = look.q;
+    if (table.rows.length > POINTS_TOP) wrapFieldNode(box, 'Поиск', search);
+
     // Таблица уезжает вбок на телефоне: колонок столько, сколько
     // турниров за сезон, и ужимать их нельзя — числа станут нечитаемы.
     const scroll = el('div', 'cross-wrap');
-    let html = '<table class="tbl"><thead><tr><th>Место</th><th>Ф.И.О.</th>';
-    table.events.forEach(ev => {
-      // Перенос — не турнир, и датой его подписывать нечем: колонка
-      // называется словом.
-      html += '<th title="' + escapeHtml(ev.title) + '">'
-        + escapeHtml(ev.carry ? 'перенос' : shortDate(ev.date)) + '</th>';
-    });
-    html += '<th>Сумма</th></tr></thead><tbody>';
-    table.rows.forEach(r => {
-      html += '<tr><td>' + escapeHtml(r.place) + '</td><td>' + escapeHtml(r.name) + '</td>';
-      table.events.forEach(ev => {
-        html += '<td>' + (r.scores[ev.id] == null ? '' : r.scores[ev.id]) + '</td>';
-      });
-      html += '<td><b>' + r.total + '</b></td></tr>';
-    });
-    html += '</tbody></table>';
-    scroll.innerHTML = html;
     box.appendChild(scroll);
+    const more = el('div', 'acts');
+    box.appendChild(more);
 
-    // Правка переноса и отсюда: в день турнира его ставят из состава, а
-    // «Иванову забыли пятнадцать очков» вспоминается в другой день.
-    if (canEdit && table.rows.length) {
-      const row = el('div', 'acts');
-      row.appendChild(txt('span', 't2', 'Поправить перенос:'));
-      table.rows.forEach(r => {
-        row.appendChild(btn(r.name, 'btn sm sec',
-          () => openCarryRowForm(data.season, table, r)));
+    function draw() {
+      const q = look.q.trim().toLowerCase();
+      const found = q ? table.rows.filter(r => r.name.toLowerCase().indexOf(q) >= 0) : table.rows;
+      const shown = q || look.all ? found : found.slice(0, POINTS_TOP);
+      const tbl = el('table', 'tbl');
+      let head = '<thead><tr><th>Место</th><th>Ф.И.О.</th>';
+      table.events.forEach(ev => {
+        // Перенос — не турнир, и датой его подписывать нечем: колонка
+        // называется словом.
+        head += '<th title="' + escapeHtml(ev.title) + '">'
+          + escapeHtml(ev.carry ? 'перенос' : shortDate(ev.date)) + '</th>';
       });
-      box.appendChild(row);
+      tbl.innerHTML = head + '<th>Сумма</th></tr></thead>';
+      const body = document.createElement('tbody');
+      shown.forEach(r => {
+        const tr = document.createElement('tr');
+        let html = '<td>' + escapeHtml(r.place) + '</td><td>' + escapeHtml(r.name) + '</td>';
+        table.events.forEach(ev => {
+          html += '<td>' + (r.scores[ev.id] == null ? '' : r.scores[ev.id]) + '</td>';
+        });
+        tr.innerHTML = html + '<td><b>' + r.total + '</b></td>';
+        // Правка переноса и отсюда — нажатием на строку: в день турнира
+        // его ставят из состава, а «Иванову забыли пятнадцать очков»
+        // вспоминается в другой день.
+        if (canEdit) {
+          tr.className = 'hit';
+          tr.title = 'Поправить перенос';
+          tr.addEventListener('click', () => openCarryRowForm(data.season, table, r));
+        }
+        body.appendChild(tr);
+      });
+      tbl.appendChild(body);
+      scroll.innerHTML = '';
+      scroll.appendChild(shown.length ? tbl : txt('div', 'empty', 'Никого не нашли.'));
+
+      more.innerHTML = '';
+      if (!q && table.rows.length > POINTS_TOP) {
+        more.appendChild(btn(look.all ? 'Свернуть до первых ' + POINTS_TOP
+          : 'Показать всех (' + table.rows.length + ')',
+        'btn sm sec', () => { look.all = !look.all; draw(); }));
+      }
+      if (canEdit && shown.length) more.appendChild(txt('span', 't2', 'Перенос правится нажатием на строку.'));
     }
+    search.addEventListener('input', () => { look.q = search.value; draw(); });
+    draw();
 
     card.appendChild(box);
   });
