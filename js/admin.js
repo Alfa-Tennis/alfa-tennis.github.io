@@ -985,6 +985,8 @@ const state = {
   tournamentId: null,
   // Зачёт очков: по каждой таблице — раскрыта ли целиком и что в поиске.
   pointsView: {},
+  // Какой зачёт показан — их за сезон до двенадцати, на экране один.
+  pointsTable: null,
   // День или неделя в сетке. Запоминаем: у стойки режим выбирают один
   // раз и работают в нём всю смену.
   span: savedSpan === 'week' ? 'week' : 'day',
@@ -6403,7 +6405,27 @@ function renderTourPoints(view, canEdit) {
       + 'категорией и составом играющих.'));
   }
 
-  (data.tables || []).forEach(table => {
+  // Зачётов за сезон до двенадцати: пол × разряд × категория. Друг под
+  // другом они превращали вкладку в простыню, поэтому на экране один —
+  // выбранный в списке. Выбор помнится до перезагрузки и сезона не
+  // зависит: «мужской парный» ищут и в прошлом году.
+  // Порядок списка: одиночные, потом парные; мужской, потом женский; по
+  // категории. Ключ — «пол-разряд-cКатегория».
+  const rank = key => {
+    const [g, kind, c] = String(key).split('-');
+    return (kind === 'doubles' ? 100 : 0) + (g === 'w' ? 10 : 0) + (Number(String(c).slice(1)) || 0);
+  };
+  const tables = (data.tables || []).slice().sort((a, b) => rank(a.key) - rank(b.key));
+  const current = tables.find(x => x.key === state.pointsTable) || tables[0];
+  if (tables.length > 1) {
+    const pick = document.createElement('select');
+    tables.forEach(x => pick.appendChild(opt(x.key, x.label + ' — ' + plural(x.rows.length, 'человек', 'человека', 'человек'))));
+    pick.value = current.key;
+    pick.addEventListener('change', () => { state.pointsTable = pick.value; render(); });
+    wrapField(card, 'Зачёт', pick);
+  }
+
+  (current ? [current] : []).forEach(table => {
     const box = el('div', 'item');
     box.appendChild(txt('div', 't1', table.label));
 
