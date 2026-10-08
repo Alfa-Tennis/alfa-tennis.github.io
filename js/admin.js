@@ -5375,7 +5375,10 @@ function openSessionForm(session, preset, roster) {
   fSeats.appendChild(selSeats); body.appendChild(fSeats);
 
   const fNote = el('label', 'field'); fNote.innerHTML = '<span>Примечание для игроков</span>';
-  const inpNote = document.createElement('input');
+  // Многострочное: сюда пишут целый «формат проведения» на три сотни
+  // знаков, и в одну строку его не прочесть и не поправить.
+  const inpNote = document.createElement('textarea');
+  inpNote.rows = 5;
   inpNote.placeholder = 'Например: с тренером, мячи центра';
   inpNote.value = op ? op.note : '';
   // Тот же предел, что на сервере: лишнее раньше обрезалось молча, и
