@@ -233,7 +233,7 @@ const ERRORS = {
   'partner-not-found': 'Партнёра с таким телефоном нет среди клиентов центра. Пусть зарегистрируется — '
     + 'или запишитесь без партнёра, в «ищут пару».',
   'partner-is-me': 'Это ваш собственный номер — укажите телефон партнёра.',
-  'partner-already-in': 'Партнёр уже записан на этот турнир в паре с другим игроком.',
+  'partner-already-in': 'Партнёр уже записан — сам или в паре с другим игроком.',
   'invalid-gender': 'Отметьте, кто вы в миксте — мужчина или женщина.',
   'mixed-same-gender': 'В миксте пара — мужчина и женщина.',
   'not-linked': 'Telegram не привязан к учётке. Откройте бота центра и поделитесь номером.',
@@ -255,8 +255,14 @@ const ERRORS = {
   'move-too-late': 'До игры осталось меньше часа — перенести уже нельзя.',
   'long-needs-admin': 'Бронь от 3 часов продлевает только администратор — позвоните в центр.',
   'extend-too-early': 'Продлить можно с часа до начала игры. Раньше — через «Изменить время».',
-  'extend-too-late': 'Игра уже закончилась — продлевать нечего.',
+  'extend-too-late': 'Продлить можно не позже чем через полчаса после конца брони — дальше только через администратора.',
   'not-extendable': 'Эту бронь продлить нельзя — спросите администратора.',
+  'player-not-found': 'С таким телефоном нет клиента центра. Позвать можно только того, кто зарегистрирован.',
+  'player-is-me': 'Это ваш собственный номер — вы и так получите напоминание.',
+  'player-already': 'Этот игрок уже в списке.',
+  'too-many-players': 'Позвать можно до семи человек.',
+  'not-confirmed': 'Звать игроков можно, когда бронь подтверждена.',
+  'finished': 'Игра уже закончилась.',
   'not-movable': 'Эту бронь перенести нельзя.',
   'openplay-not-found': 'Тренировка не найдена — обновите страницу.',
   'openplay-cancelled': 'Эта тренировка отменена.',
@@ -411,7 +417,11 @@ async function load() {
   // экземпляр, поэтому четыре параллельных поднимали до четырёх
   // контейнеров, из которых тёплым был один: остальные платили холодный
   // старт, и первое открытие после тишины занимало полторы-две секунды.
-  const boot = await api('bootstrap', { days: 14 });
+  // Сохранённый вход — сразу в первый запрос: вход подхватывается ниже,
+  // уже после него, и без токена составы тренировок приезжали как для
+  // прохожего — «Имя Ф.» вместо «Фамилия И.». Протухший токен сервер
+  // здесь просто не узнает и ответит как гостю.
+  const boot = await api('bootstrap', { days: 14, token: store.get(TOKEN_KEY) || undefined });
   state.config = boot.config;
   state.data = boot.availability;
   state.dataAt = Date.now();
@@ -2941,11 +2951,14 @@ function openSessionCard(idOrSession, roster) {
   body.appendChild(info);
 
   if (op.note) body.appendChild(txt('div', 'empty', op.note));
-  // Парная: пришедших поодиночке сводит в пары организатор — человек
-  // должен знать это до записи, а не гадать, с кем он будет играть.
-  if (op.format === 'pairs') {
-    body.appendChild(txt('div', 'notice', 'Игра парами. Записывайтесь и без партнёра — '
-      + 'пары из пришедших поодиночке составит организатор, о своём партнёре вы узнаете заранее.'));
+  // Парная и микст: пришедших поодиночке сводит в пары организатор —
+  // человек должен знать это до записи, а не гадать, с кем он будет играть.
+  const pairsLike = op.format === 'pairs' || op.format === 'mixed';
+  if (pairsLike) {
+    body.appendChild(txt('div', 'notice', (op.format === 'mixed'
+      ? 'Микст — пары мужчина + женщина. ' : 'Игра парами. ')
+      + 'Записывайтесь и без партнёра — пары из пришедших поодиночке составит организатор, '
+      + 'о своём партнёре вы узнаете заранее.'));
   }
 
   const list = el('div', 'card');
@@ -2956,7 +2969,7 @@ function openSessionCard(idOrSession, roster) {
       const row = el('div', 'item');
       row.innerHTML = '<div class="t1">' + (i + 1) + '. ' + escapeHtml(p.name)
         + (p.partnerName ? ' + ' + escapeHtml(p.partnerName) : '')
-        + (op.format === 'pairs' && !p.partnerName ? ' <span class="pill wait">ищет пару</span>' : '')
+        + (pairsLike && !p.partnerName ? ' <span class="pill wait">ищет пару</span>' : '')
         + (p.mine ? ' <span class="pill ok">это вы</span>' : '') + '</div>';
       list.appendChild(row);
     });
@@ -2982,15 +2995,34 @@ function openSessionCard(idOrSession, roster) {
   } else if (op.signupsClosed) {
     body.appendChild(txt('div', 'notice', 'Набор закрыт. Позвоните в центр, если хотите попасть.'));
   } else {
-    const fPair = el('label', 'field');
-    fPair.innerHTML = '<span>Идёте парой? Впишите партнёра — займёте два места</span>';
-    const inpPair = document.createElement('input');
-    inpPair.placeholder = 'Имя партнёра, если есть';
-    fPair.appendChild(inpPair);
-    body.insertBefore(fPair, list);
+    const form = el('div');
+    body.insertBefore(form, list);
+    // Микст: пол называют при записи — по нему организатор сводит пары.
+    let gender = null;
+    if (op.format === 'mixed') {
+      const g = el('div', 'field');
+      g.innerHTML = '<span>Вы в миксте</span>';
+      const row = el('div', 'acts');
+      const pick = (v, label) => {
+        const b = btn(label, 'btn sm sec', () => {
+          gender = v;
+          row.querySelectorAll('button').forEach(x => x.classList.toggle('sec', x !== b));
+        });
+        return b;
+      };
+      row.appendChild(pick('m', 'Мужчина'));
+      row.appendChild(pick('w', 'Женщина'));
+      g.appendChild(row);
+      form.appendChild(g);
+    }
+    const partner = partnerPicker(form, s);
 
-    acts.appendChild(btn(op.full ? 'Встать в очередь' : 'Записаться', 'btn',
-      () => joinSession(s, inpPair.value.trim(), false, which)));
+    acts.appendChild(btn(op.full ? 'Встать в очередь' : 'Записаться', 'btn', () => {
+      if (op.format === 'mixed' && !gender) { toast('Отметьте, кто вы в миксте — мужчина или женщина'); return; }
+      const p = partner.value();
+      if (p === false) return;
+      joinSession(s, { partner: p, gender }, false, which);
+    }));
   }
   acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
   body.appendChild(acts);
@@ -2998,13 +3030,106 @@ function openSessionCard(idOrSession, roster) {
   showModal(body);
 }
 
-async function joinSession(s, partnerName, confirmLevel, roster) {
+// Партнёр в пару — клиент центра, как в парном турнире: по фамилии
+// (точное совпадение, до пяти человек, две последние цифры телефона) или
+// по телефону целиком. value(): null — без партнёра, объект — кого
+// звать, false — поле заполнено, но партнёр не выбран (сказано тостом).
+function partnerPicker(box, s) {
+  let chosen = null;
+  const wrap = el('div');
+  box.appendChild(wrap);
+
+  const draw = (found) => {
+    wrap.innerHTML = '';
+    if (chosen) {
+      const it = el('div', 'item');
+      it.appendChild(txt('div', 't1', 'Партнёр: ' + chosen.name));
+      if (chosen.tail) it.appendChild(txt('div', 't3', 'телефон заканчивается на ' + chosen.tail));
+      const a = el('div', 'acts');
+      a.appendChild(btn('Другой партнёр', 'btn sm sec', () => { chosen = null; draw(null); }));
+      it.appendChild(a);
+      wrap.appendChild(it);
+      return;
+    }
+    const field = el('label', 'field');
+    field.innerHTML = '<span>Идёте парой? Партнёр — фамилия или телефон (клиент центра). Займёте два места</span>';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.autocomplete = 'off';
+    input.placeholder = 'Иванов или +7 918 000-00-00 — пусто, если без пары';
+    input.value = (found && found.query) || '';
+    field.appendChild(input);
+    wrap.appendChild(field);
+    wrap.input = input;
+
+    const find = btn('Найти', 'btn sm sec', async () => {
+      const text = input.value.trim();
+      if (text.replace(/\D/g, '').length >= 10) {
+        chosen = { phone: text, name: text };
+        draw(null);
+        return;
+      }
+      if (/\d/.test(text) || text.replace(/[\s-]/g, '').length < 2) {
+        toast('Введите фамилию целиком или телефон полностью');
+        return;
+      }
+      if (!state.auth || !state.auth.client) { openAuth('login'); return; }
+      find.disabled = true;
+      try {
+        const res = await api('openPlayPartnerSearch', { date: s.date, bookingId: s.id, lastName: text });
+        draw({ query: text, list: res.candidates || [], more: !!res.more });
+      } catch (e) { find.disabled = false; toast(errorText(e.code), 4500); }
+    });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); find.click(); } });
+    const a = el('div', 'acts');
+    a.appendChild(find);
+    wrap.appendChild(a);
+
+    if (found) {
+      if (!found.list.length) {
+        wrap.appendChild(txt('div', 'empty', 'С такой фамилией клиентов нет. Проверьте написание или введите телефон.'));
+      }
+      found.list.forEach(c => {
+        const row = el('div', 'item');
+        row.appendChild(txt('div', 't1', c.name));
+        row.appendChild(txt('div', 't3', 'телефон заканчивается на ' + (c.tail || '—')));
+        const ra = el('div', 'acts');
+        ra.appendChild(btn('Выбрать', 'btn sm', () => {
+          chosen = { id: c.id, lastName: found.query, name: c.name, tail: c.tail };
+          draw(null);
+        }));
+        row.appendChild(ra);
+        wrap.appendChild(row);
+      });
+      if (found.more) wrap.appendChild(txt('div', 'empty', 'Показаны первые пять — если нужного нет, введите телефон.'));
+    }
+  };
+  draw(null);
+
+  return {
+    value() {
+      if (chosen) return chosen.id ? { id: chosen.id, lastName: chosen.lastName } : { phone: chosen.phone };
+      if (wrap.input && wrap.input.value.trim()) {
+        toast('Найдите партнёра и нажмите «Выбрать» — или очистите поле, если идёте без пары', 4500);
+        return false;
+      }
+      return null;
+    },
+  };
+}
+
+async function joinSession(s, opts, confirmLevel, roster) {
   if (!state.auth || !state.auth.client) { openAuth('login'); return; }
+  const o = opts || {};
+  const partner = o.partner || null;
 
   try {
     const res = await api('joinOpenPlay', {
       date: s.date, bookingId: s.id,
-      partnerName: partnerName || undefined,
+      partnerId: partner && partner.id ? partner.id : undefined,
+      partnerLastName: partner && partner.id ? partner.lastName : undefined,
+      partnerPhone: partner && partner.phone ? partner.phone : undefined,
+      gender: o.gender || undefined,
       confirmLevel: confirmLevel || undefined,
       roster: roster === 'alt' ? 'alt' : undefined,
     });
@@ -3018,24 +3143,25 @@ async function joinSession(s, partnerName, confirmLevel, roster) {
     // Уровень не запрещает записаться, а предупреждает: ссорить систему
     // с людьми из-за половины балла не стоит, решает организатор.
     if (e.code === 'needs-level-confirm') {
-      confirmLevelAndJoin(s, partnerName, e.hint, roster);
+      confirmLevelAndJoin(s, o, e.hint, roster, e.data && e.data.who);
       return;
     }
     toast(errorText(e.code), 4000);
   }
 }
 
-function confirmLevelAndJoin(s, partnerName, hint, roster) {
+function confirmLevelAndJoin(s, opts, hint, roster, who) {
   const op = rosterOf(s, roster || 'main');
   const body = el('div');
   body.innerHTML = '<h3>Проверьте уровень</h3>'
     + '<div class="m-sub">' + escapeHtml(op.title + ' · ' + op.level) + '</div>';
+  const whose = who === 'partner' ? 'Уровень партнёра' : 'Ваш уровень';
   body.appendChild(html('div', 'notice', hint === 'below'
-    ? 'Ваш уровень ниже диапазона этой тренировки. Записаться можно, но игра может оказаться тяжёлой.'
-    : 'Ваш уровень выше диапазона этой тренировки. Записаться можно, но игра может оказаться слишком лёгкой.'));
+    ? whose + ' ниже диапазона этой тренировки. Записаться можно, но игра может оказаться тяжёлой.'
+    : whose + ' выше диапазона этой тренировки. Записаться можно, но игра может оказаться слишком лёгкой.'));
 
   const acts = el('div', 'm-acts');
-  acts.appendChild(btn('Всё равно записаться', 'btn', () => joinSession(s, partnerName, true, roster)));
+  acts.appendChild(btn('Всё равно записаться', 'btn', () => joinSession(s, opts, true, roster)));
   acts.appendChild(btn('Передумал', 'btn sec', closeModal));
   body.appendChild(acts);
   showModal(body);
@@ -3763,7 +3889,16 @@ function bookingItem(g, isPast) {
     it.appendChild(txt('div', 't3', '⇄ в ' + fmtTime(seg.start) + ' переход на ' + (court ? court.name : 'соседний корт')));
   }
 
-  if (!isPast && g.status === 'expired') {
+  if (!isPast && g.extend === 'after') {
+    // Время по брони вышло, но полчаса после него ещё можно доплатить
+    // продлением. Отменять и переносить сыгранное нечего — кнопка одна.
+    const graceEnd = minutesToTime(timeToMinutes(g.end) + state.config.booking.slotStep);
+    it.appendChild(txt('div', 't3', 'Время по брони закончилось в ' + fmtTime(g.end)
+      + '. Если ещё играете — продлите до ' + fmtTime(graceEnd) + ', пока полчаса свободны.'));
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Продлить на 30 минут', 'btn sm', () => confirmExtend(g)));
+    it.appendChild(acts);
+  } else if (!isPast && g.status === 'expired') {
     // Отменять уже нечего: корт вернулся в общий доступ сам.
     it.appendChild(txt('div', 't3',
       'Администратор не ответил вовремя — время вернулось в общий доступ. Выберите заново, если оно ещё свободно.'));
@@ -3786,16 +3921,170 @@ function bookingItem(g, isPast) {
     // первой, потому что «сдвинуть на полчаса» люди хотят чаще, чем
     // отменить совсем, и раньше ради этого звонили администратору.
     if (g.movable) acts.appendChild(btn('Изменить время', 'btn sm', () => openMoveBooking(g)));
-    // «Не успеваем доиграть» — с часа до начала и до конца игры. Вечером
+    // «Не успеваем доиграть» — с часа до начала и до получаса после конца
+    // игры (тогда ветка выше). Вечером
     // администраторов нет, поэтому кнопка здесь, а не звонок. Свободны ли
     // следующие полчаса, скажет сервер при нажатии.
     if (g.extend === 'ok') acts.appendChild(btn('Продлить на 30 минут', 'btn sm', () => confirmExtend(g)));
+    // Позвать игроков — ради напоминаний. Заявку администратор ещё может
+    // отклонить, поэтому только у подтверждённой.
+    if (g.kind !== 'series' && g.status === 'confirmed') {
+      const players = g.players || [];
+      if (players.length) {
+        it.appendChild(txt('div', 't3', '👥 Играют: ' + players.map(p => p.name + (p.telegram ? '' : ' (без Telegram)')).join(', ')));
+      }
+      acts.appendChild(btn('Кто играет', 'btn sm sec', () => openPlayers(g)));
+    }
     acts.appendChild(btn(g.kind === 'series' ? 'Отменить занятие' : 'Отменить', 'btn sm sec',
       () => confirmCancel(g, late)));
     it.appendChild(acts);
   }
 
   return it;
+}
+
+// «Кто играет»: позвать в свою бронь тех, с кем играешь, — по телефону,
+// как партнёра в парный турнир. Ни на что, кроме напоминаний, это не
+// влияет, и окно говорит об этом первым же абзацем: иначе люди решат, что
+// позванный должен платить или что без него бронь не та.
+function openPlayers(g) {
+  const max = 7;
+  let list = (g.players || []).slice();
+  // Последний поиск по фамилии живёт до закрытия окна: позвал одного
+  // однофамильца — список не пропадает, если нужен и второй.
+  let query = '';
+  let candidates = null;
+  let more = false;
+  const body = el('div');
+
+  const draw = () => {
+    body.innerHTML = '<h3>Кто играет</h3>'
+      + '<div class="m-sub">' + escapeHtml(dayLabelLong(g.date, state.mine.today) + ' · ' + fmtRange(g.start, g.end)) + '</div>';
+    body.appendChild(txt('div', 'empty', 'Позванные получат в Telegram те же напоминания о начале игры, что и вы. '
+      + 'Больше это ни на что не влияет: бронь остаётся вашей, отменить и перенести её можете только вы.'));
+
+    list.forEach(p => {
+      const row = el('div', 'item');
+      row.appendChild(txt('div', 't1', p.name));
+      row.appendChild(txt('div', 't3', p.telegram ? 'Получит напоминания'
+        : 'Telegram не подключён — напоминаний не будет. Пусть привяжет его в профиле на сайте.'));
+      const acts = el('div', 'acts');
+      const rm = btn('Убрать', 'btn sm sec', async () => {
+        rm.disabled = true;
+        try {
+          const res = await api('bookingPlayers', { date: g.date, bookingId: g.id, removeId: p.id });
+          sync(res.players);
+        } catch (e) { rm.disabled = false; toast(errorText(e.code), 4500); }
+      });
+      acts.appendChild(rm);
+      row.appendChild(acts);
+      body.appendChild(row);
+    });
+
+    if (list.length < max) {
+      // Одно поле на оба способа: цифры — телефон, буквы — фамилия. Фамилию
+      // знают чаще, а номер у человека бывает не тот, на который он
+      // зарегистрирован.
+      const field = el('label', 'field');
+      field.innerHTML = '<span>Фамилия или телефон игрока — клиента центра</span>';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.autocomplete = 'off';
+      input.placeholder = 'Иванов или +7 918 000-00-00';
+      input.value = query;
+      field.appendChild(input);
+      body.appendChild(field);
+      const found = el('div');
+      body.appendChild(found);
+      if (candidates) drawCandidates(found);
+
+      const go = btn('Найти', 'btn', async () => {
+        const text = input.value.trim();
+        const digits = text.replace(/\D/g, '');
+        if (digits.length >= 10) {
+          go.disabled = true;
+          try {
+            const res = await api('bookingPlayers', { date: g.date, bookingId: g.id, phone: text });
+            query = ''; candidates = null;
+            added(res.players);
+          } catch (e) { go.disabled = false; toast(errorText(e.code), 4500); }
+          return;
+        }
+        if (/\d/.test(text) || text.replace(/[\s-]/g, '').length < 2) {
+          toast('Введите фамилию целиком или телефон полностью');
+          return;
+        }
+        go.disabled = true;
+        try {
+          const res = await api('bookingPlayers', { date: g.date, bookingId: g.id, lastName: text });
+          query = text; candidates = res.candidates || []; more = !!res.more;
+          draw();
+        } catch (e) { go.disabled = false; toast(errorText(e.code), 4500); }
+      });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go.click(); } });
+      const acts = el('div', 'm-acts');
+      acts.appendChild(go);
+      acts.appendChild(btn('Готово', 'btn sec', done));
+      body.appendChild(acts);
+    } else {
+      body.appendChild(txt('div', 'empty', 'Больше семи позвать нельзя.'));
+      const acts = el('div', 'm-acts');
+      acts.appendChild(btn('Готово', 'btn sec', done));
+      body.appendChild(acts);
+    }
+  };
+
+  // Найденные по фамилии: полное имя и две последние цифры телефона —
+  // чтобы отличить однофамильцев, сверившись со своими контактами.
+  function drawCandidates(box) {
+    if (!candidates.length) {
+      box.appendChild(txt('div', 'empty', 'С такой фамилией клиентов нет. Проверьте написание или позовите по телефону.'));
+      return;
+    }
+    candidates.forEach(c => {
+      const row = el('div', 'item');
+      row.appendChild(txt('div', 't1', c.name));
+      row.appendChild(txt('div', 't3', 'телефон заканчивается на ' + (c.tail || '—')));
+      const acts = el('div', 'acts');
+      // Сверяем с текущим списком, а не с ответом поиска: человека могли
+      // убрать или позвать уже после.
+      if (list.some(p => p.id === c.id)) {
+        acts.appendChild(txt('div', 't3', 'уже в списке'));
+      } else {
+        const call = btn('Позвать', 'btn sm', async () => {
+          call.disabled = true;
+          try {
+            const res = await api('bookingPlayers', { date: g.date, bookingId: g.id, lastName: query, addId: c.id });
+            added(res.players);
+          } catch (e) { call.disabled = false; toast(errorText(e.code), 4500); }
+        });
+        acts.appendChild(call);
+      }
+      row.appendChild(acts);
+      box.appendChild(row);
+    });
+    if (more) box.appendChild(txt('div', 'empty', 'Показаны первые пять — если нужного нет, позовите по телефону.'));
+  }
+
+  function added(next) {
+    sync(next);
+    const last = list[list.length - 1];
+    if (last) toast(last.name + (last.telegram ? ' получит напоминания' : ': Telegram не подключён, напоминаний не будет'), 4500);
+  }
+
+  function done() { closeModal(); }
+
+  // Список под окном правим сразу, без повторного запроса «Моих броней»:
+  // окно закрывают и мимо «Готово», а ответ сервера уже несёт весь список.
+  function sync(next) {
+    list = next || [];
+    g.players = list;
+    renderMine();
+    draw();
+  }
+
+  draw();
+  showModal(body);
 }
 
 // Продление на полчаса. Спрашиваем подтверждение, потому что это деньги:

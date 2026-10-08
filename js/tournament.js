@@ -1,6 +1,8 @@
 const API_URL = 'https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt';
 
 const TOKEN_KEY = 'alfa_token';
+// Вход в панель — тот же сайт, свой ключ (js/admin.js).
+const ADMIN_TOKEN_KEY = 'alfa_admin_token';
 // Обращение к localStorage может выбросить исключение — приватный режим,
 // отключённое хранилище. Без обёртки это уронило бы всю страницу, хотя
 // сетка никакого хранилища не требует.
@@ -127,12 +129,18 @@ function render() {
   if (t.drawnAt && !t.drawManual) {
     acts.appendChild(button('Показать жеребьёвку', 'btn sec', () => playCeremony(false)));
   }
-  acts.appendChild(button('На печать', 'btn sec', () => window.print()));
-  // Пустой лист нужен в начале: его вешают на стенд и вписывают счёт
-  // ручкой. Когда пошёл плей-офф, группы уже сыграны — пустой лист
-  // только врал бы.
-  if (t.drawnAt && (t.groups || []).length && !t.main && !t.consolation) {
-    acts.appendChild(button('Пустой лист на печать', 'btn sec', printBlank));
+  // Печать — дело клуба: лист вешают на стенд. Игроку кнопки ни к чему
+  // (решение 08.10.2026), поэтому они видны только тому, кто вошёл в
+  // панель в этом браузере — сетку оттуда и открывают. Это не защита:
+  // Ctrl+P печатает страницу у любого, и прятать там нечего.
+  if (store.get(ADMIN_TOKEN_KEY)) {
+    acts.appendChild(button('На печать', 'btn sec', () => window.print()));
+    // Пустой лист нужен в начале: его вешают на стенд и вписывают счёт
+    // ручкой. Когда пошёл плей-офф, группы уже сыграны — пустой лист
+    // только врал бы.
+    if (t.drawnAt && (t.groups || []).length && !t.main && !t.consolation) {
+      acts.appendChild(button('Пустой лист на печать', 'btn sec', printBlank));
+    }
   }
   head.appendChild(acts);
   if (t.drawnAt && t.drawManual) {

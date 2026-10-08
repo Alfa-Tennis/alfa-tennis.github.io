@@ -149,6 +149,7 @@ const ERRORS = {
   'invalid-phone': 'Проверьте номер телефона.',
   'no-seats': 'Мест нет — сначала освободите место или добавьте его в «Изменить состав».',
   'not-single': 'Свести можно только двух одиночек — у кого-то из них уже есть пара.',
+  'partner-already-in': 'Этот человек уже записан на тренировку — сам или в паре.',
   'has-results': 'У этих игроков уже внесён счёт — пару менять нельзя, таблица бы поехала.',
   'not-pair': 'Это не пара.',
   'same-signup': 'Выберите двух разных людей.',
@@ -2037,7 +2038,8 @@ function openBooking(b) {
     + nightExceptionLine(b)
     + (extras.length ? '<div class="t2">🎾 ' + escapeHtml(extras.map(x => x.name + ' ×' + x.qty).join(', '))
       + ' · ' + money(b.extrasTotal) + '</div>' : '')
-    + (b.comment ? '<div class="t2">💬 ' + escapeHtml(b.comment) + '</div>' : '');
+    + (b.comment ? '<div class="t2">💬 ' + escapeHtml(b.comment) + '</div>' : '')
+    + playersLine(b);
   body.appendChild(info);
 
   if (b.groupId) {
@@ -2243,6 +2245,18 @@ function openBooking(b) {
   body.appendChild(acts);
 
   showModal(body);
+}
+
+// Кого клиент позвал в бронь — только для напоминаний, но у стойки
+// полезно знать, сколько людей придёт и кто они. Список лежит в первой
+// записи группы, а открыть могли вторую.
+function playersLine(b) {
+  const lead = b.groupId
+    ? groupMates(b).slice().sort((x, y) => timeToMinutes(x.start) - timeToMinutes(y.start))[0] || b
+    : b;
+  const list = Array.isArray(lead.players) ? lead.players : [];
+  if (!list.length) return '';
+  return '<div class="t2">👥 Позвал(а): ' + escapeHtml(list.map(p => p.name).join(', ')) + '</div>';
 }
 
 function groupMates(b) {
@@ -4881,6 +4895,21 @@ function sessionRow(s) {
   return it;
 }
 
+// Где пост состава в Telegram и всё ли с ним в порядке. Название чата и
+// темы — из списка чатов бота, он приходит только владельцу; остальным —
+// просто «в группе».
+function postLine(op) {
+  const p = op.post;
+  if (!p || !p.chatId) return '<div class="t2">📣 В группу не публикуется</div>';
+  const chat = db.chats && (db.chats.chats || []).find(c => String(c.id) === String(p.chatId));
+  const topic = chat && (chat.topics || []).find(t => String(t.id) === String(p.threadId || ''));
+  const where = chat ? chat.title + (topic ? ' · ' + (topic.title || 'тема') : '') : 'группе';
+  const state = p.lost ? ' — удалён в группе'
+    : p.error ? ' — Telegram отказал: ' + p.error
+      : p.messageId ? '' : ' — ещё не выложен';
+  return '<div class="t2">📣 Пост в «' + escapeHtml(where) + '»' + escapeHtml(state) + '</div>';
+}
+
 // Один состав внутри строки тренировки: счётчик, список, свои кнопки.
 // Вынесено отдельно ровно потому, что составов бывает два и рисовать их
 // надо одинаково.
@@ -4892,11 +4921,13 @@ function rosterBlock(s, roster) {
     + op.taken + ' из ' + op.seats + '</span>'
     + (op.signupsClosed ? ' <span class="pill grey">набор закрыт</span>' : '')
     + (op.format === 'pairs' ? ' <span class="pill ok">парная</span>' : '')
+    + (op.format === 'mixed' ? ' <span class="pill ok">микст</span>' : '')
     + '</div>'
     + '<div class="t2">' + escapeHtml(op.level) + '</div>'
-    + (op.note ? '<div class="t2">' + escapeHtml(op.note) + '</div>' : '');
+    + (op.note ? '<div class="t2">' + escapeHtml(op.note) + '</div>' : '')
+    + postLine(op);
 
-  const pairs = op.format === 'pairs';
+  const pairs = op.format === 'pairs' || op.format === 'mixed';
   if (!op.signups.length) wrap.appendChild(txt('div', 'empty', 'Никто ещё не записался.'));
   op.signups.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, false, pairs, roster)));
   op.queue.forEach((p, i) => wrap.appendChild(signupRow(s, p, i + 1, true, pairs, roster)));
@@ -4928,6 +4959,21 @@ function rosterBlock(s, roster) {
   if (op.signups.length >= 2) {
     acts.appendChild(btn(op.results && op.results.played ? 'Правка результатов' : 'Результаты',
       'btn sm sec', () => openResultsForm(s, roster)));
+    // Печать — двумя кнопками, как у турнирной сетки: пустой лист вешают
+    // на планшетку до игры, заполненный — после. Раньше лист печатался
+    // только из окна результатов, и найти его было нельзя.
+    if (!(op.results && op.results.tooMany)) {
+      acts.appendChild(btn('Пустой лист', 'btn sm sec', () => printResults(s.id, s.date, roster, true)));
+      if (op.results && op.results.played) {
+        acts.appendChild(btn('Лист с результатами', 'btn sm sec', () => printResults(s.id, s.date, roster, false)));
+      }
+    }
+  }
+  // Пост в группе можно вытолкнуть руками: удалили в группе, поправили
+  // права бота. Само задание этого не делает намеренно.
+  if (op.post && op.post.chatId && (op.post.lost || op.post.error)) {
+    acts.appendChild(btn('Обновить пост', 'btn sm sec', () => act(
+      () => api('adminOpenPlayPost', { date: s.date, bookingId: s.id }), 'Пост обновлён')));
   }
 
   // Распустить можно любой из двух — но только когда их два: одинокий
@@ -4949,10 +4995,14 @@ function rosterBlock(s, roster) {
   return wrap;
 }
 
+// Пол в миксте — значком после имени: по нему владелец и сводит пары.
+const GENDER_MARK = { m: ' (м)', w: ' (ж)' };
+
 function signupRow(s, p, num, inQueue, pairsFormat, roster) {
   const row = el('div', 't2');
-  const who = num + '. ' + p.name
-    + (p.partnerName ? ' + ' + p.partnerName + ' (пара)' : '')
+  const g = v => GENDER_MARK[v] || '';
+  const who = num + '. ' + surnameFirst(p.name) + g(p.gender)
+    + (p.partnerName ? ' + ' + surnameFirst(p.partnerName) + g(p.partnerGender) + ' (пара)' : '')
     + (p.phone ? ' · ' + fmtPhone(p.phone) : '')
     + (p.partnerPhone ? ' / ' + fmtPhone(p.partnerPhone) : '')
     + (p.ntrp ? ' · уровень ' + String(p.ntrp).replace('.', ',') : '');
@@ -4989,7 +5039,7 @@ function signupRow(s, p, num, inQueue, pairsFormat, roster) {
 function openRemoveFromPair(s, p) {
   const body = el('div');
   body.innerHTML = '<h3>Кого убрать?</h3><div class="m-sub">'
-    + escapeHtml(p.name + ' + ' + p.partnerName) + '</div>';
+    + escapeHtml(surnameFirst(p.name) + ' + ' + surnameFirst(p.partnerName)) + '</div>';
   body.appendChild(txt('div', 'empty', 'Убрать можно одного — второй останется в составе без пары, '
     + 'и ему можно подобрать нового партнёра. Или обоих разом.'));
   const acts = el('div', 'm-acts');
@@ -4998,8 +5048,9 @@ function openRemoveFromPair(s, p) {
     act(() => api('adminRemoveSignup', Object.assign({ date: s.date, bookingId: s.id, signupId: p.id },
       part ? { part } : {})), text);
   };
-  acts.appendChild(btn('Только ' + p.partnerName, 'btn', go('partner', p.partnerName + ' снят, ' + p.name + ' без пары')));
-  acts.appendChild(btn('Только ' + p.name, 'btn', go('lead', p.name + ' снят, ' + p.partnerName + ' без пары')));
+  const lead = surnameFirst(p.name), mate = surnameFirst(p.partnerName);
+  acts.appendChild(btn('Только ' + mate, 'btn', go('partner', mate + ' снят, ' + lead + ' без пары')));
+  acts.appendChild(btn('Только ' + lead, 'btn', go('lead', lead + ' снят, ' + mate + ' без пары')));
   acts.appendChild(btn('Обоих', 'btn danger', go(null, 'Пара снята с тренировки')));
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   body.appendChild(acts);
@@ -5012,7 +5063,8 @@ function openPairForm(s, singles) {
   const body = el('div');
   body.innerHTML = '<h3>Свести в пару</h3><div class="m-sub">'
     + escapeHtml(longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
-  const label = p => p.name + (p.ntrp ? ' · уровень ' + String(p.ntrp).replace('.', ',') : '');
+  const label = p => surnameFirst(p.name) + (GENDER_MARK[p.gender] || '')
+    + (p.ntrp ? ' · уровень ' + String(p.ntrp).replace('.', ',') : '');
   const a = document.createElement('select');
   const b = document.createElement('select');
   singles.forEach(p => { a.appendChild(opt(p.id, label(p))); b.appendChild(opt(p.id, label(p))); });
@@ -5044,14 +5096,18 @@ function openPairForm(s, singles) {
 // включая печать: два расчёта однажды разошлись бы, и спорить с
 // напечатанным листом было бы нечем.
 
+// «Фамилия И.» — как в турнирной сетке и на её листе: по фамилии ищут.
 function playerLabel(row) {
-  return row.name + (row.partnerName ? ' / ' + row.partnerName : '');
+  return surnameFirst(row.name) + (row.partnerName ? ' / ' + surnameFirst(row.partnerName) : '');
 }
 
-function resultsTableHtml(op) {
+// blank — пустой лист на планшетку: имена и пустые клетки, без очков и
+// мест, даже если счёт уже внесён.
+function resultsTableHtml(op, blank) {
   const r = op.results;
   if (!r || !r.rows || !r.rows.length) return '';
   const n = r.rows.length;
+  const played = blank ? 0 : r.played;
 
   let head = '<tr><th class="rt-name">Участник</th>';
   for (let i = 1; i <= n; i++) head += '<th>' + i + '</th>';
@@ -5062,12 +5118,12 @@ function resultsTableHtml(op) {
     for (let j = 0; j < n; j++) {
       tds += (row.no - 1 === j)
         ? '<td class="rt-self"></td>'
-        : '<td>' + escapeHtml(row.cells[j] || '') + '</td>';
+        : '<td>' + (blank ? '' : escapeHtml(row.cells[j] || '')) + '</td>';
     }
     // У несыгранного листа очки и места пустые: «1 место» у первого по
     // списку — это неправда, напечатанная крупно.
-    tds += '<td class="rt-sum">' + (r.played ? row.points : '') + '</td>'
-      + '<td class="rt-sum">' + (row.place || '') + '</td>';
+    tds += '<td class="rt-sum">' + (played ? row.points : '') + '</td>'
+      + '<td class="rt-sum">' + (played ? (row.place || '') : '') + '</td>';
     return '<tr>' + tds + '</tr>';
   }).join('');
 
@@ -5175,7 +5231,8 @@ function openResultsForm(s, roster) {
 
 // Лист на бумагу. Данные берём заново из обновлённой ленты: сохранение
 // уже прошло, и в старой карточке лежит счёт до правки.
-function printResults(id, date, which) {
+// blank — пустой лист до игры, иначе заполненный.
+function printResults(id, date, which, blank) {
   const fresh = openPlaySessions().find(x => x.id === id && x.date === date);
   const op = fresh ? (which === 'alt' ? fresh.rival : fresh.openPlay) : null;
   if (!op) { toast('Тренировка не найдена'); return; }
@@ -5186,8 +5243,8 @@ function printResults(id, date, which) {
     + '<div class="pr-sub">'
     + escapeHtml(longDate(fresh.date) + ' · ' + fmtRange(fresh.start, fresh.end) + ' · ' + op.level)
     + '</div></div>'
-    + resultsTableHtml(op)
-    + (op.results && op.results.note
+    + resultsTableHtml(op, blank)
+    + (!blank && op.results && op.results.note
       ? '<div class="rt-note">Ещё играли: ' + escapeHtml(op.results.note) + '</div>' : '')
     // Две пустые строки под то, что допишут на корте от руки.
     + '<div class="pr-lines"><div></div><div></div></div>';
@@ -5294,11 +5351,13 @@ function openSessionForm(session, preset, roster) {
   inpTitle.value = op ? op.title : ((preset && preset.title) || '');
   fTitle.appendChild(inpTitle); body.appendChild(fTitle);
 
-  // Формат: в парной одиночек сводит владелец, таблица и лист — по парам.
+  // Формат: в парной и миксте одиночек сводит владелец, таблица и лист —
+  // по парам. В миксте при записи называют пол, пара — мужчина и женщина.
   const selFormat = document.createElement('select');
   selFormat.appendChild(opt('singles', 'Одиночки — каждый сам за себя'));
-  selFormat.appendChild(opt('pairs', 'Пары — микст, парная игра'));
-  selFormat.value = op && op.format === 'pairs' ? 'pairs' : ((preset && preset.format) || 'singles');
+  selFormat.appendChild(opt('pairs', 'Пары — парная игра'));
+  selFormat.appendChild(opt('mixed', 'Микст — пары мужчина + женщина'));
+  selFormat.value = (op && op.format) || (preset && preset.format) || 'singles';
   wrapField(body, 'Формат', selFormat);
 
   const fLevel = el('div', 'field');
@@ -5355,6 +5414,11 @@ function openSessionForm(session, preset, roster) {
       'С сайта записаться будет нельзя. Администратор поставить сможет.'));
   }
 
+  // Куда выложить пост состава — только у владельца, как у турнира. У
+  // остальных поля нет: новая тренировка уйдёт в запомненную тему, а
+  // правка публикацию не трогает.
+  const telegram = openPlayTelegramFields(body, session ? op : null);
+
   const acts = el('div', 'm-acts');
   acts.appendChild(btn(session ? 'Сохранить' : 'Создать', 'btn', () => {
     const payloadOp = {
@@ -5370,12 +5434,14 @@ function openSessionForm(session, preset, roster) {
     }
 
     closeModal();
+    const tgTarget = telegram ? telegram() : undefined;
     if (session) {
       payloadOp.signupsClosed = closedFlag;
       act(() => api('adminUpdateOpenPlay', {
         date: session.date, bookingId: session.id,
         roster: which === 'alt' ? 'alt' : undefined,
         openPlay: payloadOp,
+        telegram: tgTarget,
       }), which === 'alt' ? 'Второй состав изменён' : 'Окно изменено');
     } else {
       const rival = rivalTitle && rivalTitle.value.trim();
@@ -5383,6 +5449,7 @@ function openSessionForm(session, preset, roster) {
       act(() => api('adminCreateOpenPlay', {
         date: inpDate.value, start: selStart.value, durationMinutes: Number(selDur.value),
         openPlay: payloadOp,
+        telegram: tgTarget,
       }), rival ? 'Окно создано, составов два' : 'Окно создано');
     }
   }));
@@ -5390,6 +5457,59 @@ function openSessionForm(session, preset, roster) {
   body.appendChild(acts);
 
   showModal(body);
+}
+
+// Группа и тема для поста состава. Как у турнира: список чатов бот
+// набирает сам, приходит он только владельцу — нет его, нет и поля.
+// Новой тренировке предлагаем тему, куда ушла прошлая; без неё — чат
+// объявлений, куда приглашения шли раньше. Возвращает функцию, отдающую
+// { chatId, threadId } (пустой chatId — «не публиковать»), или null.
+function openPlayTelegramFields(body, op) {
+  if (!db.chats) return null;
+  const chats = db.chats.chats || [];
+  const box = el('div', 'item');
+  box.appendChild(txt('div', 't1', 'Пост в Telegram'));
+  body.appendChild(box);
+  if (!chats.length) {
+    box.appendChild(txt('div', 'empty',
+      'Бот пока не видел ни одной группы — публиковать некуда. Добавьте его в группу центра '
+      + 'и напишите там что-нибудь: группа появится здесь в течение минуты.'));
+    return null;
+  }
+
+  const start = op
+    ? (op.post && op.post.chatId ? op.post : null)
+    : (db.chats.openPlayTarget
+      || (db.chats.groupChatId ? { chatId: db.chats.groupChatId, threadId: db.chats.groupThreadId } : null));
+
+  const chatSel = document.createElement('select');
+  chatSel.appendChild(opt('', 'Не публиковать'));
+  chats.forEach(c => chatSel.appendChild(opt(String(c.id), c.title)));
+  chatSel.value = start ? String(start.chatId) : '';
+  wrapField(box, 'Группа', chatSel);
+
+  const threadSel = document.createElement('select');
+  const fillThreads = (want) => {
+    const chat = chats.find(c => String(c.id) === chatSel.value);
+    const topics = (chat && chat.topics) || [];
+    threadSel.innerHTML = '';
+    threadSel.appendChild(opt('', topics.length ? 'Без темы — в общую ленту' : 'Тем в этом чате не видно'));
+    topics.forEach(t => threadSel.appendChild(opt(String(t.id), t.title || ('тема №' + t.id))));
+    threadSel.value = want || '';
+    threadSel.disabled = !topics.length;
+  };
+  fillThreads(start ? String(start.threadId || '') : '');
+  chatSel.addEventListener('change', () => fillThreads(''));
+  const threadField = wrapFieldNode(box, 'Тема', threadSel);
+  const sync = () => { threadField.style.display = chatSel.value ? '' : 'none'; };
+  chatSel.addEventListener('change', sync);
+  sync();
+
+  box.appendChild(txt('div', 'empty',
+    'Объявление и нумерованный список состава одним сообщением. Бот правит его при каждой записи, '
+    + 'а не шлёт новое; у второго состава — свой пост. Выбор запомнится для следующей тренировки.'));
+
+  return () => ({ chatId: chatSel.value, threadId: chatSel.value ? threadSel.value : '' });
 }
 
 // Второй состав к уже заведённому окну. Отдельным окошком, а не полем в
@@ -5488,7 +5608,7 @@ function openAddSignup(s, roster, pairWith) {
   const which = roster === 'alt' ? 'alt' : 'main';
   const target = which === 'alt' ? s.rival : s.openPlay;
   const body = el('div');
-  body.innerHTML = '<h3>' + (pairWith ? 'Пара для ' + escapeHtml(pairWith.name) : 'Записать на тренировку') + '</h3>'
+  body.innerHTML = '<h3>' + (pairWith ? 'Пара для ' + escapeHtml(surnameFirst(pairWith.name)) : 'Записать на тренировку') + '</h3>'
     + '<div class="m-sub">' + escapeHtml(target.title + ' · ' + longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
 
   // Тот же поиск, что и при записи на корт: списком в три сотни имён
@@ -5515,6 +5635,18 @@ function openAddSignup(s, roster, pairWith) {
   fPair.appendChild(inpPair);
   if (!pairWith) body.appendChild(fPair);
 
+  // Микст: пол записанного — по нему сводят пары. Подбирают пару
+  // одиночке — пол противоположный, спрашивать незачем.
+  let selGender = null;
+  if (target.format === 'mixed') {
+    selGender = document.createElement('select');
+    selGender.appendChild(opt('', '— не знаю —'));
+    selGender.appendChild(opt('m', 'Мужчина'));
+    selGender.appendChild(opt('w', 'Женщина'));
+    if (pairWith && pairWith.gender) selGender.value = pairWith.gender === 'm' ? 'w' : 'm';
+    wrapField(body, pairWith ? 'Пол записываемого' : 'Пол (у пары — того, кто записывается первым)', selGender);
+  }
+
   const note = el('div', 'empty');
   note.textContent = pairWith
     ? (target.full ? 'Мест нет — сначала освободите место или добавьте его в «Изменить состав».'
@@ -5536,6 +5668,7 @@ function openAddSignup(s, roster, pairWith) {
       name: who.id ? undefined : inpName.value.trim(),
       phone: who.id ? undefined : inpPhone.value.trim(),
       partnerName: pairWith ? undefined : (inpPair.value.trim() || undefined),
+      gender: selGender && selGender.value ? selGender.value : undefined,
       pairWith: pairWith ? pairWith.id : undefined,
     }), pairWith ? 'Записан и сведён в пару' : 'Записан');
   }));
