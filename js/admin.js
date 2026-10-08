@@ -141,6 +141,11 @@ const ERRORS = {
   'tournament-not-found': 'Турнир не найден — возможно, его только что удалили.',
   'booking-not-found': 'Бронь не найдена — возможно, её только что изменили.',
   'client-not-found': 'Клиент не найден.',
+  'not-mergeable': 'В эту карточку уже входили (есть пароль или Telegram) — объединять и удалять можно только карточку «с улицы».',
+  'same-client': 'Выберите другую карточку — это та же самая.',
+  'merge-conflict': 'Оба записаны в одно и то же — сначала снимите одну из двух записей.',
+  'unknown-reference': 'Карточка упоминается там, где перенос её не ждёт, — объединение остановлено, ничего не изменено. Напишите разработчику.',
+  'client-has-traces': 'За карточкой есть брони, записи или абонемент — её не удалить. Объедините её с настоящей карточкой человека.',
   'outside-hours': 'Время выходит за часы работы центра.',
   'invalid-name': 'Укажите имя и фамилию.',
   'invalid-first-name': 'Проверьте имя: буквами, от двух, без цифр и значков.',
@@ -165,6 +170,7 @@ const ERRORS = {
   'invalid-gender': 'В миксте отметьте пол игрока.',
   'invalid-pair': 'В пару входят двое.',
   'same-player': 'Один и тот же человек дважды — выберите партнёра.',
+  'already-signed': 'Этот человек уже записан на эту тренировку — в этот или во второй состав.',
   'client-blocked':'Клиент заблокирован — запись не прошла. Если его простили, сначала разблокируйте во вкладке «Клиенты».',
   'invalid-chat': 'Бот не состоит в этой группе — выберите чат из списка заново.',
   'no-telegram-target': 'Турнир не публикуется в Telegram — выберите группу в «Изменить».',
@@ -477,6 +483,9 @@ function mapClient(c) {
     tg: !!c.hasTelegram,
     awaitingGroup: !!c.awaitingGroup,
     createdByAdmin: !!c.createdByAdmin,
+    mergeable: !!c.mergeable,
+    twins: c.twins || [],
+    mergedFrom: c.mergedFrom || [],
     status: c.status,
     role: c.role || 'client',
     rating: c.rating,
@@ -2878,9 +2887,15 @@ function renderRequests(view) {
       // подтверждает вслепую: «не состоит в группе» — как раз то, ради
       // чего проверка и заводилась.
       + (cl.awaitingGroup ? ' · <b>не состоит в группе центра</b>' : '') + '</div>';
+    // Зарегистрировался тот, кого раньше записали «с улицы» на другой
+    // номер, — заметить двойника лучше сейчас, а не через неделю.
+    const walkIns = (cl.twins || []).filter(t => t.mergeable);
+    walkIns.forEach(t => it.appendChild(txt('div', 't3 twin-line', 'Возможно, это он: заведён «с улицы» '
+      + (t.createdAt ? isoDmy(t.createdAt) + ' ' : '') + 'как ' + t.name + ', ' + fmtPhone(t.phone))));
     const acts = el('div', 'acts');
     const call = callButton(cl.phone);
     if (call) acts.appendChild(call);
+    walkIns.forEach(t => acts.appendChild(btn('Объединить с «с улицы»', 'btn sm sec', () => openMergeForm(t, cl))));
     acts.appendChild(btn('Подтвердить', 'btn sm', () =>
       act(() => api('verifyClient', { clientId: cl.id }), 'Клиент может бронировать')));
     acts.appendChild(btn('Отклонить', 'btn sm danger', () =>
@@ -3468,6 +3483,20 @@ function renderClients(view) {
         + ': ' + lastRename.from + ' → ' + lastRename.to));
     }
 
+    // Двойник по имени и фамилии. Номер у них разный — иначе карточка
+    // одна, — поэтому сама система их не сводит, а подсказывает.
+    c.twins.forEach(t => {
+      it.appendChild(txt('div', 't3 twin-line', 'Похоже, это тот же человек: ' + t.name + ', '
+        + fmtPhone(t.phone) + (t.mergeable ? ' (заведён «с улицы»)' : '')
+        + (t.createdAt ? ', с ' + isoDmy(t.createdAt) : '')));
+    });
+    const lastMerge = c.mergedFrom[c.mergedFrom.length - 1];
+    if (lastMerge) {
+      const by = clientById(lastMerge.by);
+      it.appendChild(txt('div', 't3', 'Объединена с карточкой «с улицы» ' + lastMerge.name + ', '
+        + fmtPhone(lastMerge.phone) + ' · ' + shortDateTime(lastMerge.at) + (by ? ' · ' + by.name : '')));
+    }
+
     if (owner) it.appendChild(ntrpField(c));
     it.appendChild(passField(c));
 
@@ -3514,6 +3543,22 @@ function renderClients(view) {
     // Карточки сотрудников — только владелец, как и их пароли.
     if (c.role === 'client' || (me && (me.role === 'owner' || me.id === c.id))) {
       acts.appendChild(btn('Поправить имя', 'btn sm sec', () => openNameForm(c)));
+    }
+    // Двойники. Растворить можно только карточку, в которую не входили, —
+    // поэтому кнопки у неё, а у настоящей только «забрать её сюда».
+    if (c.mergeable) {
+      const twin = c.twins.find(t => !t.mergeable) || null;
+      acts.appendChild(btn('Объединить…', 'btn sm sec', () => openMergeForm(c, twin)));
+      acts.appendChild(btn('Удалить', 'btn sm danger', () => confirmDelete(
+        'Удалить карточку?', c.name + ' · ' + fmtPhone(c.phone),
+        'Удалить можно только пустую карточку — без броней, записей и абонементов. '
+          + 'Если за ней что-то есть, сервер откажет: тогда объедините её с настоящей. Отменить удаление нельзя.',
+        () => act(() => api('adminDeleteClient', { clientId: c.id }), 'Карточка удалена'))));
+    } else {
+      c.twins.filter(t => t.mergeable).forEach(t => {
+        acts.appendChild(btn('Забрать сюда «' + t.name + ', ' + fmtPhone(t.phone) + '»', 'btn sm sec',
+          () => openMergeForm(t, c)));
+      });
     }
     it.appendChild(acts);
 
@@ -3969,6 +4014,113 @@ function openNameForm(c) {
     target.focus();
     target.setSelectionRange(target.value.length, target.value.length);
   }, 50);
+}
+
+function isoDmy(iso) {
+  const s = String(iso || '');
+  return s.length >= 10 ? s.slice(8, 10) + '.' + s.slice(5, 7) + '.' + s.slice(0, 4) : s;
+}
+
+// Объединение двойников. `source` — карточка «с улицы» (её растворяем),
+// `preset` — настоящая, если двойник уже известен по имени. Перед
+// кнопкой сервер считает, что переедет: администратор видит это до
+// нажатия, а не узнаёт после — отменить объединение нельзя.
+function openMergeForm(source, preset) {
+  const body = el('div');
+  body.innerHTML = '<h3>Объединить карточки</h3>'
+    + '<div class="m-sub">' + escapeHtml(source.name + ' · ' + fmtPhone(source.phone)) + ' · «с улицы»</div>'
+    + '<div class="empty">Всё с этой карточки — брони, записи на тренировки и турниры, постоянные брони, '
+    + 'абонементы, неявки и сыгранные игры — переедет в настоящую карточку человека, а эта исчезнет. '
+    + 'Имя, телефон, вход и Telegram останутся от настоящей. Отменить нельзя.</div>';
+
+  const result = el('div');
+  let ready = null;
+  const go = btn('Объединить', 'btn', () => {
+    if (!ready) return;
+    const targetId = ready;
+    closeModal();
+    act(() => api('adminMergeClients', { sourceId: source.id, targetId }), 'Карточки объединены');
+  });
+  go.disabled = true;
+
+  // Выбор сменили, пока считалась прежняя прикидка, — её ответ не нужен.
+  let seq = 0;
+  const showPreview = async (targetId) => {
+    const mine = ++seq;
+    ready = null;
+    go.disabled = true;
+    result.innerHTML = '';
+    if (!targetId) return;
+    if (targetId === source.id) { result.appendChild(txt('div', 'merge-stop', errorText('same-client'))); return; }
+    result.appendChild(txt('div', 'empty', 'Считаю, что переедет…'));
+    let res;
+    try { res = await api('adminMergePreview', { sourceId: source.id, targetId }); }
+    catch (e) {
+      if (mine !== seq) return;
+      result.innerHTML = '';
+      result.appendChild(txt('div', 'merge-stop', errorText(e.code)));
+      return;
+    }
+    if (mine !== seq) return;
+    result.innerHTML = '';
+
+    const f = res.found;
+    const lines = [];
+    if (f.upcoming) lines.push('предстоящие брони: ' + f.upcoming);
+    if (f.past) lines.push('прошедшие брони: ' + f.past);
+    if (f.invited) lines.push('позван в чужую бронь: ' + f.invited);
+    if (f.openPlay) lines.push('записи на тренировки: ' + f.openPlay);
+    if (f.series) lines.push('постоянные брони: ' + f.series);
+    if (f.waitlist) lines.push('лист ожидания: ' + f.waitlist);
+    if (f.tournaments.length) {
+      lines.push('турниры: ' + f.tournaments.map(t => '«' + t.title + '»').join(', '));
+    }
+    if (f.points) lines.push('строки в зачёте очков: ' + f.points);
+    if (f.passes) lines.push('абонементы: ' + f.passes + (f.passHours ? ', осталось ' + String(f.passHours).replace('.', ',') + ' ч' : ''));
+    if (f.ledger) lines.push('строки журнала абонементов: ' + f.ledger);
+    if (f.requests) lines.push('заявки с витрины: ' + f.requests);
+
+    result.appendChild(txt('div', 't1', 'В карточку ' + res.target.name + ', ' + fmtPhone(res.target.phone) + ' переедет:'));
+    const ul = el('ul', 'merge-found');
+    (lines.length ? lines : ['ничего, кроме самой карточки']).forEach(s => ul.appendChild(txt('li', '', s)));
+    result.appendChild(ul);
+
+    const lv = res.level || {};
+    if (lv.source != null && lv.target != null && lv.source !== lv.target) {
+      result.appendChild(txt('div', 'empty', 'Игровой уровень: остаётся ' + String(lv.target).replace('.', ',')
+        + ' настоящей карточки (у «с улицы» было ' + String(lv.source).replace('.', ',') + ').'));
+    } else if (lv.source != null && lv.target == null) {
+      result.appendChild(txt('div', 'empty', 'Игровой уровень ' + String(lv.source).replace('.', ',')
+        + ' переедет с карточки «с улицы».'));
+    }
+
+    if (res.conflicts.length) {
+      res.conflicts.forEach(c => result.appendChild(txt('div', 'merge-stop', c.kind === 'tournament'
+        ? 'Оба записаны в турнир «' + c.title + '» — сначала снимите одну из двух записей в составе турнира.'
+        : 'Оба записаны на тренировку «' + c.title + '» ' + (c.date ? isoDmy(c.date) : '')
+          + ' — сначала снимите одну из двух записей.')));
+      return;
+    }
+    if (res.blocked) { result.appendChild(txt('div', 'merge-stop', errorText('unknown-reference'))); return; }
+    ready = targetId;
+    go.disabled = false;
+  };
+
+  const picker = clientPicker(body, preset ? preset.id : null, {
+    label: 'Настоящая карточка человека',
+    placeholder: 'Имя или телефон',
+    initialLabel: preset ? preset.name + ' · ' + fmtPhone(preset.phone) : '',
+    onChange: (id) => { showPreview(id); },
+  });
+  body.appendChild(result);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(go);
+  body.appendChild(acts);
+
+  showModal(body);
+  if (picker.id) showPreview(picker.id);
 }
 
 // Временный пароль показываем один раз и крупно: админ диктует его или
@@ -4450,7 +4602,10 @@ function clientPicker(parent, initialId, opts) {
   const state = { id: initialId || null };
   const input = document.createElement('input');
   const current = clientById(initialId);
-  input.value = current ? current.name : '';
+  // Подпись можно передать готовой: список клиентов в слепке отобран
+  // поиском, и нужной карточки в нём может не оказаться, а у двойников
+  // одно имя на двоих — различает их только телефон.
+  input.value = o.initialLabel || (current ? current.name : '');
   input.placeholder = o.placeholder || 'Имя или телефон — необязательно';
   wrapField(parent, o.label || 'Клиент центра', input);
 
@@ -5356,7 +5511,7 @@ function openSessionForm(session, preset, roster) {
   const selFormat = document.createElement('select');
   selFormat.appendChild(opt('singles', 'Одиночки — каждый сам за себя'));
   selFormat.appendChild(opt('pairs', 'Пары — парная игра'));
-  selFormat.appendChild(opt('mixed', 'Микст — пары мужчина + женщина'));
+  selFormat.appendChild(opt('mixed', 'Микст'));
   selFormat.value = (op && op.format) || (preset && preset.format) || 'singles';
   wrapField(body, 'Формат', selFormat);
 
@@ -5632,11 +5787,25 @@ function openAddSignup(s, roster, pairWith) {
   guest.appendChild(fName); guest.appendChild(fPhone);
   body.appendChild(guest);
 
-  const fPair = el('label', 'field');
-  fPair.innerHTML = '<span>Партнёр — если пришли парой, займут два места</span>';
-  const inpPair = document.createElement('input'); inpPair.placeholder = 'Имя партнёра';
-  fPair.appendChild(inpPair);
-  if (!pairWith) body.appendChild(fPair);
+  // Партнёр — из карточек клуба, как при записи парой с сайта: тогда он
+  // видит тренировку у себя и получает напоминания. Приезжего без
+  // карточки — именем, отдельным полем.
+  let partner = null;
+  const inpPair = document.createElement('input');
+  if (!pairWith) {
+    const pairBox = el('div');
+    body.appendChild(pairBox);
+    const guestPair = el('label', 'field');
+    guestPair.innerHTML = '<span>…или приезжий без карточки — имя</span>';
+    inpPair.placeholder = 'Имя партнёра';
+    guestPair.appendChild(inpPair);
+    partner = clientPicker(pairBox, null, {
+      label: 'Партнёр — если пришли парой, займут два места',
+      placeholder: 'Фамилия или телефон клиента клуба',
+      onChange: (id) => { guestPair.hidden = !!id; },
+    });
+    pairBox.appendChild(guestPair);
+  }
 
   // Микст: пол записанного — по нему сводят пары. Подбирают пару
   // одиночке — пол противоположный, спрашивать незачем.
@@ -5663,6 +5832,7 @@ function openAddSignup(s, roster, pairWith) {
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Записать', 'btn', () => {
     if (!who.id && inpName.value.trim().length < 2) return toast('Найдите клиента или впишите имя');
+    if (partner && partner.id && partner.id === who.id) return toast(errorText('same-player'));
     closeModal();
     act(() => api('adminAddSignup', {
       date: s.date, bookingId: s.id,
@@ -5670,7 +5840,8 @@ function openAddSignup(s, roster, pairWith) {
       clientId: who.id || undefined,
       name: who.id ? undefined : inpName.value.trim(),
       phone: who.id ? undefined : inpPhone.value.trim(),
-      partnerName: pairWith ? undefined : (inpPair.value.trim() || undefined),
+      partnerClientId: partner && partner.id ? partner.id : undefined,
+      partnerName: pairWith || (partner && partner.id) ? undefined : (inpPair.value.trim() || undefined),
       gender: selGender && selGender.value ? selGender.value : undefined,
       pairWith: pairWith ? pairWith.id : undefined,
     }), pairWith ? 'Записан и сведён в пару' : 'Записан');

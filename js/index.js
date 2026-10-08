@@ -2957,7 +2957,7 @@ function openSessionCard(idOrSession, roster) {
   const pairsLike = op.format === 'pairs' || op.format === 'mixed';
   if (pairsLike) {
     body.appendChild(txt('div', 'notice', (op.format === 'mixed'
-      ? 'Микст — пары мужчина + женщина. ' : 'Игра парами. ')
+      ? 'Микст. ' : 'Игра парами. ')
       + 'Записывайтесь и без партнёра — пары из пришедших поодиночке составит организатор, '
       + 'о своём партнёре вы узнаете заранее.'));
   }

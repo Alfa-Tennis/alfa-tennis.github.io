@@ -249,6 +249,11 @@ a.btn.sec:visited { color: var(--ink); }
 .item.pick.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
 .item .t1 { font-weight: 600; }
 .item .t2 { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+/* Подсказка «похоже, тот же человек» — заметнее серой строки, но не тревога. */
+.item .twin-line { font-size: 13px; color: var(--warn); font-weight: 600; margin-top: 4px; }
+.merge-found { font-size: 14px; margin: 4px 0 10px; }
+.merge-found li { margin: 2px 0; }
+.merge-stop { color: var(--warn); font-weight: 600; font-size: 14px; margin: 6px 0; }
 /* Текст, написанный человеком строками, — описание турнира и подобное:
    разбивку сохраняем, иначе абзацы склеиваются в сплошную строку. */
 .pre { white-space: pre-line; }
