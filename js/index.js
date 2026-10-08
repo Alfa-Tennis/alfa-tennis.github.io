@@ -2950,7 +2950,8 @@ function openSessionCard(idOrSession, roster) {
       : '');
   body.appendChild(info);
 
-  if (op.note) body.appendChild(txt('div', 'empty', op.note));
+  // Примечание пишут строками — «формат проведения» по пунктам.
+  if (op.note) body.appendChild(txt('div', 'empty pre', op.note));
   // Парная и микст: пришедших поодиночке сводит в пары организатор —
   // человек должен знать это до записи, а не гадать, с кем он будет играть.
   const pairsLike = op.format === 'pairs' || op.format === 'mixed';

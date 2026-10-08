@@ -4924,7 +4924,7 @@ function rosterBlock(s, roster) {
     + (op.format === 'mixed' ? ' <span class="pill ok">микст</span>' : '')
     + '</div>'
     + '<div class="t2">' + escapeHtml(op.level) + '</div>'
-    + (op.note ? '<div class="t2">' + escapeHtml(op.note) + '</div>' : '')
+    + (op.note ? '<div class="t2 pre">' + escapeHtml(op.note) + '</div>' : '')
     + postLine(op);
 
   const pairs = op.format === 'pairs' || op.format === 'mixed';

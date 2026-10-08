@@ -113,6 +113,9 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .notice.t-note { white-space: pre-line; line-height: 1.45; }
 .t-seek-head { margin-top: 10px; }
 .empty { color: var(--ink-soft); font-size: 14px; padding: 4px 2px; }
+/* Текст, написанный человеком строками (примечание к тренировке): без
+   этого переносы склеиваются в сплошную строку. */
+.pre { white-space: pre-line; }
 
 /* ---------- Кнопки ---------- */
 .btn { appearance: none; border: 0; border-radius: 10px; background: var(--court); color: #fff; font-weight: 600; padding: 11px 20px; cursor: pointer; }
