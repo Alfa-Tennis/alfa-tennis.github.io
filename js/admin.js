@@ -183,6 +183,7 @@ const ERRORS = {
   'invalid-rating': 'Рейтинг — от 0 до 5 с шагом в половину балла.',
   'invalid-role': 'Такой роли нет.',
   'own-role': 'Снять роль с самого себя нельзя — центр останется без владельца.',
+  'not-admin': 'Полные права даются только администратору.',
   'owner-role-immutable': 'Роль владельца через панель не меняется.',
   'client-not-verified': 'Сначала подтвердите клиента: администратором становится только проверенный.',
   'invalid-date': 'Проверьте дату.',
@@ -471,6 +472,19 @@ function attachPhoneMask(input) {
 let db = null;
 let me = null;
 
+// Права владельца в панели: сам владелец и администратор с полными
+// правами. Экран сотрудников и их карточки — по-прежнему только по роли
+// владельца (сервер проверяет то же самое, кнопки здесь — для вида).
+function ownerRights() {
+  return !!(me && (me.role === 'owner' || me.fullAccess === true));
+}
+
+function staffLabel(c) {
+  if (!c) return '';
+  if (c.role === 'owner') return 'владелец';
+  return c.fullAccess ? 'администратор · полные права' : 'администратор';
+}
+
 // Форма клиента, к которой привыкли экраны панели. Сервер отдаёт больше:
 // рейтинг, счётчики, признак предоплаты — их кладём рядом, ничего не теряя.
 function mapClient(c) {
@@ -757,7 +771,7 @@ async function enter(client) {
   document.getElementById('login').hidden = true;
   document.getElementById('app').hidden = false;
   document.getElementById('whoBadge').textContent =
-    client.name + (client.role === 'owner' ? ' · владелец' : ' · администратор');
+    client.name + ' · ' + staffLabel(client);
   await reload();
 }
 
@@ -1023,7 +1037,7 @@ const TABS = [
 ];
 
 function visibleTabs() {
-  const owner = !!(me && me.role === 'owner');
+  const owner = ownerRights();
   return TABS.filter(t => !t.ownerOnly || owner);
 }
 
@@ -3349,7 +3363,7 @@ function renderClients(view) {
   // Игровой уровень правит только владелец: он решает допуск к турниру
   // и посев. Администратору поле не показываем — сервер его всё равно
   // не примет.
-  const owner = !!(me && me.role === 'owner');
+  const owner = ownerRights();
   const shown = sortedClients();
   const card = el('div', 'card');
   card.innerHTML = '<h2>Клиенты <span class="sub">' + db.clients.length
@@ -3536,7 +3550,7 @@ function renderClients(view) {
     // Рейтинг правит только владелец: это чужая репутация, а не рабочая
     // мелочь ресепшена. Сервер откажет и администратору, но кнопки у
     // него быть не должно вовсе.
-    if (me && me.role === 'owner') {
+    if (ownerRights()) {
       acts.appendChild(btn('Поправить рейтинг', 'btn sm sec', () => openRatingForm(c)));
     }
     // Имя и фамилию узнаёт у стойки смена — правит любой администратор.
@@ -3588,7 +3602,7 @@ function passField(c) {
   // но в панели посмотреть «когда куплен и что списано» можно было только
   // общим списком за месяц на вкладке статистики — а спрашивают об этом
   // у стойки, глядя в карточку.
-  if (me && me.role === 'owner') {
+  if (ownerRights()) {
     acts.appendChild(btn('История', 'btn sm sec', () => openPassHistory(c, null)));
     c.passes.filter(p => p.hoursLeft > 0).forEach(p => {
       acts.appendChild(btn('Сжечь ' + hoursNum(p.hoursLeft) + ' ч', 'btn sm danger', () => openBurnPass(c, p)));
@@ -4374,7 +4388,7 @@ function renderSeriesLegend() {
   card.innerHTML = '<h2>Что значат цвета <span class="sub">подписи видны всей смене</span></h2>';
 
   const colors = db.seriesColors || [];
-  const owner = !!(me && me.role === 'owner');
+  const owner = ownerRights();
   const fields = {};
 
   colors.forEach(c => {
@@ -5105,7 +5119,7 @@ function rosterBlock(s, roster) {
 
   const acts = el('div', 'acts');
   acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s, roster)));
-  if (singles.length >= 2 && me && me.role === 'owner') {
+  if (singles.length >= 2 && ownerRights()) {
     acts.appendChild(btn('Свести в пару', 'btn sm', () => openPairForm(s, singles)));
   }
   acts.appendChild(btn('Изменить состав', 'btn sm sec', () => openSessionForm(s, null, roster)));
@@ -5171,7 +5185,7 @@ function signupRow(s, p, num, inQueue, pairsFormat, roster) {
     + (!p.clientId ? ' <span class="pill grey">без учётки</span>' : '');
 
   const acts = el('div', 'acts');
-  const owner = !!(me && me.role === 'owner');
+  const owner = ownerRights();
   if (pairsFormat && !inQueue && p.partnerName && owner) {
     acts.appendChild(btn('Разбить пару', 'btn sm sec', () => act(
       () => api('adminSplitPair', { date: s.date, bookingId: s.id, signupId: p.id }),
@@ -5778,13 +5792,14 @@ function openAddSignup(s, roster, pairWith) {
     onChange: (id) => { guest.hidden = !!id; },
   });
 
-  const fName = el('label', 'field'); fName.innerHTML = '<span>Имя</span>';
-  const inpName = document.createElement('input'); inpName.placeholder = 'Как записать';
-  fName.appendChild(inpName);
-  const fPhone = el('label', 'field'); fPhone.innerHTML = '<span>Телефон — не обязательно</span>';
+  // Приезжий с телефоном получает карточку, как в турнире: сервер найдёт
+  // его по номеру или заведёт. Без телефона — только имя в составе:
+  // карточку без номера не завести.
+  const guestNames = nameFieldsInto(guest, '', '');
+  const fPhone = el('label', 'field'); fPhone.innerHTML = '<span>Телефон — с ним заведём карточку</span>';
   const inpPhone = document.createElement('input'); attachPhoneMask(inpPhone);
   fPhone.appendChild(inpPhone);
-  guest.appendChild(fName); guest.appendChild(fPhone);
+  guest.appendChild(fPhone);
   body.appendChild(guest);
 
   // Партнёр — из карточек клуба, как при записи парой с сайта: тогда он
@@ -5831,20 +5846,31 @@ function openAddSignup(s, roster, pairWith) {
 
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Записать', 'btn', () => {
-    if (!who.id && inpName.value.trim().length < 2) return toast('Найдите клиента или впишите имя');
+    if (!who.id && guestNames.first.value.trim().length < 2) return toast('Найдите клиента или впишите имя');
+    if (!who.id && inpPhone.value.trim() && inpPhone.value.replace(/\D/g, '').length < 10) {
+      return toast('Проверьте номер телефона');
+    }
     if (partner && partner.id && partner.id === who.id) return toast(errorText('same-player'));
     closeModal();
+    const okText = pairWith ? 'Записан и сведён в пару' : 'Записан';
     act(() => api('adminAddSignup', {
       date: s.date, bookingId: s.id,
       roster: which === 'alt' ? 'alt' : undefined,
       clientId: who.id || undefined,
-      name: who.id ? undefined : inpName.value.trim(),
+      firstName: who.id ? undefined : guestNames.first.value.trim(),
+      lastName: who.id ? undefined : guestNames.last.value.trim(),
       phone: who.id ? undefined : inpPhone.value.trim(),
       partnerClientId: partner && partner.id ? partner.id : undefined,
       partnerName: pairWith || (partner && partner.id) ? undefined : (inpPair.value.trim() || undefined),
       gender: selGender && selGender.value ? selGender.value : undefined,
       pairWith: pairWith ? pairWith.id : undefined,
-    }), pairWith ? 'Записан и сведён в пару' : 'Записан');
+    })).then(res => {
+      if (!res) return;
+      // Вписанное имя могло разойтись с карточкой, найденной по номеру.
+      if (!res.walkIn) { toast(okText); return; }
+      toast(okText + (res.walkIn.created ? ' · заведена карточка: ' : ' · найден по телефону: ')
+        + res.walkIn.name, 3500);
+    });
   }));
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   body.appendChild(acts);
@@ -9350,7 +9376,7 @@ function money2(v) {
 // текстом: знать, как настроен клуб, ему нужно, а менять цену — нет.
 function renderSettings(view) {
   const cfg = db.config;
-  const owner = !!(me && me.role === 'owner');
+  const owner = ownerRights();
 
   const c1 = el('div', 'card');
   c1.innerHTML = '<h2>Как настроен центр</h2>';
@@ -9405,7 +9431,7 @@ function renderSettings(view) {
   c3.innerHTML = '<h2>Вы вошли как</h2>'
     + '<div class="item"><div class="t1">' + escapeHtml(me ? me.name : '')
     + '</div><div class="t2">' + escapeHtml(me ? fmtPhone(me.phone) : '')
-    + ' · ' + (me && me.role === 'owner' ? 'владелец' : 'администратор') + '</div></div>';
+    + ' · ' + staffLabel(me) + '</div></div>';
   view.appendChild(c3);
 }
 
@@ -10224,6 +10250,7 @@ function renderStaff(view) {
     const it = el('div', 'item');
     const pills = ['<span class="pill ' + (s.role === 'owner' ? 'ok' : 'grey') + '">'
       + (s.role === 'owner' ? 'владелец' : 'администратор') + '</span>'];
+    if (s.fullAccess) pills.push('<span class="pill ok">полные права</span>');
     // Уведомления уходят по привязке Telegram. Администратор без неё
     // ничего не получает, и узнать об этом лучше здесь, а не по
     // пропущенной заявке.
@@ -10237,6 +10264,9 @@ function renderStaff(view) {
 
     if (owner && s.role === 'admin') {
       const acts = el('div', 'acts');
+      acts.appendChild(s.fullAccess
+        ? btn('Убрать полные права', 'btn sm sec', () => confirmFullAccess(s, false))
+        : btn('Дать полные права', 'btn sm sec', () => confirmFullAccess(s, true)));
       acts.appendChild(btn('Снять роль', 'btn sm danger', () => confirmDemote(s)));
       it.appendChild(acts);
     }
@@ -10255,6 +10285,29 @@ function renderStaff(view) {
   card.appendChild(txt('div', 'empty',
     'Администратором становится уже зарегистрированный клиент: так у него подтверждённый '
     + 'телефон, а не запись, придуманная за него. Роль владельца через панель не выдаётся.'));
+}
+
+// Полные права — всё, что может владелец, кроме этого экрана: назначать
+// администраторов, раздавать права и менять пароли сотрудников остаётся
+// за владельцем.
+function confirmFullAccess(s, on) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + (on ? 'Дать полные права?' : 'Убрать полные права?') + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(s.name + ' · ' + fmtPhone(s.phone)) + '</div>'
+    + '<div class="empty">' + (on
+      ? 'Откроется всё, что видит владелец: настройки и цены, турниры и тренировки, афиша, каталог, '
+        + 'новости, абонементы, статистика, рейтинг и игровой уровень. Сообщения о турнирах и тренировках '
+        + 'тоже будут приходить ему. Назначать администраторов и менять их пароли по-прежнему может только владелец.'
+      : 'Останутся обычные права администратора — брони, клиенты, заявки, счёт турниров.') + '</div>';
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn(on ? 'Дать' : 'Убрать', on ? 'btn' : 'btn danger', () => {
+    closeModal();
+    act(() => api('setStaffAccess', { clientId: s.id, fullAccess: on }),
+      on ? 'Полные права выданы' : 'Полные права убраны');
+  }));
+  body.appendChild(acts);
+  showModal(body);
 }
 
 function confirmDemote(s) {
