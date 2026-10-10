@@ -184,6 +184,10 @@ const ERRORS = {
   'invalid-role': 'Такой роли нет.',
   'own-role': 'Снять роль с самого себя нельзя — центр останется без владельца.',
   'not-admin': 'Полные права даются только администратору.',
+  'no-results': 'Публиковать нечего: счёт ещё не внесён.',
+  'no-target': 'Не выбрана тема в группе: выберите её в «Изменить состав» и попробуйте снова.',
+  'render': 'Картинка не нарисовалась — попробуйте ещё раз; если повторится, напишите разработчику.',
+  'telegram-failed': 'Telegram не принял картинку.',
   'owner-role-immutable': 'Роль владельца через панель не меняется.',
   'client-not-verified': 'Сначала подтвердите клиента: администратором становится только проверенный.',
   'invalid-date': 'Проверьте дату.',
@@ -5079,6 +5083,16 @@ function postLine(op) {
   return '<div class="t2">📣 Пост в «' + escapeHtml(where) + '»' + escapeHtml(state) + '</div>';
 }
 
+// Картинка итогов в группе: опубликована ли и всё ли с ней в порядке.
+function resultsPostLine(op) {
+  const rp = op.resultsPost;
+  if (!rp || !rp.messageId) return null;
+  const state = rp.lost ? ' — удалена в группе'
+    : rp.error ? ' — Telegram отказал: ' + rp.error
+      : ' — бот обновляет её сам';
+  return txt('div', 't2', '🏆 Результаты в группе' + state);
+}
+
 // Один состав внутри строки тренировки: счётчик, список, свои кнопки.
 // Вынесено отдельно ровно потому, что составов бывает два и рисовать их
 // надо одинаково.
@@ -5116,6 +5130,8 @@ function rosterBlock(s, roster) {
   // Итоги показываем сразу в строке, как только счёт внесён: ради них
   // владелец на эту вкладку и возвращается после игры.
   if (op.results && op.results.played) wrap.appendChild(resultsView(op));
+  const rLine = resultsPostLine(op);
+  if (rLine) wrap.appendChild(rLine);
 
   const acts = el('div', 'acts');
   acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s, roster)));
@@ -5136,6 +5152,19 @@ function rosterBlock(s, roster) {
       if (op.results && op.results.played) {
         acts.appendChild(btn('Лист с результатами', 'btn sm sec', () => printResults(s.id, s.date, roster, false)));
       }
+    }
+  }
+  // Итоги в группу — картинкой. Первый раз выкладывает человек с правами
+  // владельца, дальше бот подменяет картинку сам при каждом сохранении
+  // счёта. Кнопка остаётся и после — повторить, если Telegram отказал или
+  // сообщение удалили.
+  if (ownerRights() && op.results && op.results.played && !op.results.tooMany) {
+    const rp = op.resultsPost;
+    const posted = rp && rp.messageId && !rp.lost;
+    if (!posted || rp.error) {
+      acts.appendChild(btn(posted ? 'Обновить результаты в группе' : 'Опубликовать результаты', 'btn sm', () => act(
+        () => api('adminOpenPlayResultsPost', { date: s.date, bookingId: s.id, roster: roster === 'alt' ? 'alt' : undefined }),
+        posted ? 'Картинка обновлена' : 'Результаты опубликованы в группе')));
     }
   }
   // Пост в группе можно вытолкнуть руками: удалили в группе, поправили
@@ -5280,7 +5309,7 @@ function resultsTableHtml(op, blank) {
 
   let head = '<tr><th class="rt-name">Участник</th>';
   for (let i = 1; i <= n; i++) head += '<th>' + i + '</th>';
-  head += '<th>Очки</th><th>Место</th></tr>';
+  head += '<th>Очки</th><th>Геймы</th><th>Место</th></tr>';
 
   const body = r.rows.map(row => {
     let tds = '<td class="rt-name">' + row.no + '. ' + escapeHtml(playerLabel(row)) + '</td>';
@@ -5289,9 +5318,11 @@ function resultsTableHtml(op, blank) {
         ? '<td class="rt-self"></td>'
         : '<td>' + (blank ? '' : escapeHtml(row.cells[j] || '')) + '</td>';
     }
-    // У несыгранного листа очки и места пустые: «1 место» у первого по
-    // списку — это неправда, напечатанная крупно.
+    // У несыгранного листа очки пустые, а место сервер ставит только
+    // после полного круга. Геймы рядом с очками — ими и решается место
+    // при равных очках, без них порядок мест выглядит случайным.
     tds += '<td class="rt-sum">' + (played ? row.points : '') + '</td>'
+      + '<td class="rt-sum">' + (played && row.played ? row.gamesFor + ':' + row.gamesAgainst : '') + '</td>'
       + '<td class="rt-sum">' + (played ? (row.place || '') : '') + '</td>';
     return '<tr>' + tds + '</tr>';
   }).join('');

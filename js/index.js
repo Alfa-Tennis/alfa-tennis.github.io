@@ -3219,7 +3219,7 @@ function resultsTableHtml(op) {
 
   let head = '<tr><th class="rt-name">Участник</th>';
   for (let i = 1; i <= n; i++) head += '<th>' + i + '</th>';
-  head += '<th>Очки</th><th>Место</th></tr>';
+  head += '<th>Очки</th><th>Геймы</th><th>Место</th></tr>';
 
   const body = r.rows.map(row => {
     const who = row.name + (row.partnerName ? ' / ' + row.partnerName : '');
@@ -3229,7 +3229,10 @@ function resultsTableHtml(op) {
         ? '<td class="rt-self"></td>'
         : '<td>' + escapeHtml(row.cells[j] || '') + '</td>';
     }
+    // Место сервер ставит только после полного круга; геймы — то, чем
+    // решается место при равных очках.
     tds += '<td class="rt-sum">' + row.points + '</td>'
+      + '<td class="rt-sum">' + (row.played ? row.gamesFor + ':' + row.gamesAgainst : '') + '</td>'
       + '<td class="rt-sum">' + (row.place || '') + '</td>';
     return '<tr>' + tds + '</tr>';
   }).join('');
