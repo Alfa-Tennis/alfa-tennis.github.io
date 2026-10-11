@@ -13,7 +13,7 @@
 
 // Пустая строка — вызовы пойдут на тот же адрес, откуда открыта
 // страница. Боевой адрес функции подставляется при развёртывании.
-const API_URL = 'https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt';
+const API_URL = 'https://api.alfa-tennis.ru';
 
 const TOKEN_KEY = 'alfa_admin_token';
 

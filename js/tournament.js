@@ -1,4 +1,4 @@
-const API_URL = 'https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt';
+const API_URL = 'https://api.alfa-tennis.ru';
 
 const TOKEN_KEY = 'alfa_token';
 // Вход в панель — тот же сайт, свой ключ (js/admin.js).

@@ -19,7 +19,7 @@
      бакета, запросы уходят только в функцию. Локальный стенд подставляет
      свой адрес в connect-src сам, файл на диске при этом не меняется
      (tools/dev-server.js). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https://storage.yandexcloud.net/alfa-tennis-data/; connect-src https://functions.yandexcloud.net/d4e0s6c0a0a800fl5cdt; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https://api.alfa-tennis.ru/files/; connect-src https://api.alfa-tennis.ru; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Альфа — панель администратора</title>
 <meta name="robots" content="noindex">
@@ -90,6 +90,6 @@
      единственное, что остаётся от страницы. -->
 <div id="printArea"></div>
 
-<script src="js/admin.js?v=18c6a9ef76"></script>
+<script src="js/admin.js?v=42c79edc8b"></script>
 </body>
 </html>
