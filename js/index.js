@@ -234,6 +234,7 @@ const ERRORS = {
     + 'или запишитесь без партнёра, в «ищут пару».',
   'partner-is-me': 'Это ваш собственный номер — укажите телефон партнёра.',
   'partner-already-in': 'Партнёр уже записан — сам или в паре с другим игроком.',
+  'singles-no-partner': 'Тренировка одиночная — записывается каждый сам.',
   'invalid-gender': 'Отметьте, кто вы в миксте — мужчина или женщина.',
   'mixed-same-gender': 'В миксте пара — мужчина и женщина.',
   'not-linked': 'Telegram не привязан к учётке. Откройте бота центра и поделитесь номером.',
@@ -3016,7 +3017,9 @@ function openSessionCard(idOrSession, roster) {
       g.appendChild(row);
       form.appendChild(g);
     }
-    const partner = partnerPicker(form, s);
+    // Парой — только в парной и миксте: в одиночной пара заняла бы два
+    // места, а играть по одному не стала бы.
+    const partner = pairsLike ? partnerPicker(form, s) : { value: () => null };
 
     acts.appendChild(btn(op.full ? 'Встать в очередь' : 'Записаться', 'btn', () => {
       if (op.format === 'mixed' && !gender) { toast('Отметьте, кто вы в миксте — мужчина или женщина'); return; }

@@ -155,6 +155,7 @@ const ERRORS = {
   'no-seats': 'Мест нет — сначала освободите место или добавьте его в «Изменить состав».',
   'not-single': 'Свести можно только двух одиночек — у кого-то из них уже есть пара.',
   'partner-already-in': 'Этот человек уже записан на тренировку — сам или в паре.',
+  'singles-no-partner': 'Тренировка одиночная — парой не записать. Нужна пара — смените формат в «Изменить состав».',
   'has-results': 'У этих игроков уже внесён счёт — пару менять нельзя, таблица бы поехала.',
   'not-pair': 'Это не пара.',
   'same-signup': 'Выберите двух разных людей.',
@@ -246,6 +247,15 @@ const ERRORS = {
   'manual-incomplete': 'Разложены не все участники — или состав только что изменился. Обновите страницу.',
   'manual-bad-group': 'Группы должны идти подряд с A, без пропусков.',
   'manual-small': 'В каждой группе должно быть хотя бы двое.',
+  'already-applied': 'Уровни по этим итогам уже пересчитаны.',
+  // Импорт «Корзин игроков». Чаще всего сюда приносят соседний файл
+  // клуба — таблицу «Рейтинг 2026 …»: тоже .xlsx, но корзин в нём нет.
+  'no-players': 'В файле не нашлось корзин. Нужен файл «Корзины игроков» — где колонки это уровни '
+    + '(6,0 … 2,0), а под ними фамилии. Таблица «Рейтинг 2026 …» сюда не подходит.',
+  'no-sheets': 'В файле нет ни одного листа с данными.',
+  'invalid-file': 'Файл не прочитался. Попробуйте выбрать его ещё раз.',
+  'file-too-big': 'Файл слишком большой для «Корзин игроков» — похоже, выбран не тот файл.',
+  'not-singles': 'Пары и микст на игровой уровень не влияют.',
 };
 
 function errorText(code) {
@@ -5132,6 +5142,7 @@ function rosterBlock(s, roster) {
   if (op.results && op.results.played) wrap.appendChild(resultsView(op));
   const rLine = resultsPostLine(op);
   if (rLine) wrap.appendChild(rLine);
+  if (op.levelAppliedAt) wrap.appendChild(txt('div', 't2', '📈 Игровые уровни пересчитаны'));
 
   const acts = el('div', 'acts');
   acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s, roster)));
@@ -5166,6 +5177,22 @@ function rosterBlock(s, roster) {
         () => api('adminOpenPlayResultsPost', { date: s.date, bookingId: s.id, roster: roster === 'alt' ? 'alt' : undefined }),
         posted ? 'Картинка обновлена' : 'Результаты опубликованы в группе')));
     }
+  }
+  // Игровой уровень — как после турнира: сводка, правка строк рукой и
+  // «Согласен». Только одиночная: пары и микст уровень не двигают.
+  // Ждать полного круга не нужно — кто-то уходит раньше, и его матчи
+  // всё равно сыграны.
+  if (ownerRights() && (op.format || 'singles') === 'singles'
+      && op.results && op.results.played && !op.levelAppliedAt) {
+    const req = { date: s.date, bookingId: s.id, roster: roster === 'alt' ? 'alt' : undefined };
+    acts.appendChild(btn('Пересчитать уровни', 'btn sm sec', async () => {
+      const res = await act(() => api('adminOpenPlayLevelPreview', req));
+      if (!res || !res.levels) return;
+      openLevels({ title: 'Тренировка «' + op.title + '» · ' + longDate(s.date) }, res.levels, null, {
+        errors: OPENPLAY_LEVEL_ERRORS,
+        apply: overrides => api('adminOpenPlayLevelApply', Object.assign({ overrides }, req)),
+      });
+    }));
   }
   // Пост в группе можно вытолкнуть руками: удалили в группе, поправили
   // права бота. Само задание этого не делает намеренно.
@@ -5346,6 +5373,10 @@ function openResultsForm(s, roster) {
   const body = el('div');
   body.innerHTML = '<h3>Результаты · ' + escapeHtml(op.title) + '</h3>'
     + '<div class="m-sub">' + escapeHtml(longDate(s.date) + ' · ' + fmtRange(s.start, s.end)) + '</div>';
+  if (op.levelAppliedAt) {
+    body.appendChild(txt('div', 'empty',
+      'Игровые уровни по этой тренировке уже пересчитаны — правка счёта на них не повлияет.'));
+  }
 
   // Прежний счёт достаём по паре в любом порядке: в файле он лежит так,
   // как его ввели в прошлый раз, а форма строит пары по списку состава.
@@ -5835,10 +5866,12 @@ function openAddSignup(s, roster, pairWith) {
 
   // Партнёр — из карточек клуба, как при записи парой с сайта: тогда он
   // видит тренировку у себя и получает напоминания. Приезжего без
-  // карточки — именем, отдельным полем.
+  // карточки — именем, отдельным полем. В одиночной поля нет вовсе:
+  // парой там не записывают.
   let partner = null;
   const inpPair = document.createElement('input');
-  if (!pairWith) {
+  const pairsFormat = target.format === 'pairs' || target.format === 'mixed';
+  if (!pairWith && pairsFormat) {
     const pairBox = el('div');
     body.appendChild(pairBox);
     const guestPair = el('label', 'field');
@@ -8479,6 +8512,14 @@ const LEVEL_ERRORS = {
   disabled: 'Пересчёт уровней выключен в настройках.',
 };
 
+// У тренировки свои слова: «турнир» в отказе читался бы как ошибка.
+const OPENPLAY_LEVEL_ERRORS = Object.assign({}, LEVEL_ERRORS, {
+  'not-singles': 'Пары и микст на игровой уровень не влияют — только одиночная игра.',
+  'no-anchor': 'Не от чего считать: уровень не известен ни у кого из участников, '
+    + 'и у тренировки не задан диапазон.',
+  'no-matches': 'Нет сыгранных матчей. Ничью в геймах уровень не учитывает.',
+});
+
 function levelNum(v) {
   return v == null ? '—' : String(v).replace('.', ',');
 }
@@ -8534,7 +8575,11 @@ function feeDebtNote(t) {
   return box;
 }
 
-function openLevels(t, data, pointsData) {
+// Окно одно на турнир и тренировку: у тренировки `opts` несёт свои
+// тексты отказов и своё применение, `t` — только подпись.
+function openLevels(t, data, pointsData, opts) {
+  const o = opts || {};
+  const errors = o.errors || LEVEL_ERRORS;
   const body = el('div');
   body.innerHTML = '<h3>Пересчёт игровых уровней</h3>'
     + '<div class="m-sub">' + escapeHtml(t.title) + '</div>';
@@ -8547,7 +8592,7 @@ function openLevels(t, data, pointsData) {
 
   if (data.error || !data.rows || !data.rows.length) {
     body.innerHTML += '<div class="empty">'
-      + escapeHtml(LEVEL_ERRORS[data.error] || 'Двигать некого: никто не сыграл ни одного матча.')
+      + escapeHtml(errors[data.error] || 'Двигать некого: никто не сыграл ни одного матча.')
       + '</div>';
     const only = el('div', 'm-acts');
     only.appendChild(btn('Закрыть', 'btn sec', closeModal));
@@ -8591,7 +8636,8 @@ function openLevels(t, data, pointsData) {
     const payload = [];
     overrides.forEach((v, clientId) => payload.push({ clientId, ntrp: v }));
     closeModal();
-    act(() => api('adminApplyLevels', { id: t.id, overrides: payload }), 'Уровни обновлены');
+    act(() => (o.apply ? o.apply(payload) : api('adminApplyLevels', { id: t.id, overrides: payload })),
+      'Уровни обновлены');
   }));
   body.appendChild(acts);
   showModal(body);
@@ -8611,9 +8657,12 @@ function levelRow(row, overrides) {
   head.appendChild(txt('span', row.divisionChanged ? 'pill ok' : 't2', move));
   wrap.appendChild(head);
 
-  const why = row.reason + (row.capped === 'tournament'
-    ? ' · упёрлись в предел за турнир'
-    : (row.capped === 'year' ? ' · упёрлись в предел за год' : ''));
+  const CAPPED = {
+    tournament: ' · упёрлись в предел за турнир',
+    training: ' · упёрлись в предел за тренировку',
+    year: ' · упёрлись в предел за год',
+  };
+  const why = row.reason + (CAPPED[row.capped] || '');
   wrap.appendChild(txt('div', 't2', why));
 
   const fix = el('div', 'row');
