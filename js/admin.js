@@ -5675,6 +5675,9 @@ function openSessionForm(session, preset, roster) {
   // Второй состав можно завести сразу: владелец обычно так и вешает —
   // две конкурирующие группы на один хороший вечерний час.
   let rivalTitle = null;
+  // «Можно в оба состава» — у пары составов. В новом окне — рядом с полем
+  // второго состава, у существующего — когда второй уже есть.
+  let both = session ? session.bothAllowed === true : false;
   if (!session) {
     const fRival = el('label', 'field');
     fRival.innerHTML = '<span>Второй состав на это же время — пусто значит «не нужен»</span>';
@@ -5685,6 +5688,9 @@ function openSessionForm(session, preset, roster) {
       'Два состава делят одно время: играет тот, кто первым наберётся полностью, '
       + 'второй распускается — записанным уйдёт уведомление. Мест во втором столько же, '
       + 'потом можно поправить.'));
+    body.appendChild(bothAllowedCheck(both, v => { both = v; }));
+  } else if (session.rival) {
+    body.appendChild(bothAllowedCheck(both, v => { both = v; }));
   }
 
   let closedFlag = op ? !!op.signupsClosed : false;
@@ -5720,11 +5726,15 @@ function openSessionForm(session, preset, roster) {
         date: session.date, bookingId: session.id,
         roster: which === 'alt' ? 'alt' : undefined,
         openPlay: payloadOp,
+        bothAllowed: session.rival ? both : undefined,
         telegram: tgTarget,
       }), which === 'alt' ? 'Второй состав изменён' : 'Окно изменено');
     } else {
       const rival = rivalTitle && rivalTitle.value.trim();
-      if (rival) payloadOp.alt = { title: rival };
+      if (rival) {
+        payloadOp.alt = { title: rival };
+        payloadOp.bothAllowed = both;
+      }
       act(() => api('adminCreateOpenPlay', {
         date: inpDate.value, start: selStart.value, durationMinutes: Number(selDur.value),
         openPlay: payloadOp,
@@ -5821,12 +5831,16 @@ function openRivalForm(s) {
   selSeats.value = String(s.openPlay.seats);
   fSeats.appendChild(selSeats); body.appendChild(fSeats);
 
+  let both = false;
+  body.appendChild(bothAllowedCheck(both, v => { both = v; }));
+
   const acts = el('div', 'm-acts');
   acts.appendChild(btn('Завести', 'btn', () => {
     if (inpTitle.value.trim().length < 2) return toast('Укажите подпись состава');
     closeModal();
     act(() => api('adminUpdateOpenPlay', {
       date: s.date, bookingId: s.id,
+      bothAllowed: both,
       alt: {
         title: inpTitle.value.trim(),
         seats: Number(selSeats.value),
@@ -5838,6 +5852,16 @@ function openRivalForm(s) {
   acts.appendChild(btn('Отмена', 'btn sec', closeModal));
   body.appendChild(acts);
   showModal(body);
+}
+
+// Галочка «можно записаться в оба состава». Решает владелец, а не формат:
+// две мужские одиночки 3–4 и 4–5 по формату одинаковы, но игрок с 4,0
+// годится в обе, а женская и мужская одиночка — соперники за время.
+function bothAllowedCheck(value, onChange) {
+  return check('Можно записаться в оба состава', value, onChange,
+    'Ставьте, когда составы не соперничают за одних людей: одиночка и пары, '
+    + 'разные уровни с общей границей. Без галочки человек выбирает один — '
+    + 'так правильно для женской и мужской группы на одно время.');
 }
 
 function ntrpSelect(value, placeholder) {

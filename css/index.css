@@ -312,6 +312,20 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .modal h3 { margin: 0 0 4px; font-size: 19px; }
 .modal .m-sub { color: var(--ink-soft); font-size: 14px; margin-bottom: 16px; }
 .modal .m-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+/* Два состава тренировки рядом. На телефоне — друг под другом: по 160
+   пикселей на колонку список не прочесть. */
+.modal.wide { max-width: 860px; }
+.rosters { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 4px; }
+@media (min-width: 720px) { .rosters { grid-template-columns: 1fr 1fr; } }
+.roster { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; min-width: 0; }
+.roster.solo { border: 0; padding: 0; }
+.roster.mine { border-color: var(--court); box-shadow: 0 0 0 2px var(--court-tint); }
+.roster h4 { margin: 0 0 2px; font-size: 17px; }
+.roster .r-sub { color: var(--ink-soft); font-size: 13px; margin-bottom: 10px; }
+.roster .card { box-shadow: none; }
+.roster .r-acts { margin-top: auto; padding-top: 4px; display: flex; gap: 8px; flex-wrap: wrap; }
+.roster.solo .r-acts { margin-top: 16px; }
+.summary.shared { margin-bottom: 12px; }
 .tabs2 { display: flex; gap: 6px; margin-bottom: 16px; }
 .tabs2 button { flex: 1; appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 9px; cursor: pointer; }
 .tabs2 button.on { background: var(--court); border-color: var(--court); color: #fff; font-weight: 600; }

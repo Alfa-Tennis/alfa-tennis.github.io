@@ -2926,32 +2926,28 @@ function myRoster(s) {
   return s.rival && s.rival.mine ? 'alt' : 'main';
 }
 
-function openSessionCard(idOrSession, roster) {
+// Два состава — в одном окне рядом, у каждого своя кнопка (22.10.2026).
+// Раньше второй открывался серой кнопкой-переключателем, которую не
+// принимали за кнопку: владелец сам еле нашёл, как записаться в мужской
+// состав. На телефоне колонки встают друг под другом — по 160 пикселей
+// на состав список не прочесть.
+function openSessionCard(idOrSession) {
   const s = typeof idOrSession === 'string' ? sessionById(idOrSession) : idOrSession;
   if (!s) { toast('Тренировка не найдена — обновите страницу'); return; }
-  const which = roster || myRoster(s);
-  const op = rosterOf(s, which);
-  const other = which === 'alt' ? s.openPlay : s.rival;
+  const main = s.openPlay;
+  const alt = s.rival || null;
 
   const body = el('div');
-  body.innerHTML = '<h3>' + escapeHtml(op.title) + '</h3>'
+  body.innerHTML = '<h3>' + escapeHtml(alt ? main.title + ' или ' + alt.title : main.title) + '</h3>'
     + '<div class="m-sub">' + escapeHtml(dayLabelLong(s.date, state.data.today)
-      + ' · ' + fmtRange(s.start, s.end) + ' · ' + op.level) + '</div>';
+      + ' · ' + fmtRange(s.start, s.end) + (alt ? '' : ' · ' + main.level)) + '</div>';
 
-  // Переключатель составов и правило: без объяснения человек не поймёт,
-  // почему на один час два разных набора.
-  if (other) {
+  // Правило — до составов: без него человек не поймёт, почему на один
+  // час два разных набора и можно ли в оба.
+  if (alt) {
     body.appendChild(html('div', 'notice',
       'На это время набираются два состава — играет тот, который соберётся первым. '
-      + 'Записаться можно только в один.'));
-    const tabs = el('div', 'acts');
-    // Текущий состав — не кнопка, а подпись: нажимать на то, что уже
-    // открыто, некуда.
-    tabs.appendChild(txt('span', 'pill ok', op.title + ' · ' + op.taken + ' из ' + op.seats));
-    tabs.appendChild(btn(other.title + ' · ' + other.taken + ' из ' + other.seats
-      + (other.mine ? ' · вы здесь' : ''), 'btn sm sec',
-      () => openSessionCard(s, which === 'alt' ? 'main' : 'alt')));
-    body.appendChild(tabs);
+      + (s.bothAllowed ? 'Можно записаться в оба.' : 'Записаться можно только в один.')));
   }
 
   const info = el('div', 'summary');
@@ -2963,9 +2959,50 @@ function openSessionCard(idOrSession, roster) {
   const courts = names.join(parallel ? ' и ' : ' → ');
   info.innerHTML = '<div class="s-row"><span>' + (names.length > 1 && parallel ? 'Корты' : 'Корт')
     + '</span><span>' + escapeHtml(courts) + '</span></div>'
-    + '<div class="s-row"><span>Записались</span><span>' + op.taken + ' из ' + op.seats + '</span></div>'
     + '<div class="s-row"><span>' + (names.length > 1 && parallel ? 'Корты целиком' : 'Корт целиком')
-    + '</span><span>' + money(s.total) + '</span></div>'
+    + '</span><span>' + money(s.total) + '</span></div>';
+  if (alt) info.classList.add('shared');
+  body.appendChild(info);
+
+  // Одинаковое примечание у двух составов — один раз, над обоими: обычно
+  // владелец пишет один «формат проведения» на оба.
+  const sharedNote = alt && main.note && main.note === alt.note ? main.note : '';
+  if (sharedNote) body.appendChild(txt('div', 'empty pre', sharedNote));
+
+  if (!alt) {
+    rosterColumn(body, s, 'main', null, { solo: true });
+    const acts = body.querySelector('.r-acts');
+    acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+    showModal(body);
+    return;
+  }
+
+  const cols = el('div', 'rosters');
+  rosterColumn(cols, s, 'main', alt, { sharedNote: !!sharedNote });
+  rosterColumn(cols, s, 'alt', main, { sharedNote: !!sharedNote });
+  body.appendChild(cols);
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body, { wide: true });
+}
+
+// Один состав: цена, список, очередь и своя кнопка. `other` — соседний
+// состав (нужен, чтобы погасить кнопку, когда в оба нельзя). opts.solo —
+// единственный состав тренировки: тогда заголовка над ним нет, он уже
+// в шапке окна.
+function rosterColumn(box, s, which, other, opts) {
+  const o = opts || {};
+  const op = rosterOf(s, which);
+  const col = el('div', o.solo ? 'roster solo' : 'roster' + (op.mine ? ' mine' : ''));
+  box.appendChild(col);
+  if (!o.solo) {
+    col.appendChild(txt('h4', '', op.title));
+    col.appendChild(txt('div', 'r-sub', op.level + (op.mine ? ' · вы записаны' : '')));
+  }
+
+  const info = el('div', 'summary');
+  info.innerHTML = '<div class="s-row"><span>Записались</span><span>' + op.taken + ' из ' + op.seats + '</span></div>'
     // Две цифры намеренно: делить корт на одного записавшегося честно
     // арифметически, но читается как цена, по которой никто не придёт.
     // Как игроки делят сумму на месте, клуб всё равно не решает.
@@ -2973,15 +3010,15 @@ function openSessionCard(idOrSession, roster) {
     + (op.perPerson && op.taken > 1 && !op.full
       ? '<div class="s-row"><span>Если придут только записавшиеся</span><span>' + money(op.perPerson) + '</span></div>'
       : '');
-  body.appendChild(info);
+  col.appendChild(info);
 
   // Примечание пишут строками — «формат проведения» по пунктам.
-  if (op.note) body.appendChild(txt('div', 'empty pre', op.note));
+  if (op.note && !o.sharedNote) col.appendChild(txt('div', 'empty pre', op.note));
   // Парная и микст: пришедших поодиночке сводит в пары организатор —
   // человек должен знать это до записи, а не гадать, с кем он будет играть.
   const pairsLike = op.format === 'pairs' || op.format === 'mixed';
   if (pairsLike) {
-    body.appendChild(txt('div', 'notice', (op.format === 'mixed'
+    col.appendChild(txt('div', 'notice', (op.format === 'mixed'
       ? 'Микст. ' : 'Игра парами. ')
       + 'Записывайтесь и без партнёра — пары из пришедших поодиночке составит организатор, '
       + 'о своём партнёре вы узнаете заранее.'));
@@ -3010,19 +3047,20 @@ function openSessionCard(idOrSession, roster) {
       list.appendChild(row);
     });
   }
-  body.appendChild(list);
+  col.appendChild(list);
 
-  const acts = el('div', 'm-acts');
+  const acts = el('div', 'r-acts');
   if (op.mine) {
-    acts.appendChild(btn('Отказаться', 'btn danger', () => leaveSession(s)));
-  } else if (other && other.mine) {
-    body.appendChild(txt('div', 'notice',
-      'Вы записаны в соседний состав. Чтобы перейти сюда, сначала снимитесь оттуда.'));
+    acts.appendChild(btn(o.solo ? 'Отказаться' : 'Отказаться от этого состава', 'btn danger',
+      () => leaveSession(s, o.solo ? undefined : which)));
+  } else if (other && other.mine && !s.bothAllowed) {
+    col.appendChild(txt('div', 'notice',
+      'Вы записаны в соседний состав. Чтобы перейти сюда, сначала откажитесь там.'));
   } else if (op.signupsClosed) {
-    body.appendChild(txt('div', 'notice', 'Набор закрыт. Позвоните в центр, если хотите попасть.'));
+    col.appendChild(txt('div', 'notice', 'Набор закрыт. Позвоните в центр, если хотите попасть.'));
   } else {
     const form = el('div');
-    body.insertBefore(form, list);
+    col.insertBefore(form, list);
     // Микст: пол называют при записи — по нему организатор сводит пары.
     let gender = null;
     if (op.format === 'mixed') {
@@ -3045,17 +3083,15 @@ function openSessionCard(idOrSession, roster) {
     // места, а играть по одному не стала бы.
     const partner = pairsLike ? partnerPicker(form, s) : { value: () => null };
 
-    acts.appendChild(btn(op.full ? 'Встать в очередь' : 'Записаться', 'btn', () => {
+    const label = op.full ? 'Встать в очередь' : (o.solo ? 'Записаться' : 'Записаться в этот состав');
+    acts.appendChild(btn(label, 'btn', () => {
       if (op.format === 'mixed' && !gender) { toast('Отметьте, кто вы в миксте — мужчина или женщина'); return; }
       const p = partner.value();
       if (p === false) return;
       joinSession(s, { partner: p, gender }, false, which);
     }));
   }
-  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
-  body.appendChild(acts);
-
-  showModal(body);
+  col.appendChild(acts);
 }
 
 // Партнёр в пару — клиент центра, как в парном турнире: по фамилии
@@ -3195,9 +3231,11 @@ function confirmLevelAndJoin(s, opts, hint, roster, who) {
   showModal(body);
 }
 
-async function leaveSession(s) {
+// roster — из какого состава: с галочкой «можно в оба» человек бывает в
+// двух, и снимать надо из того, где нажал.
+async function leaveSession(s, roster) {
   try {
-    await api('leaveOpenPlay', { date: s.date, bookingId: s.id });
+    await api('leaveOpenPlay', { date: s.date, bookingId: s.id, roster: roster || undefined });
     closeModal();
     await refreshAvailability();
     await refreshMine();
@@ -4645,9 +4683,11 @@ function html(tag, cls, markup) { const d = el(tag, cls); d.innerHTML = markup; 
 
 // ---------- Модальные окна и тосты ----------
 
-function showModal(node) {
+// opts.wide — окно шире обычного: два состава тренировки рядом.
+function showModal(node, opts) {
   const m = document.getElementById('modal');
   m.innerHTML = ''; m.appendChild(node);
+  m.classList.toggle('wide', !!(opts && opts.wide));
   document.getElementById('backdrop').classList.add('show');
 }
 function closeModal() { document.getElementById('backdrop').classList.remove('show'); }
