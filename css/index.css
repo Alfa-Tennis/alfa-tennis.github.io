@@ -437,6 +437,11 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .svc-row b { white-space: nowrap; }
 .links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .links .or { color: var(--ink-soft); font-size: 14px; }
+/* Кнопки-ссылки — «Записаться на услугу», «Открыть карту», «Позвонить» —
+   синие: серые на белой карточке читались как текст, и что их можно
+   нажать, было не видно (просьба 22.10.2026). */
+.links .btn.sec { background: var(--court); color: #fff; }
+.links .btn.sec:hover { background: var(--court-dk); }
 footer { max-width: 920px; margin: 26px auto 0; padding: 0 16px; color: var(--ink-soft); font-size: 13px; }
 footer a { color: var(--court-dk); }
 

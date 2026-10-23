@@ -148,8 +148,8 @@ const ERRORS = {
   'client-has-traces': 'За карточкой есть брони, записи или абонемент — её не удалить. Объедините её с настоящей карточкой человека.',
   'outside-hours': 'Время выходит за часы работы центра.',
   'invalid-name': 'Укажите имя и фамилию.',
-  'invalid-first-name': 'Проверьте имя: буквами, от двух, без цифр и значков.',
-  'invalid-last-name': 'Проверьте фамилию: буквами, от двух, без цифр и значков — или оставьте пустой.',
+  'invalid-first-name': 'Проверьте имя: русскими буквами, от двух, без цифр и значков.',
+  'invalid-last-name': 'Проверьте фамилию: русскими буквами, от двух, без цифр и значков — или оставьте пустой.',
   'staff-protected': 'Карточку сотрудника может менять только владелец.',
   'invalid-phone': 'Проверьте номер телефона.',
   'no-seats': 'Мест нет — сначала освободите место или добавьте его в «Изменить состав».',
@@ -508,7 +508,12 @@ function mapClient(c) {
     firstName: c.firstName || '',
     lastName: c.lastName || '',
     phone: c.phone,
+    // Дойдёт ли уведомление — любым мессенджером.
     tg: !!c.hasTelegram,
+    // Привязки по отдельности: по ним владельцу предлагается выбор канала.
+    hasTg: !!c.hasTg,
+    hasMax: !!c.hasMax,
+    notifyVia: c.notifyVia || '',
     awaitingGroup: !!c.awaitingGroup,
     createdByAdmin: !!c.createdByAdmin,
     mergeable: !!c.mergeable,
@@ -1313,7 +1318,7 @@ function renderWaiting(view, date) {
       const need = hoursText(w.durationMinutes);
       it.innerHTML = '<div class="t1">' + escapeHtml(w.clientName)
         + (w.notifiedAt ? ' <span class="pill grey">уже предлагали</span>' : '')
-        + (w.hasTelegram ? '' : ' <span class="pill wait">без Telegram</span>') + '</div>'
+        + (w.hasTelegram ? '' : ' <span class="pill wait">без мессенджера</span>') + '</div>'
         + '<div class="t2">' + escapeHtml(need + ' в промежутке ' + fmtRange(w.start, w.end)
           + ' · ' + (w.courtId == null ? 'любой корт' : courtName(w.courtId))
           + (w.clientPhone ? ' · ' + fmtPhone(w.clientPhone) : '')) + '</div>';
@@ -2910,7 +2915,7 @@ function renderRequests(view) {
     const it = el('div', 'item hl');
     it.innerHTML = '<div class="t1">' + escapeHtml(cl.name) + '</div>'
       + '<div class="t2">' + escapeHtml(fmtPhone(cl.phone)) + ' · '
-      + (cl.tg ? 'телефон подтверждён Telegram' : '<b>без Telegram</b> — напоминания не дойдут')
+      + (cl.tg ? 'телефон подтверждён Telegram' : '<b>без мессенджера</b> — напоминания не дойдут')
       // Почему человек здесь оказался. Без этой строки владелец
       // подтверждает вслепую: «не состоит в группе» — как раз то, ради
       // чего проверка и заводилась.
@@ -3226,7 +3231,7 @@ function renderWaitingQueue() {
     it.innerHTML = '<div class="t1">' + escapeHtml(w.clientName)
       + ' · ' + escapeHtml(hoursText(w.durationMinutes) + ' в промежутке ' + fmtRange(w.start, w.end))
       + (w.notifiedAt ? ' <span class="pill grey">уже предлагали</span>' : '')
-      + (w.hasTelegram ? '' : ' <span class="pill wait">без Telegram</span>') + '</div>'
+      + (w.hasTelegram ? '' : ' <span class="pill wait">без мессенджера</span>') + '</div>'
       + '<div class="t2">' + escapeHtml(longDate(w.date))
       + ' · ' + escapeHtml(w.courtId == null ? 'любой корт' : courtName(w.courtId))
       + (w.clientPhone ? ' · ' + escapeHtml(fmtPhone(w.clientPhone)) : '') + '</div>';
@@ -3459,7 +3464,7 @@ function renderClients(view) {
     if (c.role === 'admin' || c.role === 'owner') {
       flags.push('<span class="pill grey">' + (c.role === 'owner' ? 'владелец' : 'администратор') + '</span>');
     }
-    if (!c.tg) flags.push('<span class="pill grey">без Telegram</span>');
+    if (!c.tg) flags.push('<span class="pill grey">без мессенджера</span>');
     // Заведён при записи с улицы, сам не регистрировался. Отличать
     // важно: у зарегистрировавшегося без Telegram напоминания не дошли,
     // а этот их и не ждал — и войти в свою учётку пока не может.
@@ -3566,6 +3571,12 @@ function renderClients(view) {
     // него быть не должно вовсе.
     if (ownerRights()) {
       acts.appendChild(btn('Поправить рейтинг', 'btn sm sec', () => openRatingForm(c)));
+      // Канал уведомлений — только когда привязаны оба мессенджера:
+      // при одном выбирать не из чего, а кнопка бы висела.
+      if (c.hasTg && c.hasMax) {
+        acts.appendChild(btn('Канал: ' + channelLabel(c.notifyVia), 'btn sm sec',
+          () => openChannelForm(c)));
+      }
     }
     // Имя и фамилию узнаёт у стойки смена — правит любой администратор.
     // Карточки сотрудников — только владелец, как и их пароли.
@@ -3997,6 +4008,40 @@ function nameGuess(c) {
 // «Иванов Д.», «Дмитрий Иванов», «иванов дмитрий». В зачёте это три
 // разных человека, и свести их можно только приведя карточки к одному
 // виду. След правки остаётся: кто, когда, из чего.
+function channelLabel(v) {
+  return v === 'tg' ? 'Telegram' : v === 'max' ? 'MAX' : 'как у всех';
+}
+
+// Каким мессенджером писать этому человеку, когда привязаны оба.
+//
+// Нужно это не клиентам, а владельцу: у него привязан Telegram, и без
+// такой настройки он не проверит, доходят ли сообщения в MAX, не
+// переключив канал всему клубу разом.
+function openChannelForm(c) {
+  const body = el('div');
+  body.innerHTML = '<h3>Куда писать</h3>'
+    + '<div class="m-sub">' + escapeHtml(c.name + ' · ' + fmtPhone(c.phone)) + '</div>'
+    + '<div class="empty">У этого человека привязаны оба мессенджера. '
+    + '«Как у всех» — по общему порядку каналов из настроек. Остальные два — '
+    + 'жёстко, мимо порядка.</div>';
+
+  const sel = document.createElement('select');
+  [['', 'Как у всех'], ['tg', 'Только Telegram'], ['max', 'Только MAX']]
+    .forEach(([v, label]) => sel.appendChild(opt(v, label)));
+  sel.value = c.notifyVia || '';
+  wrapField(body, 'Канал уведомлений', sel);
+
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Сохранить', 'btn', () => {
+    closeModal();
+    act(() => api('adminSetNotifyVia', { clientId: c.id, channel: sel.value }),
+      'Канал: ' + channelLabel(sel.value));
+  }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
 function openNameForm(c) {
   const body = el('div');
   body.innerHTML = '<h3>Поправить имя</h3>'
@@ -5237,7 +5282,7 @@ function signupRow(s, p, num, inQueue, pairsFormat, roster) {
     + escapeHtml(who)
     // Без Telegram человеку придётся звонить руками — это надо видеть
     // до того, как понадеешься на автоматическое уведомление.
-    + (p.clientId && !p.hasTelegram ? ' <span class="pill wait">без Telegram</span>' : '')
+    + (p.clientId && !p.hasTelegram ? ' <span class="pill wait">без мессенджера</span>' : '')
     + (!p.clientId ? ' <span class="pill grey">без учётки</span>' : '');
 
   const acts = el('div', 'acts');
@@ -8141,7 +8186,9 @@ function openPickClient(t, title, onPick, exclude) {
   fresh.appendChild(freshActs);
   body.appendChild(fresh);
 
-  const openFresh = btn('Нет в списке — завести карточку', 'btn sm sec', () => showFresh(true));
+  // Синяя, а не серая: серая под карточками клиентов читалась как
+  // подпись, и завести новую карточку не догадывались.
+  const openFresh = btn('Нет в списке — завести карточку', 'btn sm', () => showFresh(true));
   const openRow = el('div', 'acts');
   openRow.appendChild(openFresh);
   body.appendChild(openRow);
@@ -10034,6 +10081,104 @@ function renderAnnounceChat(view) {
     + (db.chats.lastPostAt ? ' Последнее объявление: ' + shortDateTime(db.chats.lastPostAt) + '.' : '')));
 
   renderMembershipGate(view);
+  renderMaxChannel(view);
+}
+
+// Второй мессенджер — MAX. Заведён страховкой на случай, если Telegram
+// окончательно задушат.
+//
+// Список групп здесь не такой, как у Telegram: там бот набирает его сам
+// из того, что видел, а MAX отдаёт список по запросу — поэтому кнопка.
+function renderMaxChannel(view) {
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>MAX <span class="sub">второй канал уведомлений</span></h2>';
+  view.appendChild(card);
+
+  const cfg = (db.chats && db.chats.max) || {};
+  const health = cfg.health || {};
+
+  // Ник бота руками: MAX генерирует его сам (id<ИНН>_bot), выбрать или
+  // поменять нельзя, и взяться ему в панели неоткуда.
+  const nick = document.createElement('input');
+  nick.type = 'text';
+  nick.placeholder = 'id1234567890_bot';
+  nick.value = cfg.botUsername || '';
+  wrapField(card, 'Ник бота в MAX', nick);
+
+  const groupSel = document.createElement('select');
+  const memberSel = document.createElement('select');
+
+  // Пока список не запрошен, в выпадающих лежит сохранённое значение:
+  // иначе сохранение затёрло бы выбранную группу пустотой.
+  const fill = (sel, chats, current, emptyLabel) => {
+    sel.innerHTML = '';
+    sel.appendChild(opt('', emptyLabel));
+    let known = false;
+    chats.forEach(c => { sel.appendChild(opt(c.id, c.title)); if (c.id === current) known = true; });
+    if (current && !known) sel.appendChild(opt(current, 'чат №' + current));
+    sel.value = current || '';
+  };
+  fill(groupSel, [], cfg.groupChatId || '', 'Не публиковать');
+  fill(memberSel, [], cfg.membershipChatId || '', 'Не проверять');
+
+  wrapField(card, 'Объявления об освободившемся времени', groupSel);
+  wrapField(card, 'Регистрация только для участников группы', memberSel);
+
+  const found = txt('div', 'empty', cfg.botUsername
+    ? 'Нажмите «Найти группы», чтобы выбрать их по названию.'
+    : 'Сначала задайте ник бота и сохраните — без него MAX не ответит.');
+  card.appendChild(found);
+
+  const acts = el('div', 'acts');
+  acts.appendChild(btn('Найти группы', 'btn sec sm', async () => {
+    found.textContent = 'Спрашиваем MAX…';
+    try {
+      const r = await api('adminMaxChats');
+      if (!r.chats.length) {
+        found.textContent = 'Бот не состоит ни в одной группе. Добавьте его в группу центра '
+          + 'администратором и нажмите ещё раз.';
+        return;
+      }
+      fill(groupSel, r.chats, groupSel.value, 'Не публиковать');
+      fill(memberSel, r.chats, memberSel.value, 'Не проверять');
+      found.textContent = 'Групп найдено: ' + r.chats.length + '. Выберите и сохраните.';
+    } catch (e) {
+      found.textContent = e.code === 'max-not-configured'
+        ? 'Канал MAX не настроен: нет токена бота на сервере.'
+        : 'MAX не ответил. ' + (errorText(e.code) || '');
+    }
+  }));
+
+  acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
+    patch: {
+      max: {
+        botUsername: nick.value.trim(),
+        groupChatId: groupSel.value,
+        membershipChatId: memberSel.value,
+      },
+    },
+  }, 'MAX сохранён')));
+  card.appendChild(acts);
+
+  // Порядок каналов. Отдельной кнопкой, а не вместе с остальным:
+  // переключение — это событие, а не правка поля, и нажимают его один
+  // раз в жизни, в тот день, когда Telegram перестанет доходить.
+  const order = el('div', 'notice');
+  order.appendChild(txt('div', '', cfg.preferMax
+    ? 'Сейчас первым идёт MAX. Тем, у кого привязан только Telegram, пишем в Telegram.'
+    : 'Сейчас первым идёт Telegram. MAX достаётся тем, у кого Telegram не привязан.'));
+  order.appendChild(btn(cfg.preferMax ? 'Вернуть Telegram первым' : 'Сделать MAX основным', 'btn sec sm',
+    () => saveSchedule('adminUpdateConfig',
+      { patch: { max: { preferMax: !cfg.preferMax } } },
+      cfg.preferMax ? 'Первым снова Telegram' : 'Первым теперь MAX')));
+  card.appendChild(order);
+
+  card.appendChild(txt('div', 'empty',
+    'Канал: ' + (health.configured ? 'настроен' : 'не настроен — нет токена на сервере')
+    + (health.lastError ? ' · последняя ошибка: ' + health.lastError : '')
+    + (health.lastOkAt ? ' · последний успешный запрос: ' + shortDateTime(health.lastOkAt) : '')
+    + '. Объявления уходят в обе группы — телеграмную и максовую: это разные люди. '
+    + 'Личные сообщения — в один мессенджер, по порядку каналов.'));
 }
 
 // Кто может завести учётку через бота. Подтверждённый Telegram номер
@@ -10331,10 +10476,10 @@ function renderStaff(view) {
     const pills = ['<span class="pill ' + (s.role === 'owner' ? 'ok' : 'grey') + '">'
       + (s.role === 'owner' ? 'владелец' : 'администратор') + '</span>'];
     if (s.fullAccess) pills.push('<span class="pill ok">полные права</span>');
-    // Уведомления уходят по привязке Telegram. Администратор без неё
-    // ничего не получает, и узнать об этом лучше здесь, а не по
-    // пропущенной заявке.
-    if (!s.hasTelegram) pills.push('<span class="pill wait">без Telegram</span>');
+    // Уведомления уходят по привязке мессенджера — Telegram или MAX.
+    // Администратор без обоих ничего не получает, и узнать об этом
+    // лучше здесь, а не по пропущенной заявке.
+    if (!s.hasTelegram) pills.push('<span class="pill wait">без мессенджера</span>');
 
     it.innerHTML = '<div class="t1">' + escapeHtml(s.name) + ' ' + pills.join(' ') + '</div>'
       + '<div class="t2">' + escapeHtml(fmtPhone(s.phone)) + ' · '

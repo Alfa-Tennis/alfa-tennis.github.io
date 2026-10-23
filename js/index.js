@@ -214,8 +214,8 @@ const ERRORS = {
   'password-is-phone': 'Пароль не может быть вашим номером телефона.',
   'wrong-current-password': 'Текущий пароль неверный.',
   'invalid-name': 'Укажите имя и фамилию.',
-  'invalid-first-name': 'Проверьте имя: буквами, от двух, без цифр и значков.',
-  'invalid-last-name': 'Проверьте фамилию: буквами, от двух, без цифр и значков.',
+  'invalid-first-name': 'Проверьте имя: русскими буквами, от двух, без цифр и значков.',
+  'invalid-last-name': 'Проверьте фамилию: русскими буквами, от двух, без цифр и значков.',
   'invalid-phone': 'Проверьте номер телефона.',
   'item-not-found': 'Этой позиции больше нет — обновите страницу.',
   'option-required': 'Выберите тариф — без него администратор не поймёт, о чём заявка.',
@@ -285,6 +285,16 @@ function errorText(code) {
 // говорить об этом прямо, а не обещать «сообщим» в пустоту.
 function hasTelegram() {
   return !!(state.auth && state.auth.client && state.auth.client.hasTelegram);
+}
+
+function hasMax() {
+  return !!(state.auth && state.auth.client && state.auth.client.hasMax);
+}
+
+// Заведён ли у центра бот в MAX. Без него второй мессенджер на странице
+// не показывается вовсе.
+function maxPossible() {
+  return !!(state.config && state.config.max && state.config.max.botUsername);
 }
 
 // ---------- Слой API ----------
@@ -2044,34 +2054,44 @@ function openAuth(mode) {
   // Ссылку просим заранее, ещё до нажатия: окно, открытое после ожидания
   // сети, браузер считает непрошеным и блокирует. К моменту нажатия она
   // уже есть, и window.open проходит как обычное действие человека.
-  let tgStart = null;
+  // По коду на мессенджер: у каждого свой, и просим мы их параллельно.
+  // Коды независимы — человек нажмёт одну кнопку, второй просто протухнет.
+  const starts = {};
   let tgBox = null;
 
   const tgPossible = () => !!(state.config.club.botUsername) && !telegramInitData();
+  const maxLoginPossible = () => maxPossible() && !telegramInitData();
 
-  if (tgPossible()) {
-    api('tgLoginStart')
-      .then(r => { tgStart = r; paintTg(); })
+  function askStart(channel) {
+    api('tgLoginStart', { channel })
+      .then(r => { starts[channel] = r; paintTg(); })
       .catch(() => { /* молча: вход по паролю никуда не делся */ });
   }
+
+  if (tgPossible()) askStart('tg');
+  if (maxLoginPossible()) askStart('max');
 
   function paintTg() {
     if (!tgBox) return;
     tgBox.innerHTML = '';
-    if (!tgStart) return;
+    if (!starts.tg && !starts.max) return;
 
     const or = el('div', 'tg-or');
     or.textContent = 'или';
     tgBox.appendChild(or);
 
-    const go = btn('Войти через Telegram', 'btn sec wide', () => {
-      // Открываем соседней вкладкой, а не переходом: эта должна остаться
-      // на месте и дождаться подтверждения. На телефоне ссылка отдаётся
-      // приложению Telegram, и вкладка тоже никуда не девается.
-      window.open(tgStart.url, '_blank', 'noopener');
-      showTgWaiting();
+    // Telegram первым: у подавляющего большинства клуба привязан он.
+    [['tg', 'Telegram'], ['max', 'MAX']].forEach(([channel, name]) => {
+      const start = starts[channel];
+      if (!start) return;
+      tgBox.appendChild(btn(`Войти через ${name}`, 'btn sec wide', () => {
+        // Открываем соседней вкладкой, а не переходом: эта должна
+        // остаться на месте и дождаться подтверждения. На телефоне
+        // ссылка отдаётся приложению, и вкладка тоже никуда не девается.
+        window.open(start.url, '_blank', 'noopener');
+        showTgWaiting(start, name);
+      }));
     });
-    tgBox.appendChild(go);
 
     const note = el('div', 'empty');
     note.style.marginTop = '10px';
@@ -2079,29 +2099,29 @@ function openAuth(mode) {
     // февраля 2026 работает с ограничениями, и человек, у которого он еле
     // грузится, должен видеть, что вход по телефону от мессенджера не
     // зависит вовсе. Иначе он решит, что сайт тоже сломан.
-    note.textContent = 'Работает, если Telegram уже привязан к учётке. Если нет — бот подскажет, '
-      + 'что нажать. А если Telegram не открывается — вход и регистрация по телефону выше работают без него.';
+    note.textContent = 'Работает, если мессенджер уже привязан к учётке. Если нет — бот подскажет, '
+      + 'что нажать. А если мессенджер не открывается — вход и регистрация по телефону выше работают без него.';
     tgBox.appendChild(note);
   }
 
   // Панель ожидания. Она же — единственное место, где человеку показан код
   // сверки: сверять его с сообщением бота и есть защита от чужой ссылки.
-  function showTgWaiting() {
+  function showTgWaiting(start, name) {
     const body = el('div');
-    body.innerHTML = '<h3>Подтвердите вход в Telegram</h3>'
+    body.innerHTML = `<h3>Подтвердите вход в ${escapeHtml(name)}</h3>`
       + '<div class="m-sub">Бот прислал три кнопки с кодами. Нажмите ту, где этот код:</div>'
-      + '<div class="tg-code">' + escapeHtml(tgStart.confirmCode) + '</div>';
+      + '<div class="tg-code">' + escapeHtml(start.confirmCode) + '</div>';
 
     const status = txt('div', 'empty', 'Ждём подтверждения…');
     body.appendChild(status);
-    body.appendChild(tgFallback());
+    body.appendChild(tgFallback(start, name));
 
     const acts = el('div', 'm-acts');
     acts.appendChild(btn('Войти по паролю', 'btn sec', () => openAuth('login')));
     body.appendChild(acts);
 
     showModal(body);
-    pollTgLogin(body, status);
+    pollTgLogin(body, status, start);
   }
 
   // Запасной путь, когда ссылка до Telegram не доехала. Показываем его
@@ -2114,17 +2134,22 @@ function openAuth(mode) {
   // предлагает, и переход просто ничем не кончается: бот молчит, потому
   // что ему нечего было отвечать. Поэтому здесь и лежит команда целиком —
   // отправленная руками, она равна переходу по ссылке.
-  function tgFallback() {
+  function tgFallback(start, name) {
     const box = el('div', 'notice');
-    const web = 'https://web.telegram.org/a/#?tgaddr=' + encodeURIComponent(
-      'tg://resolve?domain=' + state.config.club.botUsername + '&start=' + tgStart.code);
 
-    box.innerHTML = 'Telegram не открылся? '
-      + '<a href="' + escapeHtml(tgStart.url) + '" target="_blank" rel="noopener">Открыть в приложении</a>'
-      + ' или <a href="' + escapeHtml(web) + '" target="_blank" rel="noopener">в Telegram Web</a>.'
-      + '<div class="tg-cmd-note">Если и там пусто — отправьте боту это сообщение:</div>';
+    // Ссылка на веб-версию есть только у Telegram: у него обработчика
+    // tg:// на компьютере может не быть вовсе, и переход кончается ничем.
+    // У MAX такой подпорки не знаем — и не выдумываем: ниже всё равно
+    // лежит команда целиком, а она работает везде.
+    const web = start.channel === 'max' ? '' : 'https://web.telegram.org/a/#?tgaddr=' + encodeURIComponent(
+      'tg://resolve?domain=' + state.config.club.botUsername + '&start=' + start.code);
 
-    const cmd = txt('div', 'tg-cmd', '/start ' + tgStart.code);
+    box.innerHTML = escapeHtml(name) + ' не открылся? '
+      + '<a href="' + escapeHtml(start.url) + '" target="_blank" rel="noopener">Открыть в приложении</a>'
+      + (web ? ' или <a href="' + escapeHtml(web) + '" target="_blank" rel="noopener">в Telegram Web</a>' : '')
+      + '.<div class="tg-cmd-note">Если и там пусто — отправьте боту это сообщение:</div>';
+
+    const cmd = txt('div', 'tg-cmd', '/start ' + start.code);
     box.appendChild(cmd);
 
     box.appendChild(btn('Скопировать', 'btn sec sm', () => {
@@ -2139,7 +2164,7 @@ function openAuth(mode) {
       };
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(cmd.textContent)
-          .then(() => toast('Скопировано — вставьте боту в Telegram'), fallback);
+          .then(() => toast('Скопировано — вставьте боту в мессенджер'), fallback);
       } else fallback();
     }));
 
@@ -2153,8 +2178,7 @@ function openAuth(mode) {
       && document.getElementById('modal').contains(panel);
   }
 
-  async function pollTgLogin(panel, status) {
-    const started = tgStart;
+  async function pollTgLogin(panel, status, started) {
     const every = (started.pollSeconds || 3) * 1000;
     const until = Date.now() + (started.expiresInMinutes || 5) * 60000;
 
@@ -2301,7 +2325,7 @@ function openAuth(mode) {
 
     [inpPhone, inpPass].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); }));
 
-    if (tgPossible()) {
+    if (tgPossible() || maxLoginPossible()) {
       tgBox = el('div');
       body.appendChild(tgBox);
       paintTg();
@@ -4559,41 +4583,57 @@ function renderProfile() {
   c2.appendChild(txt('div', 'empty', 'Забыли пароль — свяжитесь с администратором.'));
   view.appendChild(c2);
 
-  const c3 = el('div', 'card');
-  c3.innerHTML = '<h2>Telegram</h2>';
+  // Мессенджеры. Карточка одна на оба — различий между ними для
+  // человека ровно два: название и то, какой из них у него стоит.
+  //
+  // Порядок уведомлений при двух привязках решает сервер (сейчас —
+  // Telegram вперёд), и карточка об этом честно говорит: иначе человек
+  // привяжет MAX и будет ждать, почему туда ничего не идёт.
+  function messengerCard(channel, name, linked) {
+    const card = el('div', 'card');
+    card.innerHTML = `<h2>${name}</h2>`;
 
-  if (hasTelegram()) {
-    c3.appendChild(txt('div', 'notice info', 'Telegram привязан. Напоминания о брони придут сюда.'));
-    c3.appendChild(btn('Отвязать', 'btn sec', async () => {
-      try {
-        await api('unlinkTelegram');
-        const me = await api('me');
-        state.auth.client = me.client;
-        renderProfile(); renderNav();
-        toast('Telegram отвязан');
-      } catch (e) { toast(errorText(e.code)); }
-    }));
-  } else {
-    c3.appendChild(txt('div', 'empty',
-      'Единственный канал уведомлений. После привязки придут напоминания о брони за 12 часов '
-      + 'и за два часа, решения администратора по заявкам и сообщения об освободившемся времени. '
-      + 'Нужен работающий Telegram на телефоне.'));
+    if (linked) {
+      const second = channel === 'max' && hasTelegram();
+      card.appendChild(txt('div', 'notice info', second
+        ? `${name} привязан как запасной. Пока работает Telegram, напоминания идут туда.`
+        : `${name} привязан. Напоминания о брони придут сюда.`));
+      card.appendChild(btn('Отвязать', 'btn sec', async () => {
+        try {
+          await api('unlinkTelegram', { channel });
+          const me = await api('me');
+          state.auth.client = me.client;
+          renderProfile(); renderNav();
+          toast(`${name} отвязан`);
+        } catch (e) { toast(errorText(e.code)); }
+      }));
+    } else {
+      card.appendChild(txt('div', 'empty',
+        'После привязки придут напоминания о брони за 12 часов '
+        + 'и за два часа, решения администратора по заявкам и сообщения об освободившемся времени. '
+        + `Нужен работающий ${name} на телефоне.`));
 
-    c3.appendChild(btn('Привязать Telegram', 'btn', async () => {
-      try {
-        const r = await api('linkTelegramStart');
-        // Открываем в новой вкладке, а не подменяем текущую: иначе на
-        // телефоне человек уходит в Telegram и теряет страницу вместе с
-        // тем, что он на ней делал.
-        window.open(r.url, '_blank');
-        toast('Откройте бота и нажмите «Запустить»');
-        // Возвращаемся на страницу — обновляем состояние: привязка
-        // произойдёт на стороне бота, страница о ней сама не узнает.
-        setTimeout(refreshMe, 4000);
-      } catch (e) { toast(errorText(e.code)); }
-    }));
+      card.appendChild(btn(`Привязать ${name}`, 'btn', async () => {
+        try {
+          const r = await api('linkTelegramStart', { channel });
+          // Открываем в новой вкладке, а не подменяем текущую: иначе на
+          // телефоне человек уходит в мессенджер и теряет страницу вместе
+          // с тем, что он на ней делал.
+          window.open(r.url, '_blank');
+          toast('Откройте бота и нажмите «Запустить»');
+          // Возвращаемся на страницу — обновляем состояние: привязка
+          // произойдёт на стороне бота, страница о ней сама не узнает.
+          setTimeout(refreshMe, 4000);
+        } catch (e) { toast(errorText(e.code)); }
+      }));
+    }
+    return card;
   }
-  view.appendChild(c3);
+
+  view.appendChild(messengerCard('tg', 'Telegram', hasTelegram()));
+  // MAX показываем, только когда бот заведён: пустая кнопка «привязать»
+  // у ненастроенного мессенджера — обещание, которого некому исполнить.
+  if (maxPossible()) view.appendChild(messengerCard('max', 'MAX', hasMax()));
 
   const c4 = el('div', 'card');
   c4.appendChild(btn('Выйти', 'btn sec', () => logout(false)));
