@@ -3294,7 +3294,8 @@ function resultsTableHtml(op) {
         ? '<td class="rt-self"></td>'
         : '<td>' + escapeHtml(row.cells[j] || '') + '</td>';
     }
-    // Место сервер ставит только после полного круга; геймы — то, чем
+    // Место сервер ставит только после полного круга или пересчёта
+    // уровней; геймы — то, чем
     // решается место при равных очках.
     tds += '<td class="rt-sum">' + row.points + '</td>'
       + '<td class="rt-sum">' + (row.played ? row.gamesFor + ':' + row.gamesAgainst : '') + '</td>'
