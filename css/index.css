@@ -147,6 +147,8 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 .pill.ok { background: var(--court-tint); border-color: var(--court-line); color: var(--court-dk); }
 .pill.wait { background: var(--warn-tint); border-color: var(--warn-line); color: var(--warn-dk); }
 .pill.bad { background: var(--danger-tint); border-color: #EEC9C9; color: var(--danger); }
+/* В составе турнира — кто ещё не сдал взнос. */
+.t-unpaid { color: var(--danger); }
 .pill.grey { background: #EFF2F3; color: var(--ink-soft); }
 
 /* ---------- Дни ---------- */

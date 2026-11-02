@@ -3415,9 +3415,22 @@ function showTournamentCard() {
     list.appendChild(txt('div', 't2', t.payFirst ? 'Пока никого — места за теми, кто оплатил первым.'
       : 'Пока никого. Будете первым.'));
   }
+  // Организатор может поставить в состав и до оплаты (02.11.2026) — такой
+  // человек красным, как и 🔴 в посте группы. `unpaid` идёт по игрокам в
+  // порядке имён через « / »; не сошлось число — красным всё имя.
   t.participants.forEach(p => {
-    list.appendChild(txt('div', 't1', p.name + (p.mine ? ' — это вы' : '')));
+    const row = el('div', 't1');
+    const owed = p.unpaid;
+    const parts = String(p.name).split(' / ');
+    const each = owed && parts.length === owed.length ? parts : [p.name];
+    row.innerHTML = each.map((n, i) => (owed && (each.length === 1 || owed[i])
+      ? '<span class="t-unpaid">' + escapeHtml(n) + '</span>' : escapeHtml(n))).join(' / ')
+      + (p.mine ? ' — это вы' + (owed ? ', взнос ещё не оплачен' : '') : '');
+    list.appendChild(row);
   });
+  if (t.participants.some(p => p.unpaid)) {
+    list.appendChild(txt('div', 't2', 'Красным — взнос ещё не оплачен.'));
+  }
   // Заявки, ждущие оплаты, — числом: видно, что места разбирают.
   if (t.feePending) {
     list.appendChild(txt('div', 't2', 'Подали заявку и ждут оплаты: ' + t.feePending + '.'));

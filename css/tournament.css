@@ -64,6 +64,8 @@ button { font: inherit; }
 .pill.wait { background: var(--warn-tint); color: var(--warn); }
 .pill.grey { background: #EEF1F2; color: var(--ink-soft); }
 .pill.me { background: var(--court-tint); color: var(--court-dk); }
+/* В составе — кто ещё не сдал взнос. */
+.t-unpaid { color: var(--danger); }
 
 .meta { color: var(--ink-soft); font-size: 14px; }
 .t-note { margin-top: 6px; }

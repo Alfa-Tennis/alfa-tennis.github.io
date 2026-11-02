@@ -7574,7 +7574,10 @@ function renderTournamentRoster(view, t, canEdit) {
   }
 
   t.participants.forEach(p => {
-    const it = el('div', 'item' + (p.status === 'withdrawn' ? ' past' : ''));
+    // Не сдавший взнос — красной строкой, а не только плашкой: в составе
+    // бывают и неоплаченные, и их надо видеть, пробегая список глазами.
+    const it = el('div', 'item' + (p.status === 'withdrawn' ? ' past' : '')
+      + (debtors.has(p.id) && p.status !== 'withdrawn' ? ' t-unpaid' : ''));
     const pair = (p.players || []).length > 1;
     const owes = unpaidCount(p);
     it.innerHTML = '<div class="t1"><b>' + p.number + '.</b> ' + escapeHtml(p.name)
@@ -7712,11 +7715,13 @@ function renderTournamentRoster(view, t, canEdit) {
       + ' · ' + (left ? 'мест осталось ' + left : 'мест нет') + '</span></h2>';
     view.appendChild(box);
     box.appendChild(txt('div', 'empty',
-      'Место в составе — после оплаты взноса ' + t.fee + ' ₽'
+      'Взнос ' + t.fee + ' ₽'
       + (t.kind === 'doubles' ? ' с каждого игрока' : '') + '. Прислали скриншот оплаты — нажмите '
       + '«Взнос получен»: ' + (t.kind === 'doubles' ? 'пара встанет в состав, когда заплатят оба. '
         : 'человек встанет в состав. ')
-      + (left ? '' : 'Мест уже нет — взнос у этих людей брать не нужно.')));
+      + (left ? '«В состав без оплаты» — место за человеком, но в составе, в посте группы и на сайте '
+        + 'он помечен красным, пока взнос не отмечен.'
+        : 'Мест уже нет — взнос у этих людей брать не нужно.')));
     feeWait.forEach(p => {
       const it = el('div', 'item');
       const pair = (p.players || []).length > 1;
@@ -7733,6 +7738,12 @@ function renderTournamentRoster(view, t, canEdit) {
         acts.appendChild(btn(pair ? 'Взнос получен от обоих — в состав' : 'Взнос получен — в состав', 'btn sm', () =>
           act(() => api('adminTournamentParticipant',
             { id: t.id, op: 'promote', participantId: p.id, paid: true }), 'Взнос отмечен, в составе')));
+        // Без оплаты — по слову организатора (02.11.2026): место за
+        // человеком, а красная пометка в составе, в посте группы и на
+        // сайте висит, пока не нажмут «Взнос внесён».
+        acts.appendChild(btn('В состав без оплаты', 'btn sm sec', () =>
+          act(() => api('adminTournamentParticipant',
+            { id: t.id, op: 'promote', participantId: p.id }), 'В составе, взнос не отмечен')));
       }
       acts.appendChild(btn('Убрать', 'btn sm danger', () =>
         act(() => api('adminTournamentParticipant',
@@ -10098,10 +10109,13 @@ function renderAnnounceChat(view) {
   card.appendChild(acts);
 
   card.appendChild(txt('div', 'empty',
-    'Объявление уходит, когда освобождается постоянное время или отменяют бронь ближе чем за '
-    + db.chats.freeSlotHours + ' ч до игры. Первые ' + db.chats.priorityMinutes
+    'Объявление уходит, когда отменяют бронь ближе чем за ' + db.chats.freeSlotHours
+    + ' ч до игры или освобождается постоянное время ближе чем за ' + db.chats.seriesHours
+    + ' ч. Первые ' + db.chats.priorityMinutes
     + ' минут время предлагается только тем, кто стоит в очереди ожидания, — и лишь потом '
-    + 'попадает в чат. Несколько отмен подряд склеиваются в одно сообщение.'
+    + 'попадает в чат. Объявления выходят не чаще раза в ' + db.chats.throttleMinutes
+    + ' мин: всё, что освободилось за это время, — одним сообщением.'
+    + ' Тем, кто в очереди ожидания, сообщение приходит на любой срок, эти пороги только про чат.'
     + (db.chats.lastPostAt ? ' Последнее объявление: ' + shortDateTime(db.chats.lastPostAt) + '.' : '')));
 
   renderMembershipGate(view);
@@ -10111,8 +10125,10 @@ function renderAnnounceChat(view) {
 // Второй мессенджер — MAX. Заведён страховкой на случай, если Telegram
 // окончательно задушат.
 //
-// Список групп здесь не такой, как у Telegram: там бот набирает его сам
-// из того, что видел, а MAX отдаёт список по запросу — поэтому кнопка.
+// Список групп бот набирает сам, как и телеграмный: MAX больше не отдаёт
+// «все чаты бота», и группа попадает в список, только когда бота в неё
+// добавили или в ней кто-то написал. Кнопка нужна ради живой проверки:
+// администратор ли бот в каждой группе прямо сейчас.
 function renderMaxChannel(view) {
   const card = el('div', 'card');
   card.innerHTML = '<h2>MAX <span class="sub">второй канал уведомлений</span></h2>';
@@ -10138,7 +10154,14 @@ function renderMaxChannel(view) {
     sel.innerHTML = '';
     sel.appendChild(opt('', emptyLabel));
     let known = false;
-    chats.forEach(c => { sel.appendChild(opt(c.id, c.title)); if (c.id === current) known = true; });
+    // Не администратор — подписано прямо в списке: в такую группу бот
+    // объявление отправит, но MAX не пришлёт ему из неё событий, и
+    // выбирать её, не поправив права, бессмысленно.
+    chats.forEach(c => {
+      const note = c.admin === false ? ' — бот не администратор' : c.admin === null ? ' — права не узнать' : '';
+      sel.appendChild(opt(c.id, c.title + note));
+      if (c.id === current) known = true;
+    });
     if (current && !known) sel.appendChild(opt(current, 'чат №' + current));
     sel.value = current || '';
   };
@@ -10158,18 +10181,29 @@ function renderMaxChannel(view) {
     found.textContent = 'Спрашиваем MAX…';
     try {
       const r = await api('adminMaxChats');
+      // Пустой список не значит «бота нет в группе»: его могли добавить
+      // раньше, чем бот начал запоминать группы. Тогда группе достаточно
+      // о себе заявить — любым сообщением в ней.
       if (!r.chats.length) {
-        found.textContent = 'Бот не состоит ни в одной группе. Добавьте его в группу центра '
-          + 'администратором и нажмите ещё раз.';
+        found.textContent = 'Бот пока не видел ни одной группы. Если он уже добавлен в группу '
+          + 'центра администратором — напишите в группе любое сообщение (или удалите бота из '
+          + 'группы и добавьте снова) и нажмите «Найти группы» ещё раз.';
         return;
       }
       fill(groupSel, r.chats, groupSel.value, 'Не публиковать');
       fill(memberSel, r.chats, memberSel.value, 'Не проверять');
-      found.textContent = 'Групп найдено: ' + r.chats.length + '. Выберите и сохраните.';
+      const notAdmin = r.chats.filter(c => c.admin === false).length;
+      found.textContent = 'Групп найдено: ' + r.chats.length + '. Выберите и сохраните.'
+        + (notAdmin ? ' Где бот не администратор, сначала дайте ему права.' : '');
     } catch (e) {
+      // «MAX не ответил» — только когда не ответил именно MAX. Отказ
+      // нашего сервера (нет прав, вышел срок входа) с этой подписью
+      // посылал искать поломку не там.
       found.textContent = e.code === 'max-not-configured'
         ? 'Канал MAX не настроен: нет токена бота на сервере.'
-        : 'MAX не ответил. ' + (errorText(e.code) || '');
+        : e.code === 'max-unreachable'
+          ? 'MAX не ответил. Попробуйте ещё раз через минуту.'
+          : (errorText(e.code) || 'Не получилось найти группы.');
     }
   }));
 

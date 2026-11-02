@@ -262,6 +262,9 @@ a.btn.sec:visited { color: var(--ink); }
 .section-title { font-size: 13px; font-weight: 600; color: var(--ink-soft);
   margin: 18px 4px 8px; text-transform: uppercase; letter-spacing: .05em; }
 .item.past { opacity: .68; }
+/* Участник турнира в составе без взноса: та же красная, что у плашки. */
+.item.t-unpaid { border-color: #eec9c9; background: var(--danger-tint); }
+.item.t-unpaid > .t1 { color: var(--danger); }
 
 .alarm { background: var(--danger-tint, #fbeaea); border: 1px solid #e3b4b4; color: #8d2f2f;
   border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; font-size: 14px; }

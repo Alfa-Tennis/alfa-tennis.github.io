@@ -82,6 +82,17 @@ function shortenNames(t) {
   return t;
 }
 
+// Имя в составе, где не сдавший взнос — красным. `unpaid` идёт по
+// игрокам в порядке имён через « / »; не сошлось число — красным всё.
+function unpaidName(p) {
+  const owed = p.unpaid;
+  if (!owed) return escapeHtml(p.name);
+  const parts = String(p.name).split(' / ');
+  const each = parts.length === owed.length ? parts : [p.name];
+  return each.map((n, i) => (each.length === 1 || owed[i]
+    ? '<span class="t-unpaid">' + escapeHtml(n) + '</span>' : escapeHtml(n))).join(' / ');
+}
+
 function participant(t, id) {
   return (t.participants || []).find(p => p.id === id) || null;
 }
@@ -172,11 +183,14 @@ function render() {
     }
     t.participants.forEach(p => {
       const row = el('div', 'match');
-      row.innerHTML = '<div class="who"><b>' + p.number + '.</b> ' + escapeHtml(p.name)
+      row.innerHTML = '<div class="who"><b>' + p.number + '.</b> ' + unpaidName(p)
         + (p.seeded ? ' <span class="pill ok">сеяный</span>' : '')
         + (p.mine ? ' <span class="pill me">это вы</span>' : '') + '</div>';
       wait.appendChild(row);
     });
+    if (t.participants.some(p => p.unpaid)) {
+      wait.appendChild(txt('div', 'empty','Красным — взнос ещё не оплачен.'));
+    }
     wait.appendChild(txt('div', 'empty',
       'Жеребьёвки ещё не было — группы появятся здесь сразу после неё. '
       + 'Номер слева — ваш номер на мяче: по нему и следите за жеребьёвкой.'));
