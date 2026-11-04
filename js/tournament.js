@@ -757,7 +757,12 @@ async function load() {
   try {
     // Токен необязателен: без него сетка видна всем, просто имена
     // сокращены до фамилии одной буквой, а свои строки не помечаются.
-    const res = await api('tournamentCard', { id: state.id, token: store.get(TOKEN_KEY) || undefined });
+    // Вошедший только в панель — тоже свой: сетку открывают оттуда и с неё
+    // печатают лист на стенд, и прятать там фамилии незачем (04.11.2026 —
+    // у владельца без входа на сайт сетка выходила «Артём В.»). Вход на
+    // сайт главнее: по нему помечаются свои строки.
+    const token = store.get(TOKEN_KEY) || store.get(ADMIN_TOKEN_KEY) || undefined;
+    const res = await api('tournamentCard', { id: state.id, token });
     state.t = shortenNames(res.tournament);
   } catch (e) {
     view.innerHTML = '<div class="card"><h2>'
