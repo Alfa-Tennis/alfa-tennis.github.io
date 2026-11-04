@@ -149,6 +149,8 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
 .slot .side { display: flex; justify-content: space-between; gap: 6px; padding: 7px 8px; font-size: 14px; }
 .slot .side > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot .side .score { flex: none; }
+/* Медаль призёра — вплотную к счёту, справа: имя слева не сдвигается. */
+.slot .side .prize { flex: none; margin-left: auto; line-height: 1; }
 /* На телефоне четыре круга сетки на 16 делят 340 точек — мельче и
    плотнее, а имя не обрезается, а переносится: «Виноградов / А.» в две
    строки читается, «Виногр…» — нет. */

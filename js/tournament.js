@@ -231,14 +231,14 @@ function render() {
     const numbered = Object.assign({}, t.playin, { rounds: t.playin.rounds.map(r => Object.assign({}, r, {
       label: 'второе место против третьего из другой группы',
     })) });
-    renderBracket(pair, t, numbered, 'СТЫКИ');
+    renderBracket(pair, t, numbered, 'СТЫКИ', false);
     pair.querySelectorAll('.slot').forEach((s, i) => s.setAttribute('data-n', String(i + 1)));
     playoff.appendChild(pair);
   }
   [[t.main, 'АЛЬФА', t.third], [t.consolation, 'БЕТА', t.consThird]].forEach(([b, title, third]) => {
     if (!b && !third) return;
     const pair = el('div', 'sheet-pair');
-    renderBracket(pair, t, b, title);
+    renderBracket(pair, t, b, title, true);
     renderThird(pair, t, third, 'Матч за третье место ' + title);
     playoff.appendChild(pair);
   });
@@ -426,29 +426,38 @@ function renderThird(view, t, m, title) {
   // Клеткой с самого начала, а не строкой «играют проигравшие»: на листе
   // со стенда в неё вписывают имена и счёт так же, как в сетку. Первый
   // полуфинал садит проигравшего на «a», второй — на «b».
-  const slot = bracketSlot(t, m, side => 'проигравший ' + (side === 'a' ? '1' : '2') + '-го полуфинала');
+  const slot = bracketSlot(t, m, side => 'проигравший ' + (side === 'a' ? '1' : '2') + '-го полуфинала',
+    { winner: '🥉' });
   slot.classList.add('third');
   card.appendChild(slot);
   view.appendChild(card);
 }
 
-function renderBracket(view, t, bracket, title) {
+// medals — у АЛЬФА и БЕТА; у стыков круг один, и «последний» там не финал.
+function renderBracket(view, t, bracket, title, medals) {
   if (!bracket) return;
   const card = el('div', 'card');
   card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
 
   const box = el('div', 'bracket');
-  bracket.rounds.forEach(r => {
+  const last = bracket.rounds.length - 1;
+  bracket.rounds.forEach((r, i) => {
     const col = el('div', 'col');
     col.innerHTML = '<h3>' + escapeHtml(r.label) + '</h3>';
-    r.matches.forEach(m => col.appendChild(bracketSlot(t, m)));
+    // Финал раздаёт золото и серебро, как в «Итогах» наверху.
+    r.matches.forEach(m => col.appendChild(bracketSlot(t, m, null, medals && i === last ? FINAL_MEDALS : null)));
     box.appendChild(col);
   });
   card.appendChild(box);
   view.appendChild(card);
 }
 
-function bracketSlot(t, m, emptyLabel) {
+// Призёры — медалью рядом со счётом (просьба 04.11.2026), и в АЛЬФА, и
+// в БЕТА: на листе со стенда сразу видно, кто что взял. Только после
+// сыгранного матча — до него медаль ничья.
+const FINAL_MEDALS = { winner: '🥇', loser: '🥈' };
+
+function bracketSlot(t, m, emptyLabel, medals) {
   const slot = el('div', 'slot');
   [['a', m.a], ['b', m.b]].forEach(([side, id]) => {
     const line = el('div', 'side' + (m.winner === side ? ' win' : '') + (id ? '' : ' empty'));
@@ -464,6 +473,8 @@ function bracketSlot(t, m, emptyLabel) {
     // Узкая колонка обрезает имя многоточием — целиком оно в подсказке.
     label.title = label.textContent;
     line.appendChild(label);
+    const medal = m.winner && medals && id ? medals[m.winner === side ? 'winner' : 'loser'] : null;
+    if (medal) line.appendChild(txt('span', 'prize', medal));
     // Свободный проход помечен классом: на телефоне вместо слова «проход»
     // встаёт галочка — слово съедало половину узкой колонки.
     const sc = el('span', 'score' + (m.winner && m.walkover && m.winner === side ? ' pass' : ''));
