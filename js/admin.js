@@ -8069,7 +8069,9 @@ function renderTournamentGroup(view, t, g) {
         td.classList.add('hit');
         td.title = row.name + ' — ' + (members.find(p => p.id === op.id) || {}).name
           + (off ? ' · в таблицу не идёт, снятие с аннулированием' : '');
-        td.addEventListener('click', () => openScoreForm(t, m));
+        // Счёт — глазами игрока строки: нажали в строке Морозова — Морозов
+        // слева, даже если в матче он записан вторым (04.11.2026).
+        td.addEventListener('click', () => openScoreForm(t, m, me.id));
       } else if (off) {
         td.title = 'В таблицу не идёт: снятие с аннулированием';
       }
@@ -8182,11 +8184,19 @@ function matchRow(t, m) {
 
 // Ввод счёта. Полей ровно столько, сколько сетов в формате турнира:
 // лишние клетки — прямой путь к «6:4 6:3 0:0» в таблице.
-function openScoreForm(t, m) {
+//
+// firstId — кого показать слева. Из таблицы группы это игрок строки, и
+// счёт вводят с его стороны; в матче он может быть записан вторым, тогда
+// поля переворачиваются туда и обратно здесь, а сервер получает счёт
+// в своём порядке.
+function openScoreForm(t, m, firstId) {
+  const flip = !!firstId && firstId === m.b;
+  const [L, R] = flip ? ['b', 'a'] : ['a', 'b'];
+  const idx = side => (side === 'a' ? 0 : 1);
   const body = el('div');
   body.innerHTML = '<h3>Счёт матча</h3>'
-    + '<div class="m-sub">' + escapeHtml(participantName(t, m.a))
-    + ' — ' + escapeHtml(participantName(t, m.b)) + '</div>';
+    + '<div class="m-sub">' + escapeHtml(participantName(t, m[L]))
+    + ' — ' + escapeHtml(participantName(t, m[R])) + '</div>';
 
   const maxSets = t.scoring.mode === 'set2' ? 3 : 1;
   const rows = [];
@@ -8196,7 +8206,7 @@ function openScoreForm(t, m) {
     const right = document.createElement('input');
     [left, right].forEach(inp => {
       inp.type = 'number'; inp.min = '0'; inp.max = '99'; inp.inputMode = 'numeric';
-      inp.value = m.sets && m.sets[i] ? String(m.sets[i][inp === left ? 0 : 1]) : '';
+      inp.value = m.sets && m.sets[i] ? String(m.sets[i][idx(inp === left ? L : R)]) : '';
     });
     row.appendChild(left);
     row.appendChild(txt('span', 'score-sep', ':'));
@@ -8219,7 +8229,7 @@ function openScoreForm(t, m) {
     const sets = [];
     for (const [left, right] of rows) {
       if (left.value === '' && right.value === '') continue;
-      sets.push([Number(left.value), Number(right.value)]);
+      sets.push(flip ? [Number(right.value), Number(left.value)] : [Number(left.value), Number(right.value)]);
     }
     if (!sets.length) { toast('Введите счёт'); return; }
     closeModal();
@@ -8231,16 +8241,14 @@ function openScoreForm(t, m) {
   // счётом 6:0: в таблице это разные вещи, и геймы за неявку не идут.
   const wo = el('div', 'acts');
   wo.appendChild(txt('div', 't2', 'Не явился:'));
-  wo.appendChild(btn(participantName(t, m.a), 'btn sm sec', () => {
-    closeModal();
-    act(() => api('adminTournamentScore',
-      { id: t.id, matchId: m.id, walkover: 'b' }), 'Техническое поражение');
-  }));
-  wo.appendChild(btn(participantName(t, m.b), 'btn sm sec', () => {
-    closeModal();
-    act(() => api('adminTournamentScore',
-      { id: t.id, matchId: m.id, walkover: 'a' }), 'Техническое поражение');
-  }));
+  // Победу без игры получает тот, кто пришёл, — другая сторона.
+  [[L, R], [R, L]].forEach(([absent, present]) => {
+    wo.appendChild(btn(participantName(t, m[absent]), 'btn sm sec', () => {
+      closeModal();
+      act(() => api('adminTournamentScore',
+        { id: t.id, matchId: m.id, walkover: present }), 'Техническое поражение');
+    }));
+  });
   body.appendChild(wo);
 
   showModal(body);
