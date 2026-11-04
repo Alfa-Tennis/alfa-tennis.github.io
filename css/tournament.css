@@ -134,16 +134,34 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
 .medal { font-size: 18px; margin-right: 4px; }
 .round-title { font-size: 13px; color: var(--ink-soft); margin-top: 14px; text-transform: lowercase; }
 
-/* Сетка плей-офф колонками по кругам. На телефоне уезжает вбок, а не
-   ломается: сетка на восемь в один экран не влезает никак. */
-.bracket { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 6px; }
-.bracket .col { min-width: 220px; flex: 1 0 220px; display: flex; flex-direction: column;
+/* Сетка плей-офф колонками по кругам — всегда в ширину карточки, без
+   прокрутки вбок (просьба 04.11.2026: сетка на 16 уезжала за край, а
+   ползунок прятал финал). Колонки делят ширину поровну, длинное имя
+   обрезается многоточием, полное — во всплывающей подсказке. */
+.bracket { display: flex; gap: 10px; padding-bottom: 6px; }
+.bracket .col { min-width: 0; flex: 1 1 0; display: flex; flex-direction: column;
   justify-content: space-around; gap: 10px; }
-.bracket .col h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.bracket .col h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--ink-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .slot {
   border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface);
 }
-.slot .side { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; font-size: 14px; }
+.slot .side { display: flex; justify-content: space-between; gap: 6px; padding: 7px 8px; font-size: 14px; }
+.slot .side > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot .side .score { flex: none; }
+/* На телефоне четыре круга сетки на 16 делят 340 точек — мельче и
+   плотнее, а имя не обрезается, а переносится: «Виноградов / А.» в две
+   строки читается, «Виногр…» — нет. */
+@media (max-width: 600px) {
+  .bracket, .bracket .col { gap: 4px; }
+  .bracket .col h3 { font-size: 10px; white-space: normal; }
+  .slot { border-radius: 6px; }
+  .slot .side { padding: 4px 4px; font-size: 11px; gap: 2px; line-height: 1.2; }
+  .slot .side > span:first-child { white-space: normal; overflow-wrap: break-word; hyphens: auto; text-overflow: clip; }
+  .slot .side .score { font-size: 10px; }
+  .slot .side .score.pass { font-size: 0; }
+  .slot .side .score.pass::after { content: '✓'; font-size: 12px; }
+}
 .slot .side + .side { border-top: 1px solid #EEF1F2; }
 .slot .side.win { background: var(--pass-tint); font-weight: 600; box-shadow: inset 3px 0 0 var(--pass); }
 .slot .side.win .score { color: var(--win); font-weight: 700; }
@@ -295,6 +313,8 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
   .playin .bracket .col { grid-template-columns: repeat(6, 1fr); gap: 4px; }
   .slot { border-radius: 4px; }
   .slot .side { padding: 1px 4px; font-size: 9px; }
+  /* На бумаге подсказки нет — имя переносится, а не обрезается. */
+  .slot .side > span:first-child { white-space: normal; overflow: visible; }
   .print-head { display: block !important; }
 
   body.tall { page: tall; font-size: 14px; }

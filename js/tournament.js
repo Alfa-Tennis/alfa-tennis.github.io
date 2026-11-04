@@ -461,8 +461,12 @@ function bracketSlot(t, m, emptyLabel) {
     // Свободный проход: соперника не будет, «ждём» тут неправда.
     label.textContent = p ? p.name : (waits ? 'победитель стыка ' + (waits.slot + 1)
       : (m.winner && m.walkover ? '—' : (emptyLabel ? emptyLabel(side) : 'ждём соперника')));
+    // Узкая колонка обрезает имя многоточием — целиком оно в подсказке.
+    label.title = label.textContent;
     line.appendChild(label);
-    const sc = el('span', 'score');
+    // Свободный проход помечен классом: на телефоне вместо слова «проход»
+    // встаёт галочка — слово съедало половину узкой колонки.
+    const sc = el('span', 'score' + (m.winner && m.walkover && m.winner === side ? ' pass' : ''));
     if (m.winner) {
       sc.textContent = m.walkover
         ? (m.winner === side ? 'проход' : '')
