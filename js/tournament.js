@@ -112,6 +112,12 @@ function render() {
   // по группе в ряд. С сетками плей-офф лист альбомный, по две в ряд.
   document.body.classList.toggle('tall', !t.main && !t.consolation);
   document.body.classList.toggle('blank', state.blank);
+  // Крупным шрифтом на книжный лист влезают четыре группы по три, а шесть
+  // уже уезжали на второй лист (04.11.2026). Тогда — шапка в одну строку
+  // и строки плотнее: лист на стенд должен быть один. Счёт в строках:
+  // игроки плюс заголовок, шапка таблицы и отступ у каждой группы.
+  const lines = (t.groups || []).reduce((n, g) => n + (g.table || []).length + 3, 0);
+  document.body.classList.toggle('dense', lines > 26);
 
   const head = el('div', 'card');
   const st = STATUS[t.status] || ['grey', t.status];
@@ -133,7 +139,17 @@ function render() {
   // Сетку открывают отдельной вкладкой и из панели, и с сайта, поэтому
   // возврат нужен явный: «назад» в истории тут может вести в пустоту.
   acts.appendChild(button('← Назад', 'btn sec', () => {
-    if (history.length > 1) history.back(); else location.href = 'index.html';
+    if (history.length > 1) { history.back(); return; }
+    // Открыта новой вкладкой — из панели так всегда, — и «назад» — это
+    // та вкладка, что осталась позади: эту просто закрываем. Раньше здесь
+    // открывалась главная сайта, и владелец из турнира попадал в сетку дня.
+    window.close();
+    // Не дал браузер — туда, откуда сетку открывают, и сразу на этот
+    // турнир: вошедшему в панель — в панель, остальным — на сайт.
+    setTimeout(() => {
+      location.href = (store.get(ADMIN_TOKEN_KEY) ? 'admin.html' : 'index.html')
+        + '?tournament=' + encodeURIComponent(t.id);
+    }, 300);
   }));
   // Разложенное руками по итогам жеребьёвки в клубе церемонией не
   // показываем: мячи изображали бы жребий сервера, которого не было.
@@ -208,6 +224,17 @@ function render() {
   // «АЛЬФА» и «БЕТА» — те же названия, что в объявлениях турнира: люди
   // ищут на странице именно их, а не «плей-офф с утешительной».
   const playoff = el('div', 'sheet-playoff');
+  // Стыки — перед АЛЬФА: из них в неё и приходят. Номер стыка стоит в
+  // подписи матча и на месте в сетке, которое его ждёт.
+  if (t.playin) {
+    const pair = el('div', 'sheet-pair playin');
+    const numbered = Object.assign({}, t.playin, { rounds: t.playin.rounds.map(r => Object.assign({}, r, {
+      label: 'второе место против третьего из другой группы',
+    })) });
+    renderBracket(pair, t, numbered, 'СТЫКИ');
+    pair.querySelectorAll('.slot').forEach((s, i) => s.setAttribute('data-n', String(i + 1)));
+    playoff.appendChild(pair);
+  }
   [[t.main, 'АЛЬФА', t.third], [t.consolation, 'БЕТА', t.consThird]].forEach(([b, title, third]) => {
     if (!b && !third) return;
     const pair = el('div', 'sheet-pair');
@@ -343,9 +370,13 @@ function renderGroup(view, t, g) {
   card.appendChild(scroll);
 
   const notes = [];
-  if (advance) {
-    notes.push(advance === 1 ? 'В плей-офф выходит победитель группы.'
-      : 'В плей-офф выходят первые ' + advance + '.');
+  const scheme = t.format.scheme || 'fill';
+  if (advance && scheme === 'playin') {
+    notes.push('Первое место — сразу в плей-офф, второе и третье играют стыки с другими группами.');
+  } else if (advance) {
+    notes.push((advance === 1 ? 'В плей-офф выходит победитель группы.'
+      : 'В плей-офф выходят первые ' + advance + '.')
+      + (scheme === 'byes' ? ' Лучшие из вышедших проходят первый круг без игры.' : ''));
   }
   notes.push('Места при равенстве очков: разница сетов, потом геймы, потом личная встреча.');
   // Иначе пустые клетки у половины группы выглядят как несыгранные матчи.
@@ -392,11 +423,12 @@ function renderThird(view, t, m, title) {
   if (!m) return;
   const card = el('div', 'card');
   card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
-  if (!m.a && !m.b) {
-    card.appendChild(txt('div', 'empty', 'Играют проигравшие в полуфиналах.'));
-  } else {
-    card.appendChild(bracketSlot(t, m));
-  }
+  // Клеткой с самого начала, а не строкой «играют проигравшие»: на листе
+  // со стенда в неё вписывают имена и счёт так же, как в сетку. Первый
+  // полуфинал садит проигравшего на «a», второй — на «b».
+  const slot = bracketSlot(t, m, side => 'проигравший ' + (side === 'a' ? '1' : '2') + '-го полуфинала');
+  slot.classList.add('third');
+  card.appendChild(slot);
   view.appendChild(card);
 }
 
@@ -416,13 +448,19 @@ function renderBracket(view, t, bracket, title) {
   view.appendChild(card);
 }
 
-function bracketSlot(t, m) {
+function bracketSlot(t, m, emptyLabel) {
   const slot = el('div', 'slot');
   [['a', m.a], ['b', m.b]].forEach(([side, id]) => {
     const line = el('div', 'side' + (m.winner === side ? ' win' : '') + (id ? '' : ' empty'));
     const p = id ? participant(t, id) : null;
     const label = el('span');
-    label.textContent = p ? p.name : 'ждём соперника';
+    // Место под победителя стыка — с номером стыка, чтобы на листе было
+    // видно, откуда придёт соперник.
+    const waits = !id && m[side === 'a' ? 'waitA' : 'waitB'] && t.playin
+      ? t.playin.rounds[0].matches.find(x => x.feeds && x.feeds.slot === m.slot && x.feeds.side === side) : null;
+    // Свободный проход: соперника не будет, «ждём» тут неправда.
+    label.textContent = p ? p.name : (waits ? 'победитель стыка ' + (waits.slot + 1)
+      : (m.winner && m.walkover ? '—' : (emptyLabel ? emptyLabel(side) : 'ждём соперника')));
     line.appendChild(label);
     const sc = el('span', 'score');
     if (m.winner) {

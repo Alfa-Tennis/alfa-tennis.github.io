@@ -148,6 +148,19 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
 .slot .side.win { background: var(--pass-tint); font-weight: 600; box-shadow: inset 3px 0 0 var(--pass); }
 .slot .side.win .score { color: var(--win); font-weight: 700; }
 .slot .side.empty { color: var(--ink-soft); }
+/* Матч за третье место — одна клетка шириной колонки сетки, а не на
+   всю карточку: так она читается как ещё один матч. */
+.slot.third { max-width: 260px; }
+/* Стыки — один круг, и столбиком они вытягивались на высоту всей сетки
+   АЛЬФА. Плиткой они занимают пару строк и на экране, и на листе. */
+.playin .bracket .col {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
+}
+.playin .bracket .col h3 { grid-column: 1 / -1; }
+/* Номер стыка — им подписано место в АЛЬФА, которое ждёт победителя. */
+.slot[data-n]::before {
+  content: 'Стык ' attr(data-n); display: block; padding: 3px 10px 0; font-size: 11px; color: var(--ink-soft);
+}
 
 /* ---------- Церемония жеребьёвки ---------- */
 .stage {
@@ -277,6 +290,9 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
   .bracket { overflow: visible; gap: 6px; }
   .bracket .col { min-width: 0; flex: 1 1 0; gap: 4px; }
   .bracket .col h3 { font-size: 9px; }
+  /* Стыки — во всю ширину листа над АЛЬФА и БЕТА, плиткой по шесть. */
+  .sheet-pair.playin { grid-column: 1 / -1; }
+  .playin .bracket .col { grid-template-columns: repeat(6, 1fr); gap: 4px; }
   .slot { border-radius: 4px; }
   .slot .side { padding: 1px 4px; font-size: 9px; }
   .print-head { display: block !important; }
@@ -292,6 +308,19 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
   body.tall table.cross th, body.tall table.cross td { padding: 6px; }
   body.tall table.cross th.sc, body.tall table.cross td.sc { min-width: 70px; }
   body.tall table.cross .seedpts, body.tall table.cross th.agg, body.tall table.cross td.agg { font-size: 14px; }
+
+  /* Групп много (шесть по три) — тот же книжный лист, но плотнее: шапка
+     одной строкой, без подписи центра, и строки ниже. Иначе последние
+     группы уезжали на второй лист. */
+  body.tall.dense { font-size: 12px; }
+  body.tall.dense .print-head, body.tall.dense #view > .card:first-child .pill { display: none !important; }
+  body.tall.dense #view > .card:first-child h2 { display: inline; font-size: 15px; margin: 0 8px 0 0; }
+  body.tall.dense #view > .card:first-child .meta { display: inline; font-size: 11px; }
+  body.tall.dense .card { padding: 3px 0 4px; }
+  body.tall.dense .card h2 { font-size: 15px; margin: 0 0 2px; }
+  body.tall.dense table { font-size: 14px; }
+  body.tall.dense th { font-size: 11px; padding: 2px 4px; }
+  body.tall.dense table.cross th, body.tall.dense table.cross td { padding: 4px 5px; line-height: 1.25; }
 
   /* Штриховка «сам с собой» — фоном, а фон браузер по умолчанию не
      печатает: на пустом листе такая клетка выглядела бы как ещё одна

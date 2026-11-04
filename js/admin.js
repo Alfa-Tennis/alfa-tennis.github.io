@@ -164,6 +164,7 @@ const ERRORS = {
   'too-many-groups': 'Групп больше, чем людей на них хватит, — уменьшите число групп.',
   'group-too-big': 'Группа выходит больше 16 — добавьте групп.',
   'advance-too-big': 'Из группы выходит столько же, сколько в ней играет, — уменьшите число групп или выходящих.',
+  'scheme-unfit': 'Стыкам нужно хотя бы две группы и по трое в каждой — выберите другой выход.',
   'kind-locked':'Записавшиеся уже есть — одиночный турнир парным не сделать (и наоборот). Заведите новый.',
   'needs-partner': 'Он ищет пару — в состав встаёт только пара. Сведите его с кем-то кнопкой «Свести в пару».',
   'not-seeking': 'Сводить можно только двоих из «ищут пару».',
@@ -1034,6 +1035,19 @@ const state = {
   // раз и работают в нём всю смену.
   span: savedSpan === 'week' ? 'week' : 'day',
 };
+
+// «Назад» со страницы сетки ведёт сюда с ?tournament=…, когда закрыть её
+// вкладку браузер не дал: открываем сразу этот турнир, а не сетку дня.
+try {
+  const askedTournament = new URLSearchParams(location.search).get('tournament');
+  if (askedTournament && /^t_[a-z0-9]{1,40}$/i.test(askedTournament)) {
+    state.tab = 'tournaments';
+    state.tournamentId = askedTournament;
+  }
+  // Из адреса убираем: иначе обновление страницы через час снова
+  // выбросило бы смену из сетки дня в этот турнир.
+  if (askedTournament) history.replaceState(null, '', location.pathname);
+} catch (e) { /* без разбора адреса панель откроется как обычно */ }
 
 const store = {
   set(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* переживём одну смену */ } },
@@ -5135,7 +5149,22 @@ function postLine(op) {
   const state = p.lost ? ' — удалён в группе'
     : p.error ? ' — Telegram отказал: ' + p.error
       : p.messageId ? '' : ' — ещё не выложен';
-  return '<div class="t2">📣 Пост в «' + escapeHtml(where) + '»' + escapeHtml(state) + '</div>';
+  return '<div class="t2">📣 Пост в «' + escapeHtml(where) + '»' + escapeHtml(state) + '</div>'
+    + maxPostLine(op);
+}
+
+// Тот же пост в группе MAX — строкой, когда бот его там ведёт.
+function maxPostLine(op) {
+  const m = op.max || {};
+  const p = m.post;
+  if (!p) return '';
+  const state = p.lost ? 'удалён в группе'
+    : p.error ? 'MAX отказал: ' + p.error
+      : p.mid ? 'бот обновляет его сам' : 'ещё не выложен';
+  const rp = m.resultsPost;
+  const results = rp && rp.mid ? (rp.lost ? ' · результаты удалены в группе'
+    : rp.error ? ' · результаты: ' + rp.error : ' · результаты ✓') : '';
+  return '<div class="t2">📣 MAX: ' + escapeHtml(state + results) + '</div>';
 }
 
 // Картинка итогов в группе: опубликована ли и всё ли с ней в порядке.
@@ -5217,7 +5246,11 @@ function rosterBlock(s, roster) {
   if (ownerRights() && op.results && op.results.played && !op.results.tooMany) {
     const rp = op.resultsPost;
     const posted = rp && rp.messageId && !rp.lost;
-    if (!posted || rp.error) {
+    // Пост состава есть и в MAX, а итогов там нет или они упёрлись в
+    // отказ — та же кнопка выложит их туда.
+    const mx = op.max || {};
+    const mxMissing = !!(mx.post && mx.post.mid) && (!mx.resultsPost || !mx.resultsPost.mid || !!mx.resultsPost.error);
+    if (!posted || rp.error || mxMissing) {
       acts.appendChild(btn(posted ? 'Обновить результаты в группе' : 'Опубликовать результаты', 'btn sm', () => act(
         () => api('adminOpenPlayResultsPost', { date: s.date, bookingId: s.id, roster: roster === 'alt' ? 'alt' : undefined }),
         posted ? 'Картинка обновлена' : 'Результаты опубликованы в группе')));
@@ -5241,7 +5274,8 @@ function rosterBlock(s, roster) {
   }
   // Пост в группе можно вытолкнуть руками: удалили в группе, поправили
   // права бота. Само задание этого не делает намеренно.
-  if (op.post && op.post.chatId && (op.post.lost || op.post.error)) {
+  const mxPost = op.max && op.max.post;
+  if (op.post && op.post.chatId && (op.post.lost || op.post.error || (mxPost && (mxPost.lost || mxPost.error)))) {
     acts.appendChild(btn('Обновить пост', 'btn sm sec', () => act(
       () => api('adminOpenPlayPost', { date: s.date, bookingId: s.id }), 'Пост обновлён')));
   }
@@ -7084,8 +7118,7 @@ function renderTournamentCard(view) {
       () => act(() => api('adminTournamentResetDraw', { id: t.id }), 'Жеребьёвка сброшена'))));
   }
   if (t.canStartPlayoff) {
-    acts.appendChild(btn('Запустить плей-офф', 'btn sm', () =>
-      act(() => api('adminStartPlayoff', { id: t.id }), 'Плей-офф собран')));
+    acts.appendChild(btn('Запустить плей-офф', 'btn sm', () => confirmPlayoff(t)));
   }
   if (canEdit && t.finished && !t.countedAt) {
     acts.appendChild(btn('Завершить турнир', 'btn sm', () => confirmFinish(t)));
@@ -7164,6 +7197,7 @@ function renderTournamentCard(view) {
   (t.groups || []).forEach(g => renderTournamentGroup(view, t, g));
   // Клуб зовёт сетки «АЛЬФА» и «БЕТА», и людям знакомы именно эти
   // названия — в объявлениях турнира стоят они.
+  renderTournamentBracket(view, t, 'playin', 'СТЫКИ', 'второе место против третьего из другой группы, победитель — в АЛЬФА');
   renderTournamentBracket(view, t, 'main', 'АЛЬФА', 'основная сетка');
   renderThirdPlace(view, t, t.third, 'Матч за третье место АЛЬФА');
   renderTournamentBracket(view, t, 'consolation', 'БЕТА', betaSub(t));
@@ -7210,6 +7244,22 @@ function renderTournamentPosts(head, t, canEdit) {
     head.appendChild(warn);
   }
 
+  // Те же посты в группе MAX — строкой ниже, когда там хоть что-то есть.
+  const mx = t.max;
+  const mxParts = mx ? [
+    partText(tgs.announce, mx.posts.announce, 'объявление'),
+    partText(tgs.roster, mx.posts.roster, 'состав'),
+  ].filter(Boolean) : [];
+  if (mxParts.length) {
+    head.appendChild(txt('div', 'empty', 'MAX: ' + mxParts.join(' · ')
+      + (mx.syncedAt ? ' · обновлено ' + shortDateTime(mx.syncedAt) : '')));
+  }
+  if (mx && mx.lastError) {
+    const warn = el('div', 'notice');
+    warn.textContent = 'Пост в MAX не обновился: ' + mx.lastError + '. Нажмите «Обновить пост».';
+    head.appendChild(warn);
+  }
+
   const lost = ['announce', 'roster'].some(k => tgs[k] && tgs.posts[k] && tgs.posts[k].lost);
   const row = el('div', 'acts');
   if (tgs.announce || tgs.roster) {
@@ -7223,13 +7273,16 @@ function renderTournamentPosts(head, t, canEdit) {
   if (canEdit && posted) {
     row.appendChild(btn('Убрать из Telegram', 'btn sm danger', () => confirmDelete(
       'Убрать посты из группы?', t.title,
-      'Бот удалит своё объявление и состав и больше не будет их вести. Старше двух суток Telegram '
-      + 'удалить не даст, если бот не администратор группы, — тогда удалите их руками.',
+      'Бот удалит своё объявление и состав — и в Telegram, и в MAX — и больше не будет их вести. '
+      + 'Старше двух суток Telegram удалить не даст, если бот не администратор группы, — тогда удалите их руками.',
       async () => {
         const res = await act(() => api('adminTournamentPost', { id: t.id, op: 'remove' }));
         if (!res) return;
-        toast(res.left && res.left.length
-          ? 'Telegram не дал удалить — удалите в группе руками. Вести посты бот перестал.'
+        const leftMax = (res.left || []).some(p => /^max-/.test(p));
+        const leftTg = (res.left || []).some(p => !/^max-/.test(p));
+        toast(leftTg || leftMax
+          ? (leftTg && leftMax ? 'Telegram и MAX' : leftTg ? 'Telegram' : 'MAX')
+            + ' не дал удалить — удалите в группе руками. Вести посты бот перестал.'
           : 'Посты убраны из группы', 6000);
       })));
   }
@@ -7266,6 +7319,9 @@ const FIRST_MATCH_STEP = 40;
 const SCHEDULE_NOTE_DEFAULT = 'Время ориентировочное — большая просьба быть в центре заранее. '
   + 'Дальше играют те, кто на месте и готов.';
 
+// Турниры, у которых время первых матчей раскрыли руками.
+const firstMatchesOpen = new Set();
+
 function renderFirstMatches(view, t, canEdit) {
   const firsts = t.firstMatches || [];
   if (!t.drawnAt || !firsts.length) return;
@@ -7292,6 +7348,24 @@ function renderFirstMatches(view, t, canEdit) {
       'Ещё не разослано: участники не знают своего времени, на сайте его не видно.'));
   }
 
+  // Свёрнуто, как и состав (просьба 04.11.2026): по блоку на группу —
+  // длинное полотно, а нужно оно раз-два, перед рассылкой. Что разослано
+  // и когда — видно и свёрнутым. Раскрытое остаётся раскрытым и после
+  // перерисовки, как у состава.
+  const body = el('div', '');
+  body.hidden = !firstMatchesOpen.has(t.id);
+  const label = () => (body.hidden ? 'Показать время матчей' : 'Свернуть время матчей');
+  const flip = btn('', 'btn sm sec', () => {
+    if (firstMatchesOpen.has(t.id)) firstMatchesOpen.delete(t.id); else firstMatchesOpen.add(t.id);
+    body.hidden = !firstMatchesOpen.has(t.id);
+    flip.textContent = label();
+  });
+  flip.textContent = label();
+  const toggle = el('div', 'acts');
+  toggle.appendChild(flip);
+  card.appendChild(toggle);
+  card.appendChild(body);
+
   // Порядок групп — как их выдал сервер; у турнира навылет группы нет.
   const keys = [];
   firsts.forEach(m => { const k = m.group || ''; if (keys.indexOf(k) === -1) keys.push(k); });
@@ -7302,7 +7376,7 @@ function renderFirstMatches(view, t, canEdit) {
       box.appendChild(txt('div', 't1', k ? 'Группа ' + k : 'Первый круг'));
       firsts.filter(m => (m.group || '') === k).forEach(m => box.appendChild(txt('div', 't2',
         (m.time ? fmtTime(m.time) : '—') + ' · ' + nameOf(m.a) + ' — ' + nameOf(m.b))));
-      card.appendChild(box);
+      body.appendChild(box);
     });
     return;
   }
@@ -7331,14 +7405,14 @@ function renderFirstMatches(view, t, canEdit) {
     start.addEventListener('input', () => ms.forEach((m, i) => {
       if (!touched.has(m.id)) inputs.get(m.id).value = addMin(start.value, i * FIRST_MATCH_STEP);
     }));
-    card.appendChild(box);
+    body.appendChild(box);
   });
 
   const note = document.createElement('textarea');
   note.rows = 2;
   note.maxLength = 500;
   note.value = t.scheduleNote || SCHEDULE_NOTE_DEFAULT;
-  wrapField(card, 'Строка под временем — в письме и в посте', note);
+  wrapField(body, 'Строка под временем — в письме и в посте', note);
 
   const payload = publish => ({
     id: t.id,
@@ -7352,7 +7426,7 @@ function renderFirstMatches(view, t, canEdit) {
     act(() => api('adminTournamentSchedule', payload(false)), 'Время сохранено — ещё не разослано')));
   acts.appendChild(btn(t.schedulePublishedAt ? 'Разослать заново' : 'Разослать', 'btn sm', () =>
     confirmPublishSchedule(t, payload(true))));
-  card.appendChild(acts);
+  body.appendChild(acts);
 }
 
 function confirmPublishSchedule(t, payload) {
@@ -7386,6 +7460,11 @@ function confirmPublishSchedule(t, payload) {
 // администратор не гадал, почему четвёртых мест в сетке нет.
 function betaSub(t) {
   const places = (t.format && t.format.consolationPlaces) || 0;
+  if (t.format && t.format.scheme === 'playin') {
+    const deep = (t.groups || []).some(g => (g.table || []).length > 3);
+    if (!deep) return 'проигравшие стыки';
+    return 'проигравшие стыки' + (places === 1 ? ' и четвёртые места' : ' и места ниже третьего');
+  }
   if (places === 1) return 'третьи места из групп';
   if (places > 1) return 'места с третьего по ' + (2 + places) + '-е';
   return 'кто не вышел из группы';
@@ -7395,11 +7474,7 @@ function renderThirdPlace(view, t, match, title) {
   if (!match) return;
   const card = el('div', 'card');
   card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
-  if (!match.a && !match.b) {
-    card.appendChild(txt('div', 'empty', 'Играют проигравшие в полуфиналах — ждём их.'));
-  } else {
-    card.appendChild(matchRow(t, match));
-  }
+  card.appendChild(matchRow(t, match));
   view.appendChild(card);
 }
 
@@ -7509,6 +7584,9 @@ function seedPreview(t) {
   return { by: 'игровому уровню', list: known };
 }
 
+// Турниры, у которых состав после жеребьёвки раскрыли руками.
+const rosterOpen = new Set();
+
 function renderTournamentRoster(view, t, canEdit) {
   const card = el('div', 'card');
   card.innerHTML = '<h2>Состав <span class="sub">' + (t.kind === 'doubles' ? 'пар ' : '')
@@ -7571,6 +7649,26 @@ function renderTournamentRoster(view, t, canEdit) {
     card.appendChild(txt('div', 'empty', 'Взносы: собрано ' + t.feeTotal + ' из '
       + (t.feeTotal + due) + ' ₽'
       + (owing ? ' · не сдали ' + owing + ', ещё ' + due + ' ₽' : ' · сдали все')));
+  }
+
+  // После жеребьёвки состав нужен редко — замена, снятие, взнос, — а
+  // листать его до групп приходится каждый раз (просьба 04.11.2026).
+  // Свёрнут, пока не раскроют; раскрытый остаётся раскрытым и после
+  // перерисовки — нажали «Заменить», и список не схлопнулся под рукой.
+  let list = card;
+  if (t.drawnAt && t.participants.length) {
+    list = el('div', '');
+    list.hidden = !rosterOpen.has(t.id);
+    const toggle = el('div', 'acts');
+    const flip = btn('', 'btn sm sec', () => {
+      if (rosterOpen.has(t.id)) rosterOpen.delete(t.id); else rosterOpen.add(t.id);
+      list.hidden = !rosterOpen.has(t.id);
+      flip.textContent = list.hidden ? 'Показать состав (' + t.participants.length + ')' : 'Свернуть состав';
+    });
+    flip.textContent = list.hidden ? 'Показать состав (' + t.participants.length + ')' : 'Свернуть состав';
+    toggle.appendChild(flip);
+    card.appendChild(toggle);
+    card.appendChild(list);
   }
 
   t.participants.forEach(p => {
@@ -7653,7 +7751,7 @@ function renderTournamentRoster(view, t, canEdit) {
       }
     }
     it.appendChild(acts);
-    card.appendChild(it);
+    list.appendChild(it);
   });
 
   if (!t.drawnAt) {
@@ -8033,11 +8131,26 @@ function renderTournamentBracket(view, t, key, title, sub) {
   });
 }
 
+// Место в АЛЬФА, которое ждёт победителя стыка, — словами, а не прочерком:
+// иначе пустая клетка читается как свободный проход.
+function waitLabel(t, m, side) {
+  // Матч за третье место виден с самого начала плей-офф: пустое место —
+  // за проигравшим своего полуфинала (первый полуфинал садит на «a»).
+  if ((m.stage === 'third' || m.stage === 'cons-third') && !m[side]) {
+    return 'проигравший ' + (side === 'a' ? '1' : '2') + '-го полуфинала';
+  }
+  if (!m[side === 'a' ? 'waitA' : 'waitB'] || !t.playin) return null;
+  const pi = t.playin.rounds[0].matches.find(x => x.feeds && x.feeds.slot === m.slot && x.feeds.side === side);
+  return pi ? 'победитель стыка ' + (pi.slot + 1) : 'победитель стыка';
+}
+
 function matchRow(t, m) {
   const it = el('div', 'item' + (m.winner ? '' : ' hl'));
-  const a = participantName(t, m.a), b = participantName(t, m.b);
+  const a = waitLabel(t, m, 'a') || participantName(t, m.a);
+  const b = waitLabel(t, m, 'b') || participantName(t, m.b);
   const winA = m.winner === 'a', winB = m.winner === 'b';
   it.innerHTML = '<div class="t1">'
+    + (m.stage === 'playin' ? 'Стык ' + (m.slot + 1) + ': ' : '')
     + (winA ? '<b>' + escapeHtml(a) + '</b>' : escapeHtml(a))
     + ' — '
     + (winB ? '<b>' + escapeHtml(b) + '</b>' : escapeHtml(b))
@@ -8322,84 +8435,50 @@ function confirmDraw(t) {
   const target = Math.max(2, Math.ceil(t.maxParticipants / (t.format.groupCount || 1)));
   const suggested = Math.max(1, Math.min(6, t.format.groupCount, Math.ceil(count / target)));
 
-  // Раскладку выбирают глазами, а не из выпадающего списка: при
-  // недоборе решение упирается в число игр. Шестнадцать мест, пришло
-  // одиннадцать — четыре группы это 3-3-3-2 и 12 матчей в группах, три
-  // группы это 4-4-3 и 15. Разница в час корта и в то, сколько человек
-  // сыграет каждый: в тройке две игры, в четвёрке три. Поэтому каждый
-  // вариант считается и показывается целиком.
+  // Раскладку и выход выбирают глазами, а не из выпадающего списка: при
+  // недоборе решение упирается в число игр и в то, сколько длится день.
+  // Шестнадцать мест, пришло одиннадцать — четыре группы это 3-3-3-2 и 12
+  // матчей в группах, три группы это 4-4-3 и 15. Выход из групп ещё
+  // сильнее: при 6×3 стыки добавляют шесть матчей, около двух часов на
+  // двух кортах. Поэтому каждый вариант посчитан целиком — считает сервер,
+  // тем же правилом, по которому потом соберёт сетку.
+  const plans = t.drawPlans || [];
   let groupCount = suggested;
+  let choice = { scheme: t.format.scheme || 'fill', advance: t.format.advance };
   const picks = el('div');
-  const advance = document.createElement('select');
-  const note = el('div', 'empty');
-
-  // Матчи в группе — «все со всеми»: n·(n−1)/2.
-  const groupMatches = sizes => sizes.reduce((sum, n) => sum + n * (n - 1) / 2, 0);
-
-  // Плей-офф: сетка добирается лучшими из невышедших до полной степени
-  // двойки, поэтому пустых проходов в ней нет и матчей ровно на один
-  // меньше, чем участников. Плюс матч за третье место, если он включён.
-  function playoffMatches(out) {
-    if (out < 2) return 0;
-    const size = Math.pow(2, Math.ceil(Math.log2(Math.max(2, out))));
-    const third = t.format.thirdPlace !== false && size > 2 ? 1 : 0;
-    return size - 1 + third;
-  }
-
-  // БЕТА берёт места ниже проходного — столько, сколько задал владелец.
-  // Она не добирается до полной сетки, поэтому матчей на один меньше,
-  // чем в ней людей.
-  function consolationMatches(g, adv) {
-    if (!t.format.consolation) return 0;
-    const out = g * adv;
-    const size = Math.pow(2, Math.ceil(Math.log2(Math.max(2, out))));
-    const left = Math.max(0, count - Math.max(out, Math.min(size, count)));
-    const places = t.format.consolationPlaces || 0;
-    const n = places > 0 ? Math.min(left, g * places) : left;
-    if (n < 2) return 0;
-    return n - 1 + (t.format.thirdPlace !== false && n > 2 ? 1 : 0);
-  }
+  const ways = el('div');
 
   function refresh() {
-    const sizes = groupSizes(count, groupCount);
-    const smallest = Math.min.apply(null, sizes);
-
-    const keep = Number(advance.value);
-    advance.innerHTML = '';
-    for (let n = 1; n < Math.max(2, smallest); n++) {
-      advance.appendChild(opt(String(n), n === 1 ? 'по одному' : 'по ' + n));
-    }
-    advance.value = String(Math.min(keep || t.format.advance, Math.max(1, smallest - 1)));
-    const adv = Number(advance.value);
-
     picks.innerHTML = '';
-    for (let g = 1; g <= Math.min(6, Math.floor(count / 2)); g++) {
-      const gs = groupSizes(count, g);
-      const gAdv = Math.min(adv, Math.max(1, Math.min.apply(null, gs) - 1));
-      const inGroups = groupMatches(gs);
-      const inPlayoff = playoffMatches(g * gAdv) + consolationMatches(g, gAdv);
-
-      const it = el('div', 'item pick' + (g === groupCount ? ' on' : ''));
-      it.innerHTML = '<div class="t1">' + (g === 1 ? 'Одна группа, все со всеми' : g + ' группы')
-        + ' <span class="pill grey">' + gs.join(', ') + '</span></div>'
-        + '<div class="t2">' + plural(inGroups, 'матч', 'матча', 'матчей') + ' в группах'
-        + (inPlayoff ? ' + ' + inPlayoff + ' в плей-офф = <b>' + (inGroups + inPlayoff) + '</b>' : '')
-        // Сколько игр достанется человеку — то, за что платят взнос.
-        + ' · каждый сыграет ' + (Math.min.apply(null, gs) - 1)
-        + (Math.max.apply(null, gs) !== Math.min.apply(null, gs)
-          ? '–' + (Math.max.apply(null, gs) - 1) : '') + ' в группе</div>';
-      it.addEventListener('click', () => { groupCount = g; refresh(); });
+    plans.forEach(p => {
+      const totals = p.variants.map(v => v.total);
+      const it = el('div', 'item pick' + (p.groupCount === groupCount ? ' on' : ''));
+      const small = Math.min.apply(null, p.sizes), big = Math.max.apply(null, p.sizes);
+      it.innerHTML = '<div class="t1">' + (p.groupCount === 1 ? 'Одна группа, все со всеми' : p.groupCount + ' группы')
+        + ' <span class="pill grey">' + p.sizes.join(', ') + '</span></div>'
+        + '<div class="t2">' + plural(p.variants.length ? p.variants[0].matches.groups : 0, 'матч', 'матча', 'матчей')
+        + ' в группах · каждый сыграет ' + (small - 1) + (big !== small ? '–' + (big - 1) : '') + ' в группе'
+        + (totals.length ? ' · всего с плей-офф ' + Math.min.apply(null, totals)
+          + (Math.max.apply(null, totals) !== Math.min.apply(null, totals) ? '–' + Math.max.apply(null, totals) : '')
+          : '') + '</div>';
+      it.addEventListener('click', () => { groupCount = p.groupCount; refresh(); });
       picks.appendChild(it);
-    }
+    });
 
-    const out = groupCount * adv;
-    const size = Math.pow(2, Math.ceil(Math.log2(Math.max(2, out))));
-    let text = 'Выходит ' + out + ', сетка на ' + size + '.';
-    if (out < size) text += ' Недостающих доберём лучшими из невышедших.';
-    if (smallest <= adv) {
-      text += ' ⚠ Из группы в ' + smallest + ' выходят все — они сыграют меньше остальных.';
+    const plan = plans.find(p => p.groupCount === groupCount);
+    const variants = plan ? plan.variants : [];
+    if (!variants.some(v => v.scheme === choice.scheme && v.advance === choice.advance)) {
+      const keep = variants.find(v => v.scheme === 'fill' && v.advance === Math.min(t.format.advance, (variants[variants.length - 1] || {}).advance || 1))
+        || variants.find(v => v.scheme === 'fill') || variants[0];
+      choice = keep ? { scheme: keep.scheme, advance: keep.advance } : choice;
     }
-    note.textContent = text;
+    ways.innerHTML = '';
+    variants.forEach(v => {
+      const it = el('div', 'item pick' + (v.scheme === choice.scheme && v.advance === choice.advance ? ' on' : ''));
+      it.innerHTML = playoffPlanHtml(v, groupCount);
+      it.addEventListener('click', () => { choice = { scheme: v.scheme, advance: v.advance }; refresh(); });
+      ways.appendChild(it);
+    });
   }
 
   if (withGroups) {
@@ -8407,9 +8486,12 @@ function confirmDraw(t) {
     f.innerHTML = '<span>Сколько групп — выберите раскладку</span>';
     f.appendChild(picks);
     body.appendChild(f);
-    wrapField(body, 'Выходит из группы', advance);
-    body.appendChild(note);
-    advance.addEventListener('change', refresh);
+    const w = el('div', 'field');
+    w.innerHTML = '<span>Как выходят из групп</span>';
+    w.appendChild(ways);
+    body.appendChild(w);
+    body.appendChild(txt('div', 'empty', 'Время — примерно, по 40 минут на матч. Выход можно поменять и '
+      + 'перед плей-офф, кнопкой «Запустить плей-офф», — если за день кто-то снимется.'));
     refresh();
   }
 
@@ -8422,11 +8504,70 @@ function confirmDraw(t) {
   acts.appendChild(btn('Разыграть', 'btn', () => {
     closeModal();
     act(() => api('adminTournamentDraw', Object.assign({ id: t.id },
-      withGroups ? { groupCount, advance: Number(advance.value) } : {})))
+      withGroups ? { groupCount, advance: choice.advance, scheme: choice.scheme } : {})))
       .then(res => { if (res) toast('Жеребьёвка проведена. Проставьте время первых матчей и нажмите «Разослать».', 6000); });
   }));
   body.appendChild(acts);
   showModal(body);
+}
+
+// Перед плей-офф выход ещё можно поменять: варианты посчитаны по тем
+// группам, что доиграны, без снявшихся. Выбранный на жеребьёвке отмечен.
+function confirmPlayoff(t) {
+  const variants = t.playoffPlans || [];
+  let choice = variants.find(v => v.scheme === (t.format.scheme || 'fill') && v.advance === t.format.advance)
+    || variants[0] || null;
+  const body = el('div');
+  body.innerHTML = '<h3>Запустить плей-офф?</h3><div class="m-sub">' + escapeHtml(t.title) + '</div>';
+  const ways = el('div');
+  const draw = () => {
+    ways.innerHTML = '';
+    variants.forEach(v => {
+      const it = el('div', 'item pick' + (v === choice ? ' on' : ''));
+      // Групповые уже сыграны — в этой строке они только для итога.
+      it.innerHTML = playoffPlanHtml(v, (t.groups || []).length);
+      it.addEventListener('click', () => { choice = v; draw(); });
+      ways.appendChild(it);
+    });
+  };
+  const f = el('div', 'field');
+  f.innerHTML = '<span>Как выходят из групп</span>';
+  f.appendChild(ways);
+  body.appendChild(f);
+  draw();
+  body.appendChild(txt('div', 'empty', 'Сетки соберутся по таблицам групп, и после этого выход уже не поменять.'));
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Отмена', 'btn sec', closeModal));
+  acts.appendChild(btn('Собрать сетки', 'btn', () => {
+    closeModal();
+    act(() => api('adminStartPlayoff', Object.assign({ id: t.id },
+      choice ? { scheme: choice.scheme, advance: choice.advance } : {})), 'Плей-офф собран');
+  }));
+  body.appendChild(acts);
+  showModal(body);
+}
+
+// Один вариант выхода из групп — две строки: кто куда идёт и сколько это
+// стоит по времени. Числа приходят с сервера (schemePlans).
+function playoffPlanHtml(v, groupCount) {
+  const per = v.advance === 1 ? 'По одному из группы' : 'По ' + v.advance + ' из группы';
+  const head = v.scheme === 'playin'
+    ? 'Первые — в АЛЬФА, вторые и третьи играют стыки'
+    : v.scheme === 'byes'
+      ? per + ', лучшим — свободный проход'
+      : per + (v.alpha > groupCount * v.advance ? ', сетку добираем лучшими из невышедших' : '');
+  const who = 'АЛЬФА ' + v.alpha + (v.byes ? ' (сетка на ' + v.alphaSize + ', ' + v.byes + ' проходят круг без игры)' : '')
+    + ' · БЕТА ' + (v.beta ? v.beta : 'нет')
+    + (v.playin ? ' · стыков ' + v.playin : '');
+  const parts = [v.matches.groups + ' в группах'];
+  if (v.matches.playin) parts.push(v.matches.playin + ' стыков');
+  if (v.matches.alpha) parts.push(v.matches.alpha + ' в АЛЬФА');
+  if (v.matches.beta) parts.push(v.matches.beta + ' в БЕТА');
+  return '<div class="t1">' + escapeHtml(head) + '</div>'
+    + '<div class="t2">' + escapeHtml(who) + '</div>'
+    + '<div class="t2">Матчей: ' + parts.join(' + ') + ' = <b>' + v.total + '</b>'
+    + ' · ≈ ' + String(v.hours).replace('.', ',') + ' ч на ' + (v.courts === 1 ? 'одном корте' : 'двух кортах')
+    + ' · до ' + v.gamesMax + ' игр у одного</div>';
 }
 
 // Ручная раскладка: жеребьёвку провели в клубе бочонками, системе нужно
@@ -10145,6 +10286,10 @@ function renderMaxChannel(view) {
   nick.value = cfg.botUsername || '';
   wrapField(card, 'Ник бота в MAX', nick);
 
+  // Группа MAX — для турниров и тренировок: туда уходят те же посты, что
+  // в Telegram, и бот их так же правит. Объявлений о свободном времени
+  // там нет (04.11.2026, решение владельца): в группе без тем они шли
+  // общим потоком и выглядели спамом.
   const groupSel = document.createElement('select');
   const memberSel = document.createElement('select');
 
@@ -10168,7 +10313,10 @@ function renderMaxChannel(view) {
   fill(groupSel, [], cfg.groupChatId || '', 'Не публиковать');
   fill(memberSel, [], cfg.membershipChatId || '', 'Не проверять');
 
-  wrapField(card, 'Объявления об освободившемся времени', groupSel);
+  wrapField(card, 'Группа для турниров и тренировок', groupSel);
+  card.appendChild(txt('div', 'empty',
+    'Туда уходят те же посты турниров и тренировок, что и в Telegram, и бот так же правит их при каждой '
+    + 'записи. Объявления об освободившемся времени в MAX не уходят — только в группу Telegram.'));
   wrapField(card, 'Регистрация только для участников группы', memberSel);
 
   const found = txt('div', 'empty', cfg.botUsername
@@ -10235,7 +10383,7 @@ function renderMaxChannel(view) {
     'Канал: ' + (health.configured ? 'настроен' : 'не настроен — нет токена на сервере')
     + (health.lastError ? ' · последняя ошибка: ' + health.lastError : '')
     + (health.lastOkAt ? ' · последний успешный запрос: ' + shortDateTime(health.lastOkAt) : '')
-    + '. Объявления уходят в обе группы — телеграмную и максовую: это разные люди. '
+    + '. Посты турниров и тренировок уходят в обе группы — телеграмную и максовую: это разные люди. '
     + 'Личные сообщения — в один мессенджер, по порядку каналов.'));
 }
 
