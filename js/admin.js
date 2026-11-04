@@ -1047,6 +1047,11 @@ try {
   // Из адреса убираем: иначе обновление страницы через час снова
   // выбросило бы смену из сетки дня в этот турнир.
   if (askedTournament) history.replaceState(null, '', location.pathname);
+  // Браузер может вернуть панель из памяти, без загрузки, — тогда
+  // турнир и так на экране, а метку из адреса убираем здесь.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && /[?&]tournament=/.test(location.search)) history.replaceState(null, '', location.pathname);
+  });
 } catch (e) { /* без разбора адреса панель откроется как обычно */ }
 
 const store = {
@@ -7088,14 +7093,20 @@ function renderTournamentCard(view) {
   view.appendChild(head);
 
   const acts = el('div', 'acts');
-  // Ссылка на публичную сетку — она же и печатается. Открываем в новой
-  // вкладке: панель у стойки держат открытой весь день.
+  // Ссылка на публичную сетку — она же и печатается. В той же вкладке:
+  // новыми вкладки плодились на каждый заход (04.11.2026), а нужна новая —
+  // её даёт Ctrl+клик. Чтобы «Назад» со страницы сетки вернул сюда, а не
+  // в сетку дня (панель при возврате загружается заново), в адрес панели
+  // перед уходом кладём этот турнир — его прочтёт загрузка.
   const link = document.createElement('a');
   link.className = 'btn sm sec';
   link.href = 'tournament.html?t=' + encodeURIComponent(t.id);
-  link.target = '_blank';
-  link.rel = 'noopener';
   link.textContent = 'Сетка и печать';
+  link.addEventListener('click', () => {
+    try {
+      history.replaceState(null, '', location.pathname + '?tournament=' + encodeURIComponent(t.id));
+    } catch (e) { /* вернётся в сетку дня — не беда */ }
+  });
   acts.appendChild(link);
 
   // Правка карточки — отсюда же: время кортов ужимают, глядя на состав,
