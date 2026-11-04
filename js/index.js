@@ -171,6 +171,10 @@ function btn(label, cls, onClick) {
 function formatPhoneInput(raw) {
   let digits = String(raw).replace(/\D/g, '');
   if (!digits) return '';                       // поле можно полностью очистить
+  // Вставили полный номер за подставленное «+7 ». Цифр больше одиннадцати
+  // набрать нельзя (maxLength), так что это только вставка. Без этого
+  // «+77011234567» терял последнюю цифру и выглядел чужим номером 770…
+  if (digits.length > 11 && /^7[78]/.test(digits)) digits = digits.slice(1);
   if (digits[0] === '8') digits = '7' + digits.slice(1);
   if (digits[0] !== '7') digits = '7' + digits; // человек начал сразу с кода оператора
   digits = digits.slice(0, 11);
