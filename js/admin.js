@@ -7275,6 +7275,29 @@ function renderTournamentPosts(head, t, canEdit) {
     head.appendChild(warn);
   }
 
+  // Онлайн-результаты: первый раз кнопкой, дальше бот правит картинки сам.
+  const shown = tgs.results;
+  const stageText = (stage, label) => {
+    if (stage.lost) return label + ': удалено в группе';
+    return stage.posted ? label + ' ✓' : null;
+  };
+  if (shown) {
+    const stages = [stageText(shown.groups, 'группы'), stageText(shown.playoff, 'плей-офф')].filter(Boolean);
+    head.appendChild(txt('div', 'empty', 'Результаты в группе: '
+      + (stages.length ? stages.join(' · ') : 'ещё не ушли')
+      + '. Бот обновляет картинки сам при вводе счёта, плей-офф выйдет отдельным постом.'));
+    if (shown.lastError) {
+      const warn = el('div', 'notice');
+      warn.textContent = 'Результаты не обновились: ' + tgErrorText(shown.lastError);
+      head.appendChild(warn);
+    }
+  }
+  if (mx && mx.resultsError) {
+    const warn = el('div', 'notice');
+    warn.textContent = 'Результаты в MAX не обновились: ' + mx.resultsError;
+    head.appendChild(warn);
+  }
+
   const lost = ['announce', 'roster'].some(k => tgs[k] && tgs.posts[k] && tgs.posts[k].lost);
   const row = el('div', 'acts');
   if (tgs.announce || tgs.roster) {
@@ -7285,10 +7308,18 @@ function renderTournamentPosts(head, t, canEdit) {
     row.appendChild(btn('Выложить заново', 'btn sm', () =>
       act(() => api('adminTournamentPost', { id: t.id, op: 'republish' }), 'Выложено заново')));
   }
+  // Удалённое в группе или сорвавшееся — та же кнопка выложит заново.
+  const resultsBroken = shown && (shown.groups.lost || shown.playoff.lost || shown.lastError
+    || (mx && mx.resultsError));
+  if (canEdit && t.resultsReady && (!shown || resultsBroken)) {
+    row.appendChild(btn(shown ? 'Выложить результаты заново' : 'Опубликовать результаты', 'btn sm', () =>
+      act(() => api('adminTournamentPost', { id: t.id, op: 'results' }),
+        shown ? 'Результаты обновлены' : 'Результаты опубликованы в группе')));
+  }
   if (canEdit && posted) {
     row.appendChild(btn('Убрать из Telegram', 'btn sm danger', () => confirmDelete(
       'Убрать посты из группы?', t.title,
-      'Бот удалит своё объявление и состав — и в Telegram, и в MAX — и больше не будет их вести. '
+      'Бот удалит своё объявление, состав и результаты — и в Telegram, и в MAX — и больше не будет их вести. '
       + 'Старше двух суток Telegram удалить не даст, если бот не администратор группы, — тогда удалите их руками.',
       async () => {
         const res = await act(() => api('adminTournamentPost', { id: t.id, op: 'remove' }));
