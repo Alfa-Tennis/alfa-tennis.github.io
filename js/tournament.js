@@ -243,7 +243,120 @@ function render() {
     playoff.appendChild(pair);
   });
   view.appendChild(playoff);
+  splitPrintPages(view, t, groups, playoff);
 }
+
+// ---------- Печать на листы ----------
+//
+// Сыграны группы и пошёл плей-офф — печать на два листа (просьба
+// организатора 07.11.2026): группы на книжном, стыки и сетки на альбомном,
+// и на каждом всё максимально крупно. Одним листом всё вместе выходило
+// мелким, а у стенда читают издалека.
+//
+// Листы — обёртки .print-page вокруг уже нарисованного. На экране они
+// ничего не меняют. Масштаб подбирает fitPrint перед самой печатью.
+function splitPrintPages(view, t, groups, playoff) {
+  const hasGroups = groups.children.length > 0;
+  const hasPlayoff = playoff.children.length > 0;
+  if (hasGroups && hasPlayoff) {
+    const first = el('div', 'print-page page-groups');
+    Array.from(view.children).filter(c => c !== playoff).forEach(c => first.appendChild(c));
+    view.insertBefore(first, playoff);
+    // У второго листа своя строка с названием: без неё его не отличить
+    // от сетки другого турнира, если листы разойдутся по стенду.
+    playoff.insertBefore(txt('div', 'print-title', t.title + ' · плей-офф'), playoff.firstChild);
+    playoff.classList.add('print-page', 'page-playoff');
+    return;
+  }
+  // Один лист: всё на нём. Без групп (сразу навылет) — альбомный.
+  const only = el('div', 'print-page ' + (hasPlayoff ? 'page-playoff' : 'page-groups'));
+  Array.from(view.children).forEach(c => only.appendChild(c));
+  view.appendChild(only);
+}
+
+// Печатная область A4 за вычетом полей из @page в css/tournament.css.
+const PRINT_AREA_MM = { groups: [190, 277], playoff: [281, 194] };
+const PX_PER_MM = 96 / 25.4;
+// Запас на колонтитулы браузера и округления: лучше чуть меньше, чем
+// хвост сетки на втором листе.
+const PRINT_SAFETY = 0.96;
+
+// Правило @media print из нашего листа стилей. На время печати его
+// условие меняется на «всегда»: замерить, сколько займёт лист, можно только
+// с печатными стилями, а до самой печати браузер их не применяет.
+// Это правка через CSSOM — строгий CSP её не запрещает.
+function printRule() {
+  for (const sheet of Array.from(document.styleSheets)) {
+    if (!sheet.href || sheet.href.indexOf('tournament.css') < 0) continue;
+    let rules;
+    try { rules = sheet.cssRules; } catch (e) { return null; }
+    for (const r of Array.from(rules)) {
+      if (r.media && /print/.test(r.media.mediaText)) return r;
+    }
+  }
+  return null;
+}
+
+// Лист шириной W/z, увеличенный в z раз, занимает ровно ширину бумаги.
+// Ищем наибольший z, при котором и высота влезает. Каждая раскладка
+// (группы в один или два столбца, сетки рядом или друг под другом) —
+// свой поиск, берём ту, что дала крупнее.
+function fitPage(page, kind) {
+  const [wMm, hMm] = PRINT_AREA_MM[kind];
+  const W = wMm * PX_PER_MM * PRINT_SAFETY;
+  const H = hMm * PX_PER_MM * PRINT_SAFETY;
+  const layouts = kind === 'playoff' ? ['cols', 'stack'] : ['two', 'one'];
+  const fits = (z) => {
+    page.style.width = (W / z) + 'px';
+    const box = page.getBoundingClientRect();
+    return box.height * z <= H && page.scrollWidth <= W / z + 1;
+  };
+  let best = null;
+  layouts.forEach((layout) => {
+    page.setAttribute('data-layout', layout);
+    page.style.zoom = '1';
+    let lo = 0.3;
+    let hi = 4;
+    if (!fits(lo)) return;
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      if (fits(mid)) lo = mid; else hi = mid;
+    }
+    if (!best || lo > best.z) best = { layout, z: lo };
+  });
+  if (!best) best = { layout: layouts[0], z: 0.3 };
+  page.setAttribute('data-layout', best.layout);
+  page.style.width = (W / best.z) + 'px';
+  page.style.zoom = String(best.z);
+}
+
+// Само правило запоминаем: пока оно «всегда», по слову print его уже не
+// найти, и страница осталась бы в печатном виде.
+let printing = null;
+
+function fitPrint() {
+  const rule = printing || printRule();
+  if (!rule) return;
+  printing = rule;
+  rule.media.mediaText = 'all';
+  document.querySelectorAll('.print-page').forEach((page) => {
+    fitPage(page, page.classList.contains('page-playoff') ? 'playoff' : 'groups');
+  });
+}
+
+function unfitPrint() {
+  if (printing) printing.media.mediaText = 'print';
+  printing = null;
+  document.querySelectorAll('.print-page').forEach((page) => {
+    page.style.width = '';
+    page.style.zoom = '';
+    page.removeAttribute('data-layout');
+  });
+}
+
+// И кнопка «На печать», и Ctrl+P проходят через beforeprint.
+window.addEventListener('beforeprint', fitPrint);
+window.addEventListener('afterprint', unfitPrint);
 
 // Пустой лист рисуется заново и только на время печати: после диалога
 // страница возвращается к счёту. Ctrl+P без кнопки печатает заполненный.

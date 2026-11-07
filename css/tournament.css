@@ -279,19 +279,37 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
 }
 
 /* ---------- Печать ---------- */
-/* Сетку вешают на стенд — один лист. Всё, что нельзя нажать на бумаге,
-   и всё, кроме названия и самих сеток, с него убирается; группы и сетки
-   плей-офф встают по две в ряд. Альбомный лист — потому что сетка
-   плей-офф растёт вширь, а группы по две в ряд на книжном не влезают
-   по ширине.
-   Пока плей-офф нет (класс tall у body), на листе одни группы: тогда
-   книжный лист, по группе в ряд и всё крупнее — так их читают у стенда
-   издалека. Ориентация переключается именованной страницей: @page
-   внутри класса не бывает. */
-.print-head { display: none; font-size: 13px; color: var(--ink-soft); }
+/* Сетку вешают на стенд. Всё, что нельзя нажать на бумаге, и всё, кроме
+   названия и самих сеток, с листа убирается.
+   Пока плей-офф нет (класс tall у body) — один книжный лист с группами.
+   Пошёл плей-офф — два листа (просьба организатора 07.11.2026): группы на
+   книжном, стыки и сетки на альбомном, сетка растёт вширь. На каждом всё
+   максимально крупно: масштаб подбирает js/tournament.js перед печатью.
+   Ориентация переключается именованной страницей: @page внутри класса не
+   бывает. */
+.print-head, .print-title { display: none; font-size: 13px; color: var(--ink-soft); }
 @page { size: A4 landscape; margin: 8mm; }
 @page tall { size: A4 portrait; margin: 10mm; }
+@page wide { size: A4 landscape; margin: 8mm; }
+/* Это правило js/tournament.js на время печати включает и для экрана
+   (fitPrint): так замеряют, сколько займёт лист. Отсюда два требования:
+   оно должно оставаться одним блоком @media print и не задевать то, что
+   не печатается. */
 @media print {
+  /* Листы (.print-page): группы — книжный, плей-офф — альбомный. Ширину и
+     увеличение каждому ставит fitPrint, подбирая самое крупное, что
+     помещается. data-layout — какая раскладка дала крупнее. */
+  .print-page { display: flow-root; }
+  .page-groups { page: tall; }
+  .page-playoff { page: wide; }
+  .page-groups + .page-playoff { break-before: page; }
+  .print-page[data-layout="one"] .sheet-groups { display: block; }
+  .print-page[data-layout="two"] .sheet-groups { display: grid; }
+  /* Лист плей-офф бывает самой обёрткой сеток (на втором листе) и
+     обёрткой вокруг них (единственный лист без групп). */
+  .print-page[data-layout="stack"].sheet-playoff, .print-page[data-layout="stack"] .sheet-playoff { display: block; }
+  .print-title { display: block !important; font-size: 13px; font-weight: 700; color: var(--ink);
+    margin-bottom: 4px; grid-column: 1 / -1; }
   body { background: #fff; font-size: 11px; }
   .hero, .acts, .stage, .noprint { display: none !important; }
   .wrap { max-width: none; padding: 0; }
