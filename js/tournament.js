@@ -576,12 +576,14 @@ function bracketSlot(t, m, emptyLabel, medals) {
     const line = el('div', 'side' + (m.winner === side ? ' win' : '') + (id ? '' : ' empty'));
     const p = id ? participant(t, id) : null;
     const label = el('span');
-    // Место под победителя стыка — с номером стыка, чтобы на листе было
-    // видно, откуда придёт соперник.
+    // Место под победителя стыка — без номера стыка (07.11.2026): после
+    // последнего стыка победители пересаживаются ради разводки
+    // одногруппников, и «победитель стыка 3» в этой клетке могло оказаться
+    // неправдой — на распечатанном листе в том числе.
     const waits = !id && m[side === 'a' ? 'waitA' : 'waitB'] && t.playin
       ? t.playin.rounds[0].matches.find(x => x.feeds && x.feeds.slot === m.slot && x.feeds.side === side) : null;
     // Свободный проход: соперника не будет, «ждём» тут неправда.
-    label.textContent = p ? p.name : (waits ? 'победитель стыка ' + (waits.slot + 1)
+    label.textContent = p ? p.name : (waits ? 'победитель стыка'
       : (m.winner && m.walkover ? '—' : (emptyLabel ? emptyLabel(side) : 'ждём соперника')));
     // Узкая колонка обрезает имя многоточием — целиком оно в подсказке.
     label.title = label.textContent;

@@ -8198,8 +8198,8 @@ function waitLabel(t, m, side) {
     return 'проигравший ' + (side === 'a' ? '1' : '2') + '-го полуфинала';
   }
   if (!m[side === 'a' ? 'waitA' : 'waitB'] || !t.playin) return null;
-  const pi = t.playin.rounds[0].matches.find(x => x.feeds && x.feeds.slot === m.slot && x.feeds.side === side);
-  return pi ? 'победитель стыка ' + (pi.slot + 1) : 'победитель стыка';
+  // Без номера: после последнего стыка победители пересаживаются.
+  return 'победитель стыка';
 }
 
 function matchRow(t, m) {
