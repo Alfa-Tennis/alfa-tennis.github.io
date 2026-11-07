@@ -238,7 +238,7 @@ function render() {
   [[t.main, 'АЛЬФА', t.third], [t.consolation, 'БЕТА', t.consThird]].forEach(([b, title, third]) => {
     if (!b && !third) return;
     const pair = el('div', 'sheet-pair');
-    renderBracket(pair, t, b, title, true);
+    renderBracket(pair, t, b, title, true, !!third);
     renderThird(pair, t, third, 'Матч за третье место ' + title);
     playoff.appendChild(pair);
   });
@@ -547,7 +547,10 @@ function renderThird(view, t, m, title) {
 }
 
 // medals — у АЛЬФА и БЕТА; у стыков круг один, и «последний» там не финал.
-function renderBracket(view, t, bracket, title, medals) {
+// hasThird — есть ли матч за третье место. Нет (в сетке трое или владелец
+// его отключил) — бронза у проигравшего настоящий полуфинал, как и в
+// зачёте очков: при двух таких — у обоих.
+function renderBracket(view, t, bracket, title, medals, hasThird) {
   if (!bracket) return;
   const card = el('div', 'card');
   card.innerHTML = '<h2>' + escapeHtml(title) + '</h2>';
@@ -558,7 +561,8 @@ function renderBracket(view, t, bracket, title, medals) {
     const col = el('div', 'col');
     col.innerHTML = '<h3>' + escapeHtml(r.label) + '</h3>';
     // Финал раздаёт золото и серебро, как в «Итогах» наверху.
-    r.matches.forEach(m => col.appendChild(bracketSlot(t, m, null, medals && i === last ? FINAL_MEDALS : null)));
+    const prize = !medals ? null : i === last ? FINAL_MEDALS : (i === last - 1 && !hasThird ? SEMI_MEDALS : null);
+    r.matches.forEach(m => col.appendChild(bracketSlot(t, m, null, prize)));
     box.appendChild(col);
   });
   card.appendChild(box);
@@ -569,6 +573,8 @@ function renderBracket(view, t, bracket, title, medals) {
 // в БЕТА: на листе со стенда сразу видно, кто что взял. Только после
 // сыгранного матча — до него медаль ничья.
 const FINAL_MEDALS = { winner: '🥇', loser: '🥈' };
+// Проход в полуфинале — не поражение: без соперника бронзы нет.
+const SEMI_MEDALS = { loser: '🥉', played: true };
 
 function bracketSlot(t, m, emptyLabel, medals) {
   const slot = el('div', 'slot');
@@ -588,7 +594,8 @@ function bracketSlot(t, m, emptyLabel, medals) {
     // Узкая колонка обрезает имя многоточием — целиком оно в подсказке.
     label.title = label.textContent;
     line.appendChild(label);
-    const medal = m.winner && medals && id ? medals[m.winner === side ? 'winner' : 'loser'] : null;
+    const medal = m.winner && medals && id && !(medals.played && m.walkover)
+      ? medals[m.winner === side ? 'winner' : 'loser'] : null;
     if (medal) line.appendChild(txt('span', 'prize', medal));
     // Свободный проход помечен классом: на телефоне вместо слова «проход»
     // встаёт галочка — слово съедало половину узкой колонки.
