@@ -7312,9 +7312,19 @@ function renderTournamentPosts(head, t, canEdit) {
   const resultsBroken = shown && (shown.groups.lost || shown.playoff.lost || shown.lastError
     || (mx && mx.resultsError));
   if (canEdit && t.resultsReady && (!shown || resultsBroken)) {
-    row.appendChild(btn(shown ? 'Выложить результаты заново' : 'Опубликовать результаты', 'btn sm', () =>
-      act(() => api('adminTournamentPost', { id: t.id, op: 'results' }),
-        shown ? 'Результаты обновлены' : 'Результаты опубликованы в группе')));
+    // Публикация идёт секунды (картинки, два мессенджера), и без отклика
+    // кнопку жмут ещё раз — 07.11.2026 так в группу ушёл второй альбом.
+    // Пока идёт первая, кнопка выключена.
+    const publish = btn(shown ? 'Выложить результаты заново' : 'Опубликовать результаты', 'btn sm', async () => {
+      if (publish.disabled) return;
+      publish.disabled = true;
+      publish.textContent = 'Публикую…';
+      await act(() => api('adminTournamentPost', { id: t.id, op: 'results' }),
+        shown ? 'Результаты обновлены' : 'Результаты опубликованы в группе');
+      publish.disabled = false;
+      publish.textContent = shown ? 'Выложить результаты заново' : 'Опубликовать результаты';
+    });
+    row.appendChild(publish);
   }
   if (canEdit && posted) {
     row.appendChild(btn('Убрать из Telegram', 'btn sm danger', () => confirmDelete(
