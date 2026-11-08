@@ -162,10 +162,12 @@ function render() {
   // Ctrl+P печатает страницу у любого, и прятать там нечего.
   if (store.get(ADMIN_TOKEN_KEY)) {
     acts.appendChild(button('На печать', 'btn sec', () => window.print()));
-    // Пустой лист нужен в начале: его вешают на стенд и вписывают счёт
-    // ручкой. Когда пошёл плей-офф, группы уже сыграны — пустой лист
-    // только врал бы.
-    if (t.drawnAt && (t.groups || []).length && !t.main && !t.consolation) {
+    // Пустой лист вешают на стенд и вписывают счёт ручкой. До плей-офф
+    // это группы; когда он пошёл, группы уже сыграны и пустыми только
+    // врали бы — тогда пустой лист у сеток (просьба организатора
+    // 08.11.2026).
+    const knockout = !!(t.main || t.consolation);
+    if (t.drawnAt && t.status !== 'finished' && (knockout || (t.groups || []).length)) {
       acts.appendChild(button('Пустой лист на печать', 'btn sec', printBlank));
     }
   }
@@ -215,63 +217,86 @@ function render() {
   }
 
   renderFirstMatches(view, t);
-  // Обёртки ради печати: на листе группы и сетки встают по две в ряд,
-  // иначе всё вместе на один лист не ложится. На экране они ничего не
-  // меняют.
+  // Пустой лист при идущем плей-офф — одни сетки: группы сыграны, и
+  // пустыми они бы врали.
+  const blankKnockout = state.blank && !!(t.main || t.consolation);
+  // Обёртки ради печати: на листе группы встают по две в ряд. На экране
+  // они ничего не меняют.
   const groups = el('div', 'sheet-groups');
-  (t.groups || []).forEach(g => renderGroup(groups, t, g));
+  if (!blankKnockout) (t.groups || []).forEach(g => renderGroup(groups, t, g));
   view.appendChild(groups);
   // «АЛЬФА» и «БЕТА» — те же названия, что в объявлениях турнира: люди
   // ищут на странице именно их, а не «плей-офф с утешительной».
-  const playoff = el('div', 'sheet-playoff');
-  // Стыки — перед АЛЬФА: из них в неё и приходят. Номер стыка стоит в
-  // подписи матча и на месте в сетке, которое его ждёт.
-  if (t.playin) {
+  // Каждая сетка — своим листом (просьба организатора 08.11.2026): вдвоём
+  // на альбомном они выходили мелкими. Стыки — на листе АЛЬФА: из них в
+  // неё и приходят.
+  const sheets = [];
+  const alpha = el('div', 'sheet-playoff');
+  // На пустом листе сыгранные стыки ни к чему: их победители уже сидят в
+  // АЛЬФА, а место на листе они отнимают.
+  const playinOpen = t.playin && t.playin.rounds[0].matches.some(m => !m.winner);
+  if (t.playin && (!state.blank || playinOpen)) {
     const pair = el('div', 'sheet-pair playin');
     const numbered = Object.assign({}, t.playin, { rounds: t.playin.rounds.map(r => Object.assign({}, r, {
       label: 'второе место против третьего из другой группы',
     })) });
     renderBracket(pair, t, numbered, 'СТЫКИ', false);
     pair.querySelectorAll('.slot').forEach((s, i) => s.setAttribute('data-n', String(i + 1)));
-    playoff.appendChild(pair);
+    alpha.appendChild(pair);
   }
-  [[t.main, 'АЛЬФА', t.third], [t.consolation, 'БЕТА', t.consThird]].forEach(([b, title, third]) => {
+  [[t.main, 'АЛЬФА', t.third, alpha], [t.consolation, 'БЕТА', t.consThird, null]].forEach(([b, title, third, box]) => {
     if (!b && !third) return;
+    const sheet = box || el('div', 'sheet-playoff');
     const pair = el('div', 'sheet-pair');
     renderBracket(pair, t, b, title, true, !!third);
     renderThird(pair, t, third, 'Матч за третье место ' + title);
-    playoff.appendChild(pair);
+    sheet.appendChild(pair);
+    sheet.setAttribute('data-title', title);
+    if (sheets.indexOf(sheet) < 0) sheets.push(sheet);
   });
-  view.appendChild(playoff);
-  splitPrintPages(view, t, groups, playoff);
+  if (!sheets.length && alpha.children.length) sheets.push(alpha);
+  sheets.forEach(s => view.appendChild(s));
+  splitPrintPages(view, t, groups, sheets, blankKnockout);
 }
 
 // ---------- Печать на листы ----------
 //
-// Сыграны группы и пошёл плей-офф — печать на два листа (просьба
-// организатора 07.11.2026): группы на книжном, стыки и сетки на альбомном,
-// и на каждом всё максимально крупно. Одним листом всё вместе выходило
-// мелким, а у стенда читают издалека.
+// Сыграны группы и пошёл плей-офф — группы на книжном листе, каждая
+// сетка на своём альбомном (просьбы организатора 07 и 08.11.2026), и на
+// каждом всё максимально крупно: у стенда читают издалека.
 //
 // Листы — обёртки .print-page вокруг уже нарисованного. На экране они
 // ничего не меняют. Масштаб подбирает fitPrint перед самой печатью.
-function splitPrintPages(view, t, groups, playoff) {
+function splitPrintPages(view, t, groups, sheets, blankKnockout) {
   const hasGroups = groups.children.length > 0;
-  const hasPlayoff = playoff.children.length > 0;
-  if (hasGroups && hasPlayoff) {
-    const first = el('div', 'print-page page-groups');
-    Array.from(view.children).filter(c => c !== playoff).forEach(c => first.appendChild(c));
-    view.insertBefore(first, playoff);
-    // У второго листа своя строка с названием: без неё его не отличить
-    // от сетки другого турнира, если листы разойдутся по стенду.
-    playoff.insertBefore(txt('div', 'print-title', t.title + ' · плей-офф'), playoff.firstChild);
-    playoff.classList.add('print-page', 'page-playoff');
+  const rest = Array.from(view.children).filter(c => sheets.indexOf(c) < 0);
+  if (!sheets.length) {
+    const only = el('div', 'print-page page-groups');
+    rest.forEach(c => only.appendChild(c));
+    view.appendChild(only);
     return;
   }
-  // Один лист: всё на нём. Без групп (сразу навылет) — альбомный.
-  const only = el('div', 'print-page ' + (hasPlayoff ? 'page-playoff' : 'page-groups'));
-  Array.from(view.children).forEach(c => only.appendChild(c));
-  view.appendChild(only);
+  if (hasGroups) {
+    const first = el('div', 'print-page page-groups');
+    rest.forEach(c => first.appendChild(c));
+    view.insertBefore(first, sheets[0]);
+  } else if (blankKnockout) {
+    // Шапка с кнопками на пустой лист сеток не идёт: название есть в
+    // строке над каждой сеткой.
+    rest.forEach(c => c.classList.add('noprint'));
+  } else {
+    // Сразу навылет, без групп: шапка — на первом листе сеток.
+    rest.reverse().forEach(c => sheets[0].insertBefore(c, sheets[0].firstChild));
+  }
+  sheets.forEach((sheet, i) => {
+    // У листа сеток своя строка с названием: без неё его не отличить от
+    // сетки другого турнира, если листы разойдутся по стенду.
+    if (hasGroups || blankKnockout || i > 0) {
+      const tail = sheets.length > 1 ? sheet.getAttribute('data-title') : 'плей-офф';
+      sheet.insertBefore(txt('div', 'print-title', t.title + ' · ' + tail), sheet.firstChild);
+    }
+    sheet.classList.add('print-page', 'page-playoff');
+  });
 }
 
 // Печатная область A4 за вычетом полей из @page в css/tournament.css.
@@ -543,7 +568,7 @@ function renderThird(view, t, m, title) {
   // со стенда в неё вписывают имена и счёт так же, как в сетку. Первый
   // полуфинал садит проигравшего на «a», второй — на «b».
   const slot = bracketSlot(t, m, side => 'проигравший ' + (side === 'a' ? '1' : '2') + '-го полуфинала',
-    { winner: '🥉' });
+    { winner: '🥉' }, { a: false, b: false });
   slot.classList.add('third');
   card.appendChild(slot);
   view.appendChild(card);
@@ -570,7 +595,7 @@ function renderBracket(view, t, bracket, title, medals, hasThird) {
     const body = el('div', 'col-body');
     // Финал раздаёт золото и серебро, как в «Итогах» наверху.
     const prize = !medals ? null : i === last ? FINAL_MEDALS : (i === last - 1 && !hasThird ? SEMI_MEDALS : null);
-    r.matches.forEach(m => body.appendChild(bracketSlot(t, m, null, prize)));
+    r.matches.forEach(m => body.appendChild(bracketSlot(t, m, null, prize, i > 0 ? knownSides(bracket.rounds[i - 1], m) : null)));
     col.appendChild(body);
     box.appendChild(col);
   });
@@ -585,9 +610,40 @@ const FINAL_MEDALS = { winner: '🥇', loser: '🥈' };
 // Проход в полуфинале — не поражение: без соперника бронзы нет.
 const SEMI_MEDALS = { loser: '🥉', played: true };
 
-function bracketSlot(t, m, emptyLabel, medals) {
+// Пустой лист: кто сидит в клетке не по чужому счёту. Первый круг — по
+// посеву, дальше — только пришедшие свободным проходом: пришедших
+// победой на пустом листе нет, как нет и самого счёта.
+function knownSides(prev, m) {
+  const from = slot => {
+    const f = prev.matches.find(x => x.slot === slot);
+    return !!(f && f.winner && f.walkover && !f[f.winner === 'a' ? 'b' : 'a']);
+  };
+  return { a: from(m.slot * 2), b: from(m.slot * 2 + 1) };
+}
+
+// known — на пустом листе: какие стороны показывать (null — обе).
+function bracketSlot(t, m, emptyLabel, medals, known) {
+  const blank = state.blank;
+  if (blank) {
+    // Без счёта, победителей и медалей; имена — только известные заранее,
+    // остальные клетки пустые — под ручку.
+    const keep = known || { a: true, b: true };
+    const bye = m.winner && m.walkover && (!m.a || !m.b);
+    m = { slot: m.slot, a: keep.a ? m.a : null, b: keep.b ? m.b : null, bye: bye && (known == null) };
+    emptyLabel = () => '';
+    medals = null;
+  }
   const slot = el('div', 'slot');
   [['a', m.a], ['b', m.b]].forEach(([side, id]) => {
+    if (blank) {
+      const line = el('div', 'side' + (id ? '' : ' empty'));
+      const label = el('span');
+      label.textContent = id ? (participant(t, id) || {}).name || '' : (m.bye ? '—' : '');
+      line.appendChild(label);
+      line.appendChild(el('span', 'score'));
+      slot.appendChild(line);
+      return;
+    }
     const line = el('div', 'side' + (m.winner === side ? ' win' : '') + (id ? '' : ' empty'));
     const p = id ? participant(t, id) : null;
     const label = el('span');

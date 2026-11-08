@@ -312,7 +312,7 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
   .print-page { display: flow-root; }
   .page-groups { page: tall; }
   .page-playoff { page: wide; }
-  .page-groups + .page-playoff { break-before: page; }
+  .page-groups + .page-playoff, .page-playoff + .page-playoff { break-before: page; }
   .print-page[data-layout="one"] .sheet-groups { display: block; }
   .print-page[data-layout="two"] .sheet-groups { display: grid; }
   /* Лист плей-офф бывает самой обёрткой сеток (на втором листе) и
@@ -381,4 +381,10 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
   /* Пустой лист под ручку: видимая сетка клеток и место под цифры. */
   body.blank table.cross th, body.blank table.cross td { border: 1px solid #888; }
   body.blank table.cross td.pts, body.blank table.cross td.agg, body.blank table.cross td.pl { min-width: 64px; }
+  /* Пустая сетка: строка в рост под ручку (имени в ней может и не быть) и
+     отчерченное место под счёт справа. */
+  body.blank .slot { border-color: #888; }
+  body.blank .slot .side { min-height: 2.6em; align-items: center; padding: 0 0 0 4px; }
+  body.blank .slot .side + .side { border-top-color: #888; }
+  body.blank .slot .side .score { align-self: stretch; min-width: 4.5em; border-left: 1px solid #888; }
 }
