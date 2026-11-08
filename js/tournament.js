@@ -423,7 +423,6 @@ function renderGroup(view, t, g) {
     + (blank ? '' : ' <span class="tag">' + (left ? 'не сыграно ' + left + ' из ' + g.matches.length
       : 'все матчи сыграны') + '</span>') + '</h2>';
 
-  const advance = t.format.groupCount > 0 ? t.format.advance : 0;
   // Места — только когда группа доиграна: до того «место» по двум
   // сыгранным матчам из шести читалось как итог.
   const done = !left && !blank;
@@ -451,7 +450,10 @@ function renderGroup(view, t, g) {
     const tr = document.createElement('tr');
     const cls = [];
     if (row.status === 'withdrawn') cls.push('off');
-    else if (done && advance && row.place <= advance) cls.push('up');
+    // Куда ушёл из группы, решает сервер (exitMarks): до плей-офф — одни
+    // первые места, после — по сетке, стыки отдельным цветом.
+    else if (!blank && row.exit === 'alpha') cls.push('up');
+    else if (!blank && row.exit === 'playin') cls.push('pi');
     if (p && p.mine) cls.push('mine');
     tr.className = cls.join(' ');
 

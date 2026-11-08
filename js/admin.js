@@ -8087,9 +8087,10 @@ function renderTournamentGroup(view, t, g) {
   rows.forEach((row, i) => {
     const me = members.find(p => p.id === row.participantId);
     const tr = document.createElement('tr');
-    const advance = t.format.groupCount > 0 ? t.format.advance : 0;
+    // Куда ушёл из группы — с сервера (exitMarks), как на странице сетки.
     if (row.status === 'withdrawn') tr.className = 'off';
-    else if (done && advance && row.place <= advance) tr.className = 'up';
+    else if (row.exit === 'alpha') tr.className = 'up';
+    else if (row.exit === 'playin') tr.className = 'pi';
 
     const pl = el('td', 'pl'); pl.textContent = String(i + 1);
     tr.appendChild(pl);

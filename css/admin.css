@@ -25,6 +25,8 @@
   --lose: #D4372F;
   --pass: #159B45;
   --pass-tint: #E7F6EC;
+  --playin: #D9A400;
+  --playin-tint: #FCF3D6;
 
   --ball: #A4DB00;
   --ball-dk: #4C6600;
@@ -386,6 +388,8 @@ table.cross .l { color: var(--lose); }
 /* Выходящие в плей-офф: заливка плюс полоса слева, иначе её не видно. */
 table.cross tr.up td { background: var(--pass-tint); }
 table.cross tr.up td.pl:first-child { box-shadow: inset 3px 0 0 var(--pass); }
+table.cross tr.pi td { background: var(--playin-tint); }
+table.cross tr.pi td.pl:first-child { box-shadow: inset 3px 0 0 var(--playin); }
 table.cross th.agg, table.cross td.agg { white-space: nowrap; color: var(--ink-soft); font-size: 13px; }
 .diff { font-weight: 700; }
 .diff.plus { color: var(--win); }
