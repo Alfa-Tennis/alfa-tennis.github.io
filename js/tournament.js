@@ -485,6 +485,7 @@ function renderGroup(view, t, g) {
   card.appendChild(scroll);
 
   const notes = [];
+  const advance = t.format.groupCount > 0 ? t.format.advance : 0;
   const scheme = t.format.scheme || 'fill';
   if (advance && scheme === 'playin') {
     notes.push('Первое место — сразу в плей-офф, второе и третье играют стыки с другими группами.');
