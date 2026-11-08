@@ -563,9 +563,15 @@ function renderBracket(view, t, bracket, title, medals, hasThird) {
   bracket.rounds.forEach((r, i) => {
     const col = el('div', 'col');
     col.innerHTML = '<h3>' + escapeHtml(r.label) + '</h3>';
+    // Матчи — отдельным блоком под подписью круга (08.11.2026): пока
+    // подпись стояла среди матчей, свободное место делилось и на неё,
+    // подписи сползали вниз, а матч следующего круга вставал не посередине
+    // между своей парой. Так у всех колонок общий верх и общая высота.
+    const body = el('div', 'col-body');
     // Финал раздаёт золото и серебро, как в «Итогах» наверху.
     const prize = !medals ? null : i === last ? FINAL_MEDALS : (i === last - 1 && !hasThird ? SEMI_MEDALS : null);
-    r.matches.forEach(m => col.appendChild(bracketSlot(t, m, null, prize)));
+    r.matches.forEach(m => body.appendChild(bracketSlot(t, m, null, prize)));
+    col.appendChild(body);
     box.appendChild(col);
   });
   card.appendChild(box);

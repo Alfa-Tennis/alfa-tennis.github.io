@@ -143,8 +143,13 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
    ползунок прятал финал). Колонки делят ширину поровну, длинное имя
    обрезается многоточием, полное — во всплывающей подсказке. */
 .bracket { display: flex; gap: 10px; padding-bottom: 6px; }
-.bracket .col { min-width: 0; flex: 1 1 0; display: flex; flex-direction: column;
-  justify-content: space-around; gap: 10px; }
+.bracket .col { min-width: 0; flex: 1 1 0; display: flex; flex-direction: column; }
+/* Матч круга — посередине между своей парой из прошлого круга: у всех
+   колонок одна высота, и space-around ставит k-й из n матчей на
+   (k + ½)/n высоты. Зазор — полями у клетки, а не gap: gap в эту долю
+   не входит, и первый круг уезжал бы от остальных на ползазора. */
+.bracket .col-body { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
+.bracket .col-body > .slot { margin: 5px 0; }
 .bracket .col h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--ink-soft);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .slot {
@@ -159,7 +164,8 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
    плотнее, а имя не обрезается, а переносится: «Виноградов / А.» в две
    строки читается, «Виногр…» — нет. */
 @media (max-width: 600px) {
-  .bracket, .bracket .col { gap: 4px; }
+  .bracket { gap: 4px; }
+  .bracket .col-body > .slot { margin: 2px 0; }
   .bracket .col h3 { font-size: 10px; white-space: normal; }
   .slot { border-radius: 6px; }
   .slot .side { padding: 4px 4px; font-size: 11px; gap: 2px; line-height: 1.2; }
@@ -177,10 +183,10 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
 .slot.third { max-width: 260px; }
 /* Стыки — один круг, и столбиком они вытягивались на высоту всей сетки
    АЛЬФА. Плиткой они занимают пару строк и на экране, и на листе. */
-.playin .bracket .col {
+.playin .bracket .col-body {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
 }
-.playin .bracket .col h3 { grid-column: 1 / -1; }
+.playin .bracket .col-body > .slot { margin: 0; }
 /* Номер стыка — им подписано место в АЛЬФА, которое ждёт победителя. */
 .slot[data-n]::before {
   content: 'Стык ' attr(data-n); display: block; padding: 3px 10px 0; font-size: 11px; color: var(--ink-soft);
@@ -330,11 +336,13 @@ table.cross .seedpts { color: var(--ink-soft); font-size: 13px; font-variant-num
   table.cross th.sc, table.cross td.sc { min-width: 34px; }
   table.cross .seedpts, table.cross th.agg, table.cross td.agg { font-size: 9px; }
   .bracket { overflow: visible; gap: 6px; }
-  .bracket .col { min-width: 0; flex: 1 1 0; gap: 4px; }
+  .bracket .col { min-width: 0; flex: 1 1 0; }
+  .bracket .col-body > .slot { margin: 2px 0; }
   .bracket .col h3 { font-size: 9px; }
   /* Стыки — во всю ширину листа над АЛЬФА и БЕТА, плиткой по шесть. */
   .sheet-pair.playin { grid-column: 1 / -1; }
-  .playin .bracket .col { grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .playin .bracket .col-body { grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .playin .bracket .col-body > .slot { margin: 0; }
   .slot { border-radius: 4px; }
   .slot .side { padding: 1px 4px; font-size: 9px; }
   /* На бумаге подсказки нет — имя переносится, а не обрезается. */
