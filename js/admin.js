@@ -10421,14 +10421,56 @@ function renderAnnounceChat(view) {
   newsSel.value = db.chats.newsChatId || '';
   wrapField(card, 'Новости на главную брать из', newsSel);
 
+  // Рейтинг — турнирные очки сезона, по сообщению на зачёт. Бот правит
+  // их сам при каждом изменении зачёта; тема закрыта для участников.
+  const ratingSel = document.createElement('select');
+  ratingSel.appendChild(opt('', 'Не публиковать'));
+  db.chats.chats.forEach(c => ratingSel.appendChild(opt(String(c.id), c.title)));
+  ratingSel.value = db.chats.ratingChatId || '';
+  wrapField(card, 'Рейтинг (турнирные очки) публиковать в', ratingSel);
+  const ratingThread = document.createElement('select');
+  const fillRatingThreads = () => {
+    const chat = db.chats.chats.find(c => String(c.id) === ratingSel.value);
+    const topics = (chat && chat.topics) || [];
+    const keep = ratingThread.value;
+    ratingThread.innerHTML = '';
+    ratingThread.appendChild(opt('', topics.length ? 'Без темы — в общую ленту' : 'Тем в этом чате не видно'));
+    topics.forEach(t => ratingThread.appendChild(opt(String(t.id), t.title || ('тема №' + t.id))));
+    ratingThread.value = keep || db.chats.ratingThreadId || '';
+    ratingThread.disabled = !topics.length;
+  };
+  fillRatingThreads();
+  ratingSel.addEventListener('change', fillRatingThreads);
+  wrapField(card, 'Тема для рейтинга', ratingThread);
+
   const acts = el('div', 'acts');
   acts.appendChild(btn('Сохранить', 'btn sm', () => saveSchedule('adminUpdateConfig', {
     patch: {
-      announce: { groupChatId: announceSel.value, groupThreadId: threadSel.value },
+      announce: {
+        groupChatId: announceSel.value, groupThreadId: threadSel.value,
+        ratingChatId: ratingSel.value, ratingThreadId: ratingThread.value,
+      },
       news: { chatId: newsSel.value },
     },
   }, 'Чат сохранён')));
   card.appendChild(acts);
+
+  if (db.chats.ratingChatId) {
+    const posts = (db.chats.ratingPosts || []).filter(p => p.here);
+    const bad = posts.filter(p => p.error || p.lost);
+    const last = posts.map(p => p.at).filter(Boolean).sort().pop();
+    card.appendChild(txt('div', 'empty', posts.length
+      ? 'Рейтинг в группе: ' + plural(posts.length, 'сообщение', 'сообщения', 'сообщений')
+        + (last ? ', последнее обновление ' + shortDateTime(last) : '') + '.'
+        + (bad.length ? ' С ошибкой или удалено: ' + bad.length + '.' : '')
+      : 'Рейтинг в группу ещё не выкладывался — нажмите «Обновить в группе».'));
+    const rActs = el('div', 'acts');
+    rActs.appendChild(btn('Обновить в группе', 'btn sm sec', () => ratingPostAct('sync')));
+    if (posts.some(p => p.lost)) {
+      rActs.appendChild(btn('Выложить удалённое заново', 'btn sm sec', () => ratingPostAct('republish')));
+    }
+    card.appendChild(rActs);
+  }
 
   card.appendChild(txt('div', 'empty',
     'Объявление уходит, когда отменяют бронь ближе чем за ' + db.chats.freeSlotHours
@@ -10442,6 +10484,20 @@ function renderAnnounceChat(view) {
 
   renderMembershipGate(view);
   renderMaxChannel(view);
+}
+
+async function ratingPostAct(op) {
+  try {
+    const r = await api('adminRatingPost', { op });
+    const res = r.result || {};
+    const errs = (res.errors || []);
+    if (res.skipped === 'no-points') toast('Очков в зачёте пока нет — выкладывать нечего');
+    else if (errs.length) toast('Не вышло: ' + errs.join('; '), 6000);
+    else toast(res.sent || res.edited ? 'Рейтинг в группе обновлён' : 'В группе уже всё актуально');
+    await reload();
+  } catch (e) {
+    toast(errorText(e.code), 4000);
+  }
 }
 
 // Второй мессенджер — MAX. Заведён страховкой на случай, если Telegram
