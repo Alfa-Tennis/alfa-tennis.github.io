@@ -6981,8 +6981,13 @@ function renderTourPoints(view, canEdit) {
       shown.forEach(r => {
         const tr = document.createElement('tr');
         let html = '<td>' + escapeHtml(r.place) + '</td><td>' + escapeHtml(r.name) + '</td>';
+        // Подсказка у клетки — турнир и за что очки: «08.11 · 2 место».
+        // Сама клетка остаётся числом, иначе таблица не влезает в экран.
         table.events.forEach(ev => {
-          html += '<td>' + (r.scores[ev.id] == null ? '' : r.scores[ev.id]) + '</td>';
+          const stage = (r.stages || {})[ev.id];
+          html += '<td' + (r.scores[ev.id] != null && stage
+            ? ' title="' + escapeHtml(ev.title + ' · ' + stage) + '"' : '') + '>'
+            + (r.scores[ev.id] == null ? '' : r.scores[ev.id]) + '</td>';
         });
         tr.innerHTML = html + '<td><b>' + r.total + '</b></td>';
         // Правка переноса и отсюда — нажатием на строку: в день турнира
