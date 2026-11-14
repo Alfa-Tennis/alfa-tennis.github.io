@@ -476,7 +476,12 @@ async function load() {
   // шаг: человек уже сказал, зачем пришёл. В браузере наоборот, первый
   // экран — главная. Ссылка из объявления об освободившемся времени —
   // тот же случай, что и Telegram: человек шёл занимать корт.
-  showView(telegramInitData() || askedDate || /[#&]book\b/.test(location.hash) ? 'book' : 'home');
+  // Кнопка «Вся таблица на сайте» под постом рейтинга в группе ведёт
+  // сюда с ключом зачёта: ?rating=m-singles-c3.
+  const askedRating = asked.get('rating');
+  if (askedRating && /^[a-z]+-[a-z]+-c\d$/.test(askedRating)) state.ratingTable = askedRating;
+  showView(askedRating != null ? 'rating'
+    : telegramInitData() || askedDate || /[#&]book\b/.test(location.hash) ? 'book' : 'home');
   if (state.auth) refreshMine();
 
   // Кнопка «Записаться на сайте» под постом турнира в группе клуба ведёт
@@ -1293,6 +1298,7 @@ function renderNav() {
     { id: 'home', label: 'Главная' },
     { id: 'book', label: 'Бронирование' },
     client ? { id: 'mine', label: 'Мои брони', count: upcoming } : null,
+    client ? { id: 'rating', label: 'Рейтинг' } : null,
     client ? { id: 'profile', label: 'Профиль' } : null,
   ].filter(Boolean).forEach(t => {
     const b = document.createElement('button');
@@ -1307,6 +1313,11 @@ function renderNav() {
   });
 
   syncNavHeight();
+
+  // Вход и выход случаются из десятка мест, и все они зовут renderNav.
+  // Рейтинг, открытый гостем по ссылке из группы, после входа должен
+  // показать таблицу, а не «войдите» — догоняем его здесь.
+  if (state.view === 'rating' && state.ratingFor !== (client ? client.id : null)) renderRating();
 }
 
 // Высоту навигации меряем, а не записываем числом: под ней паркуется
@@ -1324,10 +1335,12 @@ function showView(name) {
   document.getElementById('viewHome').hidden = name !== 'home';
   document.getElementById('viewBook').hidden = name !== 'book';
   document.getElementById('viewMine').hidden = name !== 'mine';
+  document.getElementById('viewRating').hidden = name !== 'rating';
   document.getElementById('viewProfile').hidden = name !== 'profile';
   document.getElementById('bar').classList.toggle('show', name === 'book' && !!state.plan);
   if (name === 'home') renderHome();
   if (name === 'mine') renderMine();
+  if (name === 'rating') renderRating();
   if (name === 'profile') renderProfile();
   renderNav();
   window.scrollTo({ top: 0 });
@@ -4555,6 +4568,170 @@ function levelCard(client) {
 
   box.innerHTML = inner;
   return box;
+}
+
+// ============================================================
+// Рейтинг — турнирные очки сезона
+// ============================================================
+//
+// Та же таблица, что у владельца в панели: строка на человека, колонка
+// на турнир, «перенос» — набранное до сайта. Своя строка выделена и
+// видна всегда, даже за пределами первых десяти. Нажатие на строку —
+// расшифровка «за что столько»: на телефоне подсказок при наведении нет,
+// а спрашивают именно это.
+
+const RATING_TOP = 10;
+
+async function renderRating() {
+  const view = document.getElementById('viewRating');
+  const client = state.auth && state.auth.client;
+  state.ratingFor = client ? client.id : null;
+  view.innerHTML = '';
+  const card = el('div', 'card');
+  card.innerHTML = '<h2>Рейтинг <span class="sub">турнирные очки сезона</span></h2>';
+  view.appendChild(card);
+
+  if (!client) {
+    card.appendChild(txt('div', 'empty', 'Таблица очков видна клиентам центра. Войдите, чтобы её открыть.'));
+    const acts = el('div', 'acts');
+    acts.appendChild(btn('Войти', 'btn', () => openAuth('login')));
+    card.appendChild(acts);
+    return;
+  }
+
+  const body = el('div');
+  body.appendChild(txt('div', 'empty', 'Загружаем…'));
+  card.appendChild(body);
+
+  let data;
+  try {
+    data = await api('tourPoints', state.ratingSeason ? { season: state.ratingSeason } : {});
+  } catch (e) {
+    body.innerHTML = '';
+    body.appendChild(txt('div', 'empty', 'Не удалось загрузить рейтинг. Обновите страницу.'));
+    return;
+  }
+  // Пока ждали ответ, человек мог уйти на другую вкладку или выйти.
+  if (state.view !== 'rating' || state.ratingFor !== client.id) return;
+  body.innerHTML = '';
+
+  // Порядок как в панели: одиночные, потом парные; мужской, потом женский.
+  const rank = key => {
+    const [g, kind, c] = String(key).split('-');
+    return (kind === 'doubles' ? 100 : 0) + (g === 'w' ? 10 : 0) + (Number(String(c).slice(1)) || 0);
+  };
+  const tables = (data.tables || []).slice().sort((a, b) => rank(a.key) - rank(b.key));
+  if (!tables.length) {
+    body.appendChild(txt('div', 'empty', 'Очков в этом сезоне пока нет — они появятся после первого турнира.'));
+    return;
+  }
+
+  // Какой зачёт открыть: из ссылки, выбранный раньше, свой, первый.
+  const current = tables.find(x => x.key === state.ratingTable)
+    || tables.find(x => x.rows.some(r => r.me)) || tables[0];
+  state.ratingTable = current.key;
+
+  const pickers = el('div', 'rating-pick');
+  if ((data.seasons || []).length > 1) {
+    const sel = document.createElement('select');
+    data.seasons.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s + ' год'; sel.appendChild(o); });
+    sel.value = data.season;
+    sel.addEventListener('change', () => { state.ratingSeason = sel.value; renderRating(); });
+    pickers.appendChild(sel);
+  }
+  if (tables.length > 1) {
+    const pick = document.createElement('select');
+    tables.forEach(x => {
+      const o = document.createElement('option');
+      o.value = x.key;
+      o.textContent = x.label + (x.rows.some(r => r.me) ? ' — вы здесь' : '');
+      pick.appendChild(o);
+    });
+    pick.value = current.key;
+    pick.addEventListener('change', () => { state.ratingTable = pick.value; renderRating(); });
+    pickers.appendChild(pick);
+  } else {
+    pickers.appendChild(txt('div', 't1', current.label));
+  }
+  body.appendChild(pickers);
+
+  const mine = current.rows.find(r => r.me);
+  body.appendChild(txt('div', 't2', mine
+    ? 'Вы на ' + mine.place + ' месте, ' + mine.total + ' очк. Нажмите на строку — покажем, из чего сложилось.'
+    : 'Вас в этом зачёте пока нет. Нажмите на строку — покажем, из чего сложились очки.'));
+
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.placeholder = 'Поиск по фамилии';
+  search.className = 'rating-search';
+  if (current.rows.length > RATING_TOP) body.appendChild(search);
+
+  const scroll = el('div', 'pts-wrap');
+  body.appendChild(scroll);
+  const more = el('div', 'acts');
+  body.appendChild(more);
+
+  let showAll = false;
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    let shown = q ? current.rows.filter(r => r.name.toLowerCase().indexOf(q) >= 0)
+      : showAll ? current.rows : current.rows.slice(0, RATING_TOP);
+    // Своя строка видна всегда: ради неё вкладку и открывают.
+    if (!q && !showAll && mine && shown.indexOf(mine) < 0) shown = shown.concat([mine]);
+
+    const t = el('table', 'pts');
+    let head = '<thead><tr><th>Место</th><th class="pts-name">Игрок</th>';
+    current.events.forEach(ev => {
+      head += '<th>' + escapeHtml(ev.carry ? 'перенос' : (ev.date || '').slice(8, 10) + '.' + (ev.date || '').slice(5, 7)) + '</th>';
+    });
+    t.innerHTML = head + '<th>Сумма</th></tr></thead>';
+    const tb = document.createElement('tbody');
+    shown.forEach(r => {
+      const tr = document.createElement('tr');
+      if (r.me) tr.className = 'me';
+      let cells = '<td>' + escapeHtml(r.place) + '</td><td class="pts-name">' + escapeHtml(r.name) + '</td>';
+      current.events.forEach(ev => { cells += '<td>' + (r.scores[ev.id] == null ? '' : r.scores[ev.id]) + '</td>'; });
+      tr.innerHTML = cells + '<td class="pts-sum">' + r.total + '</td>';
+      tr.addEventListener('click', () => openRatingRow(current, r));
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    scroll.innerHTML = '';
+    scroll.appendChild(shown.length ? t : txt('div', 'empty', 'Никого не нашли.'));
+
+    more.innerHTML = '';
+    if (!q && current.rows.length > RATING_TOP) {
+      more.appendChild(btn(showAll ? 'Свернуть до первых ' + RATING_TOP : 'Показать всех (' + current.rows.length + ')',
+        'btn sec', () => { showAll = !showAll; draw(); }));
+    }
+  };
+  search.addEventListener('input', draw);
+  draw();
+
+  body.appendChild(txt('div', 'empty', 'Очки начисляются по итогам турниров центра: место в турнире — '
+    + 'очки по таблице категории. «Перенос» — очки, набранные в сезоне до запуска сайта.'));
+}
+
+function openRatingRow(table, r) {
+  const body = el('div');
+  body.innerHTML = '<h3>' + escapeHtml(r.name) + '</h3>'
+    + '<div class="m-sub">' + escapeHtml(table.label) + ' · ' + r.place + ' место · ' + r.total + ' очк.</div>';
+  const list = el('div');
+  table.events.forEach(ev => {
+    const pts = r.scores[ev.id];
+    if (pts == null) return;
+    const date = ev.carry ? '' : (ev.date || '').slice(8, 10) + '.' + (ev.date || '').slice(5, 7) + ' · ';
+    const what = ev.carry ? 'Перенос — набрано до запуска сайта' : ev.title;
+    const stage = (r.stages || {})[ev.id];
+    list.appendChild(html('div', 'item',
+      '<div class="t1">' + escapeHtml(date + what) + '</div>'
+      + '<div class="t2">' + (stage ? escapeHtml(stage) + ' — ' : '') + '<b>' + pts + '</b> очк.</div>'));
+  });
+  body.appendChild(list);
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
 }
 
 function renderProfile() {

@@ -399,6 +399,24 @@ main { max-width: 920px; margin: 0 auto; padding: 0 12px; }
 /* Итоги тренировки — круговая таблица с корта. Узкая по своей природе:
    на телефоне она уезжает вбок внутри своей рамки, а страница при этом
    остаётся на месте. */
+/* Рейтинг — турнирные очки сезона. Колонок столько, сколько турниров
+   за сезон: на телефоне таблица уезжает вбок, имя держится слева. */
+.card h2 .sub { font-weight: 400; font-size: 13px; color: var(--ink-soft); margin-left: 4px; }
+.rating-pick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.rating-pick select, .rating-search {
+  border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: var(--surface);
+  max-width: 100%; }
+.rating-search { width: 100%; margin: 10px 0 2px; }
+.pts-wrap { overflow-x: auto; margin: 8px 0 4px; }
+.pts { border-collapse: collapse; font-size: 14px; width: 100%; }
+.pts th, .pts td { border-bottom: 1px solid var(--line); padding: 8px 6px; text-align: center; white-space: nowrap; }
+.pts th { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+.pts .pts-name { text-align: left; white-space: normal; min-width: 130px; }
+.pts .pts-sum { font-weight: 700; }
+.pts tbody tr { cursor: pointer; }
+.pts tbody tr:hover td { background: var(--bg); }
+.pts tr.me td { background: var(--ball-tint); font-weight: 600; }
+
 .rt-wrap { overflow-x: auto; margin: 8px 0 4px; }
 .rt { border-collapse: collapse; font-size: 13px; width: 100%; }
 .rt th, .rt td { border: 1px solid var(--line); padding: 5px 6px; text-align: center; white-space: nowrap; }
