@@ -1864,10 +1864,15 @@ function printWeek(dates) {
   sheet.appendChild(grid);
   area.appendChild(sheet);
 
-  // Альбом — только на время этой печати. Раньше стояла именованная
-  // страница (`@page week-sheet`), но браузер начинает такую с нового
-  // листа: первый, обычный книжный, выходил пустым, и в окне печати
-  // значилось «Книжная». Лист тренировки по-прежнему печатается книжкой.
+  setPrintLandscape();
+  window.print();
+}
+
+// Альбом — только на время этой печати. Раньше стояла именованная
+// страница (`@page week-sheet`), но браузер начинает такую с нового
+// листа: первый, обычный книжный, выходил пустым, и в окне печати
+// значилось «Книжная».
+function setPrintLandscape() {
   dropPrintOrientation();
   const css = pageSheet();
   if (css) {
@@ -1875,8 +1880,6 @@ function printWeek(dates) {
     printOrientationRule = css.cssRules[i];
   }
   window.addEventListener('afterprint', dropPrintOrientation, { once: true });
-
-  window.print();
 }
 
 function buildWeekGrid(dates) {
@@ -5424,7 +5427,7 @@ function resultsTableHtml(op, blank) {
 
   let head = '<tr><th class="rt-name">Участник</th>';
   for (let i = 1; i <= n; i++) head += '<th>' + i + '</th>';
-  head += '<th>Очки</th><th>Геймы</th><th>Место</th></tr>';
+  head += '<th class="rt-sum">Очки</th><th class="rt-sum">Геймы</th><th class="rt-sum">Место</th></tr>';
 
   const body = r.rows.map(row => {
     let tds = '<td class="rt-name">' + row.no + '. ' + escapeHtml(playerLabel(row)) + '</td>';
@@ -5442,7 +5445,9 @@ function resultsTableHtml(op, blank) {
     return '<tr>' + tds + '</tr>';
   }).join('');
 
-  return '<div class="rt-wrap"><table class="rt"><thead>' + head
+  // `few` — на печати при малом составе клетки выше: лист тот же, места
+  // под ручку больше.
+  return '<div class="rt-wrap"><table class="rt' + (n <= 5 ? ' few' : '') + '"><thead>' + head
     + '</thead><tbody>' + body + '</tbody></table></div>';
 }
 
@@ -5555,10 +5560,9 @@ function printResults(id, date, which, blank) {
   const fresh = openPlaySessions().find(x => x.id === id && x.date === date);
   const op = fresh ? (which === 'alt' ? fresh.rival : fresh.openPlay) : null;
   if (!op) { toast('Тренировка не найдена'); return; }
-  dropPrintOrientation();
 
   const area = document.getElementById('printArea');
-  area.innerHTML = '<div class="pr-head"><h2>' + escapeHtml(op.title) + '</h2>'
+  area.innerHTML = '<div class="pr-op"><div class="pr-head"><h2>' + escapeHtml(op.title) + '</h2>'
     + '<div class="pr-sub">'
     + escapeHtml(longDate(fresh.date) + ' · ' + fmtRange(fresh.start, fresh.end) + ' · ' + op.level)
     + '</div></div>'
@@ -5566,8 +5570,11 @@ function printResults(id, date, which, blank) {
     + (!blank && op.results && op.results.note
       ? '<div class="rt-note">Ещё играли: ' + escapeHtml(op.results.note) + '</div>' : '')
     // Две пустые строки под то, что допишут на корте от руки.
-    + '<div class="pr-lines"><div></div><div></div></div>';
+    + '<div class="pr-lines"><div></div><div></div></div></div>';
 
+  // Альбомом: восемь колонок счёта и имя пары в одну строку на книжном
+  // листе помещались только мелко, а лист заполняют ручкой на корте.
+  setPrintLandscape();
   window.print();
 }
 
@@ -7777,9 +7784,10 @@ function renderTournamentRoster(view, t, canEdit) {
         p.seeded ? 'Больше не сеяный' : 'Отмечен сеяным')));
     }
     // Перенос очков из клубной таблицы: сезон начался без сайта, и у
-    // людей уже есть набранное. Правит владелец и только до жеребьёвки —
-    // после неё сеяние уже сыграло. У пары — кнопкой в строке игрока.
-    if (!pair && canEdit && !t.drawnAt && p.status !== 'withdrawn') {
+    // людей уже есть набранное. Правит владелец в любой момент: после
+    // жеребьёвки правка сеяние этого турнира уже не двигает, а сумма
+    // сезона нужна следующим. У пары — кнопкой в строке игрока.
+    if (!pair && canEdit && p.status !== 'withdrawn') {
       acts.appendChild(btn('Очки сезона', 'btn sm sec', () => openCarryForm(t, p.players[0], p.name)));
     }
     if (t.fee && !pair) {
@@ -7964,7 +7972,7 @@ function pairPlayerLine(t, p, i, withActs) {
       act(() => api('adminTournamentParticipant',
         { id: t.id, op: 'paid', participantId: p.id, playerId: id, paid: !mark }), 'Отметка изменена')));
   }
-  if (withActs && db.tournamentPoints && !t.drawnAt && p.status !== 'withdrawn') {
+  if (withActs && db.tournamentPoints && p.status !== 'withdrawn') {
     acts.appendChild(btn('Очки сезона', 'btn sm sec', () => openCarryForm(t, id, (p.names || [])[i] || '')));
   }
   if (withActs && t.drawnAt && p.status !== 'withdrawn') {

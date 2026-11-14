@@ -481,17 +481,27 @@ table.cross td.pts { background: #F7F9F8; }
   .pr-head { margin-bottom: 10px; }
   .pr-head h2 { margin: 0 0 2px; font-size: 17px; }
   .pr-head .pr-sub { font-size: 13px; color: #444; }
-  .rt { font-size: 13px; }
-  /* Клетки крупнее экранных: в пустую таблицу на корте пишут ручкой,
-     и в семь пикселей высоты счёт не влезает. */
-  .rt th, .rt td { border: 1px solid #333; padding: 14px 8px; }
-  .rt th { padding: 7px 8px; }
-  .rt th { background: #eee; }
-  .rt .rt-self { background: #ddd; }
+  /* Лист тренировки — альбомный A4 целиком. Клетки крупные: в пустую
+     таблицу на корте пишут ручкой. Восемь участников — предел таблицы
+     (`MAX_TABLE`), под него и посчитана высота строки. Без
+     print-color-adjust браузер выкидывает заливку, и диагональ «сам с
+     собой» печаталась белой — в неё вписывали счёт. */
+  .pr-op, .pr-op * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pr-op .pr-head h2 { font-size: 24px; }
+  .pr-op .pr-head .pr-sub { font-size: 15px; }
+  .pr-op .rt-wrap { overflow: visible; }
+  .pr-op .rt { font-size: 17px; table-layout: fixed; }
+  .pr-op .rt th, .pr-op .rt td { border: 1.5px solid #222; padding: 0 6px; }
+  .pr-op .rt th { height: 10mm; background: #e6e6e6; font-size: 15px; }
+  .pr-op .rt td { height: 16mm; font-size: 18px; }
+  .pr-op .rt.few td { height: 24mm; }
+  .pr-op .rt .rt-name { width: 30%; min-width: 0; }
+  .pr-op .rt .rt-self { background: #9a9a9a; }
+  .pr-op .rt .rt-sum { width: 9%; }
   /* Пустые строки под парные довески: на листе их дописывают от руки,
      и место под них надо оставить заранее. */
   .pr-lines { margin-top: 12px; font-size: 13px; }
-  .pr-lines div { border-bottom: 1px solid #999; height: 22px; margin-top: 10px; }
+  .pr-lines div { border-bottom: 1px solid #999; height: 26px; margin-top: 10px; }
 }
 
 @media (max-width: 560px) {

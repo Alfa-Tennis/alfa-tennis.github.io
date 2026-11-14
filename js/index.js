@@ -1708,8 +1708,12 @@ function buildCell(date, court, slot, idx) {
 
   // Подпись только у первой клетки отрезка, иначе она повторялась бы
   // в каждой получасовой ячейке подряд.
+  // У идущей тренировки предыдущая клетка уже «прошло», но окно в ней
+  // то же — подпись всё равно нужна, иначе остаток окна сливается со
+  // следующей тренировкой и выглядит её частью.
   const startsHere = st === 'openplay'
-    ? !sameSessionAsPrev(date, court.id, slots, idx)
+    ? cellState(date, court.id, slots[idx - 1] || '') !== 'openplay'
+      || !sameSessionAsPrev(date, court.id, slots, idx)
     : cellState(date, court.id, slots[idx - 1] || '') !== st;
   if ((st === 'regular' || st === 'closed' || st === 'mine' || st === 'openplay' || st === 'tournament'
       || st === 'nightoff') && startsHere) {
