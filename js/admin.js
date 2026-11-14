@@ -4981,7 +4981,94 @@ function ntrpField(c) {
     row.appendChild(txt('span', 't2', 'копилка ' + String(c.level).replace('.', ',')
       + ' · ' + plural(c.levelMatches || 0, 'матч', 'матча', 'матчей')));
   }
+  row.appendChild(btn('История', 'btn sm sec', () => openLevelHistory(c)));
   return row;
+}
+
+// ---------- История игрового уровня ----------
+//
+// Лента лежит в карточке клиента (`levelLog`), сам клиент видит в
+// профиле последние пять записей. Здесь — вся, чтобы на «почему мне
+// понизили» ответить по строке: откуда сдвиг и чем объяснён.
+
+function levelMove(e) {
+  // Деление сменилось — главное, его и пишем; внутри деления — сдвиг копилки.
+  const div = e.ntrpFrom !== e.ntrpTo ? levelNum(e.ntrpFrom) + ' → ' + levelNum(e.ntrpTo) : null;
+  const fine = levelNum(e.from) + ' → ' + levelNum(e.to);
+  return div && div !== fine ? div + ' (' + fine + ')' : fine;
+}
+
+function levelSource(e) {
+  if (e.by === 'owner' && !e.tournamentId && !e.openPlay) return 'задан клубом';
+  return (e.title || (e.openPlay ? 'тренировка' : 'турнир'))
+    + (e.by === 'owner' ? ' · поправка владельца' : '');
+}
+
+function openLevelHistory(c) {
+  const body = el('div');
+  body.innerHTML = '<h3>История игрового уровня</h3>'
+    + '<div class="m-sub">' + escapeHtml(c.name) + ' · сейчас ' + levelNum(c.ntrp)
+    + (c.level != null && c.level !== c.ntrp ? ' (' + levelNum(c.level) + ')' : '') + '</div>';
+  const list = el('div');
+  list.appendChild(txt('div', 'empty', 'Загружаем…'));
+  body.appendChild(list);
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+
+  api('adminLevelLog', { clientId: c.id }).then(r => {
+    list.innerHTML = '';
+    if (!r.log.length) { list.appendChild(txt('div', 'empty', 'Уровень ещё ни разу не менялся.')); return; }
+    const scroll = el('div', 'cross-wrap');
+    const table = el('table', 'tbl');
+    table.innerHTML = '<thead><tr><th>Когда</th><th>Откуда</th><th>Было → стало</th><th>Почему</th></tr></thead>';
+    const tb = document.createElement('tbody');
+    r.log.forEach(e => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + escapeHtml(e.at ? isoDmy(e.at) : '') + '</td>'
+        + '<td>' + escapeHtml(levelSource(e)) + '</td>'
+        + '<td>' + escapeHtml(levelMove(e)) + '</td>'
+        + '<td>' + escapeHtml(e.reason || '') + '</td>';
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    scroll.appendChild(table);
+    list.appendChild(scroll);
+  }).catch(e => { list.innerHTML = ''; list.appendChild(txt('div', 'empty', errorText(e.code))); });
+}
+
+// Все сдвиги одного турнира или одной тренировки — после того как
+// сводку подтвердили и она закрылась.
+function openLevelShift(title, query) {
+  const body = el('div');
+  body.innerHTML = '<h3>Кого как сдвинуло</h3><div class="m-sub">' + escapeHtml(title) + '</div>';
+  const list = el('div');
+  list.appendChild(txt('div', 'empty', 'Загружаем…'));
+  body.appendChild(list);
+  const acts = el('div', 'm-acts');
+  acts.appendChild(btn('Закрыть', 'btn sec', closeModal));
+  body.appendChild(acts);
+  showModal(body);
+
+  api('adminLevelLog', query).then(r => {
+    list.innerHTML = '';
+    if (!r.rows.length) { list.appendChild(txt('div', 'empty', 'Записей о сдвигах нет.')); return; }
+    const scroll = el('div', 'cross-wrap');
+    const table = el('table', 'tbl');
+    table.innerHTML = '<thead><tr><th>Игрок</th><th>Было → стало</th><th>Почему</th></tr></thead>';
+    const tb = document.createElement('tbody');
+    r.rows.forEach(e => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + escapeHtml(e.name) + (e.by === 'owner' ? ' <span class="pill grey">рукой</span>' : '') + '</td>'
+        + '<td>' + escapeHtml(levelMove(e)) + '</td>'
+        + '<td>' + escapeHtml(e.reason || '') + '</td>';
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    scroll.appendChild(table);
+    list.appendChild(scroll);
+  }).catch(e => { list.innerHTML = ''; list.appendChild(txt('div', 'empty', errorText(e.code))); });
 }
 
 function plural(n, one, few, many) {
@@ -5228,7 +5315,15 @@ function rosterBlock(s, roster) {
   if (op.results && op.results.played) wrap.appendChild(resultsView(op));
   const rLine = resultsPostLine(op);
   if (rLine) wrap.appendChild(rLine);
-  if (op.levelAppliedAt) wrap.appendChild(txt('div', 't2', '📈 Игровые уровни пересчитаны'));
+  if (op.levelAppliedAt) {
+    const line = el('div', 'acts');
+    line.appendChild(txt('span', 't2', '📈 Игровые уровни пересчитаны'));
+    if (ownerRights()) {
+      line.appendChild(btn('Кого как сдвинуло', 'btn sm sec', () => openLevelShift(
+        op.title || 'Тренировка', { bookingId: s.id, rid: op.rid })));
+    }
+    wrap.appendChild(line);
+  }
 
   const acts = el('div', 'acts');
   acts.appendChild(btn('Записать', 'btn sm', () => openAddSignup(s, roster)));
@@ -7201,6 +7296,14 @@ function renderTournamentCard(view) {
     head.appendChild(txt('div', 'empty',
       'Турнир завершён, сыгранное записано участникам в профиль.'
       + (t.levelAppliedAt ? ' Игровые уровни пересчитаны.' : ' Игровые уровни ещё не пересчитаны.')));
+    // После «Согласен, внести поправки» сводка закрывается, и что именно
+    // внесено, раньше было не посмотреть нигде — только по карточке
+    // каждого. Сдвиги берутся из истории уровня по этому турниру.
+    if (canEdit && t.levelAppliedAt) {
+      const row = el('div', 'acts');
+      row.appendChild(btn('Кого как сдвинуло', 'btn sm sec', () => openLevelShift(t.title, { tournamentId: t.id })));
+      head.appendChild(row);
+    }
   }
 
   // Итоги — сразу под шапкой: за ними обращаются чаще всего, когда
